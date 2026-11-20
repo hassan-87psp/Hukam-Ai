@@ -112,6 +112,46 @@ describe('authentication', () => {
   });
 });
 
+describe('Projects, instructions, memory and private conversations', () => {
+  it('requires authentication and CSRF header', async () => {
+    expect((await api('GET','/api/projects',undefined,{cookie:null})).status).toBe(401);
+    expect((await api('POST','/api/projects',{name:'Test'},{noClientHeader:true})).status).toBe(403);
+  });
+  it('creates a saved project and persists preferences across requests', async () => {
+    const r=await api('POST','/api/projects',{name:'PipSePaisa Creative',instructions:'Brand palette orange',
+      chromeProfile:'PipSePaisa Chrome',chatgptProjectUrl:'https://chatgpt.com/',assetFolder:'PipSePaisa / Designs'});
+    expect(r.status).toBe(200);
+    expect(r.data.name).toBe('PipSePaisa Creative');
+    expect((await api('GET','/api/projects')).data.some((p:any)=>p.id===r.data.id)).toBe(true);
+    const fresh=await api('GET','/api/projects/'+r.data.id);
+    expect(fresh.data.instructions).toBe('Brand palette orange');
+    expect(fresh.data.chromeProfile).toBe('PipSePaisa Chrome');
+    expect((await api('PATCH','/api/projects/'+r.data.id,{instructions:'Always use #F39522'})).data.instructions)
+      .toBe('Always use #F39522');
+    expect((await api('POST','/api/projects',{name:'Bad',chatgptProjectUrl:'https://evil.com/' })).status).toBe(400);
+    expect((await api('POST','/api/projects',{name:'Bad',chatgptProjectUrl:'javascript:alert(1)' })).status).toBe(400);
+    (globalThis as any).__projectTestId=r.data.id;
+  });
+  it('saves reference notes, enforces project ownership and can remove a note', async () => {
+    const id=(globalThis as any).__projectTestId;
+    const r=await api('POST','/api/projects/'+id+'/notes',{title:'Palette',content:'#F39522 orange'});
+    expect(r.status).toBe(200);
+    expect((await api('GET','/api/projects/'+id+'/notes')).data[0].content).toBe('#F39522 orange');
+    expect((await api('GET','/api/projects/prj_missing/notes')).status).toBe(404);
+    expect((await api('DELETE','/api/projects/'+id+'/notes/'+r.data.id)).status).toBe(200);
+  });
+  it('rejects invalid chat messages before invoking AI', async () => {
+    const id=(globalThis as any).__projectTestId;
+    expect((await api('POST','/api/projects/'+id+'/chat',{message:''})).status).toBe(400);
+    expect((await api('GET','/api/projects/'+id+'/messages')).data).toEqual([]);
+  });
+  it('deletes project along with its history without touching devices', async () => {
+    const id=(globalThis as any).__projectTestId;
+    expect((await api('DELETE','/api/projects/'+id)).status).toBe(200);
+    expect((await api('GET','/api/projects/'+id)).status).toBe(404);
+  });
+});
+
 describe('Gemini authenticated chat', () => {
   it('never exposes the API key and never allows anonymous or CSRF calls', async () => {
     const status = await api('GET', '/api/ai/status');
