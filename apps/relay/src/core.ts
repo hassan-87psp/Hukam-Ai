@@ -26,7 +26,7 @@ import {
   type UserSettings,
 } from '../../../packages/shared-types/src/index';
 import type { RelayConfig } from './config';
-import { all, one, run, type DB, type Row } from './db';
+import { all, one, run, runVolatile, type DB, type Row } from './db';
 import { addMs, log, newId, nowIso, parseJson } from './util';
 
 export class HttpError extends Error {
@@ -87,6 +87,7 @@ export class Relay {
   private devices = new Map<string, DeviceConn>();
   private clients = new Map<string, Set<WebSocket>>(); // userId → sockets
   private timer: NodeJS.Timeout | null = null;
+  private lastMaintenance = 0;
   private screenshotDir: string;
 
   constructor(public db: DB, public config: RelayConfig) {
@@ -318,7 +319,7 @@ export class Relay {
         break;
       }
       case 'heartbeat':
-        if (msg.stats) run(this.db, 'UPDATE devices SET stats = ?, last_seen = ? WHERE id = ?', JSON.stringify(msg.stats).slice(0, 500), nowIso(), deviceId);
+        if (msg.stats) runVolatile(this.db, 'UPDATE devices SET stats = ?, last_seen = ? WHERE id = ?', JSON.stringify(msg.stats).slice(0, 500), nowIso(), deviceId);
         break;
       case 'ack':
         run(this.db, "UPDATE commands SET delivered_at = COALESCE(delivered_at, ?) WHERE id = ? AND device_id = ?", nowIso(), msg.commandId, deviceId);
@@ -597,7 +598,8 @@ export class Relay {
       }
     }
     // screenshot retention (cheap; indexed)
-    if (now % 60_000 < 1000) {
+    if (now - this.lastMaintenance >= 60_000) {
+      this.lastMaintenance = now;
       const expired = all(this.db, 'SELECT id, file_name FROM screenshots WHERE expires_at < ?', nowIso());
       for (const s of expired) {
         try {
