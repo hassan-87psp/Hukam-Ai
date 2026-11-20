@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, Check, ExternalLink, FolderKanban, MessageSquare, Plus, Save, Send, Trash2 } from 'lucide-react';
 import { get, post, patch, del } from '../services/api';
+import { useStore } from '../services/store';
 
 type Project = {
   id:string; name:string; description:string; instructions:string;
@@ -15,6 +16,7 @@ type Tab = 'chat'|'instructions'|'memory';
 function errMsg(e:unknown) { return e instanceof Error ? e.message : String(e); }
 
 export default function Projects(){
+  const {runAction}=useStore();
   const [items,setItems]=useState<Project[]>([]);
   const [selected,setSelected]=useState<string|null>(null);
   const [edit,setEdit]=useState({...empty});
@@ -129,7 +131,12 @@ export default function Projects(){
             <Link to={'/chat?projectId='+encodeURIComponent(project.id)} className="btn-primary px-3 py-2 text-xs">
               <MessageSquare size={15}/> Run HUKM Task
             </Link>
-            {project.chatgptProjectUrl&&<a href={project.chatgptProjectUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost px-3 py-2 text-xs"><ExternalLink size={15}/> Open ChatGPT Project</a>}
+            {project.chatgptProjectUrl&&<button onClick={()=>void runAction('browser.profile_open',{
+                url:project.chatgptProjectUrl, profile:project.chromeProfile
+              },{label:'Open '+project.name+' in Chrome profile '+project.chromeProfile})}
+              disabled={!/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile)}
+              title="Requires Default or Profile N configured in this Project"
+              className="btn-ghost px-3 py-2 text-xs"><ExternalLink size={15}/> Open in saved Chrome profile</button>}
             <button className="btn-ghost px-3 py-2 text-xs text-bad" onClick={()=>void remove()} disabled={saving} title="Delete Project"><Trash2 size={16}/></button>
           </div>
         </div>
@@ -157,14 +164,14 @@ export default function Projects(){
           <label className="block text-sm">Permanent project instructions<textarea className="field mt-1 min-h-[160px] w-full" value={edit.instructions} maxLength={6000}
             onChange={e=>setEdit(v=>({...v,instructions:e.target.value}))} placeholder="Always use the selected brand guidelines, templates, content style…"/></label>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm">Chrome profile label<input className="field mt-1 w-full" value={edit.chromeProfile} maxLength={100}
-              onChange={e=>setEdit(v=>({...v,chromeProfile:e.target.value}))} placeholder="PipSePaisa Chrome"/></label>
+            <label className="block text-sm">Chrome profile directory<input className="field mt-1 w-full" value={edit.chromeProfile} maxLength={100}
+              onChange={e=>setEdit(v=>({...v,chromeProfile:e.target.value}))} placeholder="Profile 1 or Default"/></label>
             <label className="block text-sm">Asset folder label<input className="field mt-1 w-full" value={edit.assetFolder} maxLength={350}
               onChange={e=>setEdit(v=>({...v,assetFolder:e.target.value}))} placeholder="Designs / PipSePaisa"/></label>
           </div>
           <label className="block text-sm">ChatGPT Project URL<input className="field mt-1 w-full" value={edit.chatgptProjectUrl} maxLength={500}
             onChange={e=>setEdit(v=>({...v,chatgptProjectUrl:e.target.value}))} placeholder="https://chatgpt.com/..."/></label>
-          <p className="text-xs text-warn">Profile and folder labels are saved preferences, not yet automatic Chrome profile selection or local file access. Never save passwords or API keys here.</p>
+          <p className="text-xs text-warn">Use the actual Chrome profile directory (Default or Profile 1–99), not the display name. Profile must exist on this Windows PC. Folder path is a saved preference, not yet authorized file access. Never save passwords or API keys here.</p>
           <button className="btn-primary" onClick={()=>void save()} disabled={saving||!edit.name.trim()}><Check size={16}/> Save instructions</button>
         </div>}
         {tab==='memory'&&<div>
