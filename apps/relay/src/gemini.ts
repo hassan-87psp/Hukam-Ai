@@ -87,7 +87,12 @@ export async function chatWithGemini(
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
           contents,
-          generationConfig: { temperature: 0.6, maxOutputTokens: 600 },
+          // 2.5 Flash supports zero thinking budget for responsive free-tier
+          // chat; do not apply to newer models with different config rules.
+          generationConfig: {
+            temperature: 0.6, maxOutputTokens: 600,
+            ...(model.startsWith('gemini-2.5-flash') ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+          },
         }),
         signal: controller.signal,
       },
