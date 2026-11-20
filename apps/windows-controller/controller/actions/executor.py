@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..browser import web
+from ..browser import operator as browser_operator
 from ..config import Config
 from ..files import search as files
 from ..screen import capture as screen
@@ -200,6 +201,12 @@ class Executor:
         return {"path": str(p), "folder": str(p.parent)}
 
     # -- browser --------------------------------------------------------
+    def do_browser_control(self, a, _c):
+        try:
+            return browser_operator.control(a)
+        except RuntimeError as exc:
+            raise ActionError("NOT_ALLOWED", str(exc)) from exc
+
     def do_web_open(self, a, _c):
         used = launcher.open_url(a["url"], self.cfg.browser)
         return {"url": a["url"], "browser": used}

@@ -66,6 +66,8 @@ const APP_ALIASES: [RegExp, KnownApp][] = [
 ];
 
 const SITES: [RegExp, string][] = [
+  [/\bgoogle\s+calendar\b|\bgcal\b/, 'https://calendar.google.com/calendar/u/0/r'],
+  [/\boutlook\s+calendar\b|\bmicrosoft\s+calendar\b/, 'https://outlook.office.com/calendar/'],
   [/\bgmail\b/, 'https://mail.google.com/'],
   [/\bgoogle\b/, 'https://www.google.com/'],
   [/\bfacebook\b|\bfb\b/, 'https://www.facebook.com/'],
@@ -181,10 +183,29 @@ export function parseCommand(input: string): ParseResult {
   if (/^(help|madad|commands|kya kar sakte ho|what can you do|tum kya kar sakte ho|aap kya kar sakte hain)$/.test(t))
     return { kind: 'reply', topic: 'help', normalized: t };
 
+  // Calendar shortcuts must win over the generic "Google search" rule.
+  if (/\b(?:google\s+calendar|gcal)\b/.test(t) && OPEN.test(t))
+    return cmd('web.open', { url: 'https://calendar.google.com/calendar/u/0/r' }, 'google-calendar-open');
+  if (/\b(?:outlook\s+calendar|microsoft\s+calendar)\b/.test(t) && OPEN.test(t))
+    return cmd('web.open', { url: 'https://outlook.office.com/calendar/' }, 'outlook-calendar-open');
+
   // cancel current command
   if (CANCEL.test(t) && (/\b(command|kaam|task|current|yeh|ye|this|it|isay|ise)\b/.test(t) || t.split(' ').length <= 2))
     return cmd('command.cancel', {}, 'cancel');
   if (/\b(command|kaam|task)\b/.test(t) && /\b(band karo|band kar do|stop)\b/.test(t)) return cmd('command.cancel', {}, 'cancel-band');
+
+  // The first operator foundation: explicit, one-step browser controls.
+  // No model-generated coordinates and no implicit website submissions.
+  // The relay requires a separate owner approval for every browser input.
+  const click = t.match(/^(?:browser\s+)?(?:click|tap)\s+(?:at\s+)?(\d{1,4})[\s,]+(\d{1,4})(?:\s+(?:karo|kar do))?$/);
+  if (click) return cmd('browser.control', { kind: 'click', x: Number(click[1]), y: Number(click[2]) }, 'browser-click');
+  const typed = input.trim().match(/^(?:browser\s+)?(?:type|likho)(?:\s+text)?\s*:\s*(.{1,1000})$/is);
+  if (typed) return cmd('browser.control', { kind: 'type', text: typed[1].trim() }, 'browser-type');
+  const scroll = t.match(/^(?:browser\s+)?scroll\s+(up|down)(?:\s+(\d))?(?:\s+karo)?$/);
+  if (scroll) return cmd('browser.control',
+    { kind: 'scroll', steps: (scroll[1] === 'up' ? 1 : -1) * Number(scroll[2] ?? 2) }, 'browser-scroll');
+  const press = t.match(/^(?:browser\s+)?press\s+(enter|tab|escape|backspace|home|end|arrowdown|arrowup|ctrl\+l|ctrl\+a)$/);
+  if (press) return cmd('browser.control', { kind: 'key', key: press[1] }, 'browser-key');
 
   // WhatsApp drafts are a conversation: missing recipient/content is a question.
   // Actual sending is never performed; the existing approval only prepares a draft.

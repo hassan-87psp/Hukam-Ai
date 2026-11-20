@@ -24,14 +24,14 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible",
+    "browser.control", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible",
 }
 
 CAPABILITY_OF = {
     "app.open": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
-    "screen.capture": "screen", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
+    "screen.capture": "screen", "browser.control": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
     "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp",
 }
 
@@ -147,6 +147,27 @@ def validate(action: str, args: dict) -> dict:
         return {"url": safe_url(a.get("url"))}
     if action in ("web.search", "youtube.search", "youtube.play"):
         return {"query": _str(a.get("query"), "query", 200)}
+    if action == "browser.control":
+        kind = a.get("kind")
+        if kind == "click":
+            x, y = a.get("x"), a.get("y")
+            if type(x) is not int or type(y) is not int or not (0 <= x <= 9999 and 0 <= y <= 9999):
+                raise ValidationError("invalid browser click coordinates")
+            return {"kind": kind, "x": x, "y": y}
+        if kind == "type":
+            return {"kind": kind, "text": _str(a.get("text"), "text", 1000)}
+        if kind == "scroll":
+            steps = a.get("steps")
+            if type(steps) is not int or steps == 0 or not -5 <= steps <= 5:
+                raise ValidationError("invalid browser scroll")
+            return {"kind": kind, "steps": steps}
+        if kind == "key":
+            key = a.get("key")
+            if key not in ("enter", "tab", "escape", "backspace", "home", "end", "arrowdown",
+                           "arrowup", "ctrl+l", "ctrl+a"):
+                raise ValidationError("browser key not allowed")
+            return {"kind": kind, "key": key}
+        raise ValidationError("unsupported browser input")
     if action == "window.focus":
         return {"title": _str(a.get("title"), "title", 200)}
     if action in ("whatsapp.open", "whatsapp.check"):

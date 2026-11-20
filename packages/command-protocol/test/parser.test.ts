@@ -18,6 +18,26 @@ describe('normalisation', () => {
   });
 });
 
+describe('approved browser control', () => {
+  it('parses an explicit click', () => {
+    expect(c('browser click 440 320')).toMatchObject({ action: 'browser.control', args: { kind: 'click', x: 440, y: 320 } });
+  });
+  it('keeps typed text intact', () => {
+    expect(c('type: Sir Sajid, kal meeting 9 PM')).toMatchObject({ action: 'browser.control', args: { kind: 'type', text: 'Sir Sajid, kal meeting 9 PM' } });
+  });
+  it('parses scroll and browser key', () => {
+    expect(c('scroll down 2').args).toEqual({ kind: 'scroll', steps: -2 });
+    expect(c('press ctrl+l').args).toEqual({ kind: 'key', key: 'ctrl+l' });
+  });
+  it('requires approval and refuses unsafe input', () => {
+    expect(requiresApproval('browser.control')).toBe(true);
+    expect(validateCommand('browser.control', { kind: 'click', x: 10.5, y: 22 }).ok).toBe(false);
+    expect(validateCommand('browser.control', { kind: 'key', key: 'win+r' }).ok).toBe(false);
+    expect(validateCommand('browser.control', { kind: 'type', text: 'hello' }).ok).toBe(true);
+    expect(validateCommand('browser.control', { kind: 'scroll', steps: 10 }).ok).toBe(false);
+  });
+});
+
 describe('app intents — same intent for different phrasing', () => {
   for (const t of ['Chrome kholo', 'Chrome open karo', 'Open Google Chrome', 'کروم کھولو', 'chrome', 'Chrome chalao']) {
     it(t, () => {
@@ -28,6 +48,15 @@ describe('app intents — same intent for different phrasing', () => {
   }
   it('notepad', () => expect(c('Notepad kholo').args).toEqual({ app: 'notepad' }));
   it('excel app (not a file)', () => expect(c('Excel kholo').args).toEqual({ app: 'excel' }));
+});
+
+describe('operator website shortcuts', () => {
+  it('opens Google Calendar in the browser', () => {
+    expect(c('Google Calendar kholo')).toMatchObject({ action: 'web.open', args: { url: 'https://calendar.google.com/calendar/u/0/r' } });
+  });
+  it('opens Outlook Calendar in the browser', () => {
+    expect(c('Outlook Calendar kholo')).toMatchObject({ action: 'web.open', args: { url: 'https://outlook.office.com/calendar/' } });
+  });
 });
 
 describe('folders', () => {

@@ -90,6 +90,35 @@ def test_score_name():
     assert score_name("report.pdf", ["invoice"]) == 0
 
 
+# ---- approved browser input (simulated — never touch actual Windows) ----
+
+def test_browser_control_rejects_invalid_inputs():
+    with pytest.raises(v.ValidationError):
+        v.validate("browser.control", {"kind": "click", "x": 10.5, "y": 1})
+    with pytest.raises(v.ValidationError):
+        v.validate("browser.control", {"kind": "scroll", "steps": 0})
+    with pytest.raises(v.ValidationError):
+        v.validate("browser.control", {"kind": "key", "key": "win+r"})
+    with pytest.raises(v.ValidationError):
+        v.validate("browser.control", {"kind": "type", "text": ""})
+
+
+def test_browser_control_does_not_log_typed_content(sandbox):
+    launcher.simulated_calls.clear()
+    out = run(make_exec(), "browser.control", {"kind": "type", "text": "Sensitive example text"})
+    assert out.ok
+    assert out.result["inputDelivered"] is True
+    assert out.result["verified"] is False
+    assert all("Sensitive" not in str(item) for item in launcher.simulated_calls)
+    assert launcher.simulated_calls[-1] == ("browser.control", "type (redacted)")
+
+
+def test_browser_control_respects_disabled_input_capability(sandbox):
+    out = run(make_exec(capabilities=["system"]), "browser.control", {"kind": "key", "key": "tab"})
+    assert out.ok is False
+    assert out.error["code"] == "CAPABILITY_DISABLED"
+
+
 # ---- actions (simulated launches) -------------------------------------------
 
 def test_folder_open(sandbox):
