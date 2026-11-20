@@ -6,7 +6,7 @@ import Waveform from '../features/command/Waveform';
 import { useReducedMotion, useVoiceInput } from '../hooks/useVoice';
 import { PageFrame } from '../layouts/AppShell';
 import { useStore } from '../services/store';
-import { hasLastUtterance, listVoices, pickVoice, RECOGNITION_LANGS, replayLast, stopSpeaking, ttsSupported, voiceGender } from '../services/voice';
+import { hasLastUtterance, listVoices, RECOGNITION_LANGS, replayLast, stopSpeaking, ttsSupported, voiceGender } from '../services/voice';
 
 const BrainOrb = lazy(() => import('../features/brain/BrainOrb'));
 
@@ -19,7 +19,6 @@ export default function Voice() {
     listVoices().then(setVoices);
   }, []);
   const urduVoices = voices.filter((v) => v.lang.toLowerCase().startsWith('ur'));
-  const selected = pickVoice(voices, settings.voiceURI, settings.responseLang);
   const lastAgent = [...chat].reverse().find((m) => m.kind === 'agent');
   const lastUser = [...chat].reverse().find((m) => m.kind === 'user' && m.source === 'voice');
 
@@ -96,7 +95,7 @@ export default function Voice() {
             <div className="space-y-3 px-5 pb-5 pt-3 text-sm">
               {!ttsSupported() && <p className="text-warn">Browser ki local voice available nahi, lekin online Pakistani female voice try ho sakti hai.</p>}
               <Row label="Pakistani female voice">
-                <Badge tone="ok" dot>Uzma · Free preview</Badge>
+                <Badge tone="muted" dot>Uzma · Free test</Badge>
               </Row>
               <p className="rounded-xl bg-blue/10 px-3 py-2 text-xs text-ink2 ring-1 ring-ice/20">
                 Default: Pakistani Urdu female voice Uzma. HUKM screen par Roman Urdu likhega aur Pakistani Urdu mein bolega.
