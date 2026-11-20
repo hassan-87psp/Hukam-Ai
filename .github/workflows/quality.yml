@@ -84,8 +84,8 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'hukm-isolated-appdata'
           New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
-          # INSTALL_OR_UPDATE.cmd prompts before returning; pipe an input key.
-          $p = Start-Process -FilePath cmd.exe -ArgumentList '/c', 'echo.|release\\INSTALL_OR_UPDATE.cmd' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP\\hukm-installer-out.txt"
+          # CI=true skips prompts in installer, while user launches remain interactive.
+          $p = Start-Process -FilePath cmd.exe -ArgumentList '/c', 'release\\INSTALL_OR_UPDATE.cmd' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP\\hukm-installer-out.txt"
           if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\\hukm-installer-out.txt"; throw "Installer failed" }
           $exe = Join-Path $env:LOCALAPPDATA 'HUKM AI\\Controller\\hukm-controller.exe'
           if (!(Test-Path $exe)) { throw "Installed EXE missing" }
