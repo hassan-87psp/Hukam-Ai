@@ -145,19 +145,19 @@ export function pickVoice(voices: SpeechSynthesisVoice[], uri: string | null, la
     voices.find((v) => v.lang.toLowerCase().startsWith('hi')) ??
     null
   );
-  if (lang === 'roman' || lang === 'en') return english() ?? voices[0] ?? null;
-  return (
-    voices.find((v) => v.lang.toLowerCase() === 'ur-pk' && /natural|online/i.test(v.name)) ??
-    voices.find((v) => v.lang.toLowerCase().startsWith('ur')) ??
-    english() ??
-    null
-  );
+  if (lang === 'roman' || lang === 'ur') {
+    const uzma = voices.find((v) => /^ur-pk$/i.test(v.lang) && /uzma|female/i.test(v.name));
+    const otherUrduFemale = voices.find((v) => /^ur/i.test(v.lang) && voiceGender(v) === 'female');
+    if (uzma || otherUrduFemale) return uzma ?? otherUrduFemale ?? null;
+    if (lang === 'ur') return voices.find((v) => /^ur/i.test(v.lang)) ?? english() ?? null;
+  }
+  return english() ?? voices[0] ?? null;
 }
 
 /** Choose which text variant a voice can actually pronounce. */
 export function textForVoice(m: Localized, voice: SpeechSynthesisVoice | null, lang: Lang): string {
   // Roman Urdu is Latin-script Urdu: speak it as written, not an English translation.
-  if (lang === 'roman') return m.roman;
+  if (lang === 'roman') return voice?.lang.toLowerCase().startsWith('ur') ? m.ur : m.roman;
   if (lang === 'ur') return voice?.lang.toLowerCase().startsWith('ur') ? m.ur : m.roman;
   return m.en;
 }
