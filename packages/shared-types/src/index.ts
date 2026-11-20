@@ -118,6 +118,12 @@ export interface ControllerConfigSummary {
   browser: string;
 }
 
+export interface AutomationSchedule {
+  enabled: boolean;
+  time: string | null; // local wall-clock HH:mm
+  timezone: string; // valid IANA timezone, e.g. Asia/Kuala_Lumpur
+}
+
 export interface Automation {
   id: string;
   name: string;
@@ -129,6 +135,7 @@ export interface Automation {
   updatedAt: string;
   lastRunAt: string | null;
   lastRunStatus: string | null;
+  schedule?: AutomationSchedule;
 }
 
 export interface WhatsAppContact {
