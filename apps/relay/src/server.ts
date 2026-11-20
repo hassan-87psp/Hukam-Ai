@@ -9,6 +9,7 @@ import { restoreCloudSnapshot, startCloudBackup } from './backup';
 import { femaleUrduAudio, reportFemaleVoiceError } from './female-tts';
 import { chatWithGemini, geminiConfigured, GeminiError } from './gemini';
 import { HttpError, Relay } from './core';
+import { Projects } from './projects';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
@@ -99,6 +100,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     await backup.flush();
   }
   const relay = new Relay(db, config);
+  const projects = new Projects(db);
   relay.start();
 
   const loginLimit = new RateLimiter(10, 5 * 60_000);
@@ -170,6 +172,42 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
       if (e instanceof GeminiError) throw new HttpError(e.status, e.code, e.message);
       throw new HttpError(502, 'AI_UNAVAILABLE', 'Gemini is temporarily unavailable.');
     }
+  });
+
+  // Durable Projects + memory. Every query is scoped to authenticated owner.
+  add('GET', '/api/projects', true, (c) => projects.list(c.user!.id));
+  add('POST', '/api/projects', true, (c) => projects.save(c.user!.id, null, c.body ?? {}));
+  add('GET', '/api/projects/:id', true, (c) => projects.get(c.user!.id, c.params.id));
+  add('PATCH', '/api/projects/:id', true, (c) => projects.save(c.user!.id, c.params.id, c.body ?? {}));
+  add('DELETE', '/api/projects/:id', true, (c) => projects.remove(c.user!.id, c.params.id));
+  add('GET', '/api/projects/:id/notes', true, (c) => projects.notes(c.user!.id, c.params.id));
+  add('POST', '/api/projects/:id/notes', true, (c) => projects.saveNote(c.user!.id, c.params.id, null, c.body ?? {}));
+  add('PATCH', '/api/projects/:id/notes/:noteId', true, (c) => projects.saveNote(c.user!.id, c.params.id, c.params.noteId, c.body ?? {}));
+  add('DELETE', '/api/projects/:id/notes/:noteId', true, (c) => projects.removeNote(c.user!.id, c.params.id, c.params.noteId));
+  add('GET', '/api/projects/:id/messages', true, (c) => projects.messages(c.user!.id, c.params.id));
+  add('DELETE', '/api/projects/:id/messages', true, (c) => projects.clearMessages(c.user!.id, c.params.id));
+  add('POST', '/api/projects/:id/chat', true, async (c) => {
+    if (!aiLimit.take('project-chat:' + c.user!.id) || !aiDailyLimit.take('project-chat:' + c.user!.id))
+      throw new HttpError(429, 'AI_RATE_LIMIT', 'AI rate limit reached');
+    const project = projects.get(c.user!.id, c.params.id);
+    const message = c.body?.message;
+    if (typeof message !== 'string' || !message.trim() || message.length > 1800)
+      throw new HttpError(400, 'BAD_MESSAGE', 'Message required (up to 1800 characters)');
+    const notes = projects.notes(c.user!.id,project.id).slice(0,20);
+    const context = [project.name, project.description, project.instructions,
+      ...notes.map(n => n.title + ': ' + n.content.slice(0,500))].join('\n').slice(0,8000);
+    const history = projects.messages(c.user!.id,project.id)
+      .slice(-10).map(m => ({role:m.role,text:m.content.slice(0,750)}));
+    let ai;
+    try { ai = await chatWithGemini(message, history, {projectContext:context}); }
+    catch(e){
+      if(e instanceof GeminiError) throw new HttpError(e.status,e.code,e.message);
+      throw new HttpError(502,'AI_UNAVAILABLE','Gemini unavailable');
+    }
+    // Save only after successful AI generation, so retry does not create duplicate turns.
+    projects.appendMessage(c.user!.id,project.id,'user',message);
+    projects.appendMessage(c.user!.id,project.id,'assistant',ai.reply);
+    return ai;
   });
 
   // auth
