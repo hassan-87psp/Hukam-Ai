@@ -66,6 +66,8 @@ const APP_ALIASES: [RegExp, KnownApp][] = [
 ];
 
 const SITES: [RegExp, string][] = [
+  [/\bgoogle\s+calendar\b|\bgcal\b/, 'https://calendar.google.com/calendar/u/0/r'],
+  [/\boutlook\s+calendar\b|\bmicrosoft\s+calendar\b/, 'https://outlook.office.com/calendar/'],
   [/\bgmail\b/, 'https://mail.google.com/'],
   [/\bgoogle\b/, 'https://www.google.com/'],
   [/\bfacebook\b|\bfb\b/, 'https://www.facebook.com/'],
