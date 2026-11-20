@@ -250,12 +250,12 @@ export function parseCommand(input: string): ParseResult {
 
   // YouTube homepage: treat common Roman Urdu "open kro/mro" typo as
   // an opener, never as a video title or a Google/YouTube search query.
-  if (/^(?:(?:youtube|yt)\\s+(?:open|khol|kholo)|(?:open|khol|kholo)\\s+(?:youtube|yt))(?:\\s+(?:kro|karo|mro|kar do))?$/.test(t))
+  if (/^(?:(?:youtube|yt)\s+(?:open|khol|kholo)|(?:open|khol|kholo)\s+(?:youtube|yt))(?:\s+(?:kro|karo|mro|kar do))?$/.test(t))
     return cmd('web.open', { url: 'https://www.youtube.com/' }, 'youtube-home-open');
 
   // youtube
-  if (/\\b(youtube|yt)\\b/.test(t)) {
-    if (/\\b(?:home|homepage|home page)\\b/.test(t) && OPEN.test(t))
+  if (/\b(youtube|yt)\b/.test(t)) {
+    if (/\b(?:home|homepage|home page)\b/.test(t) && OPEN.test(t))
       return cmd('web.open', { url: 'https://www.youtube.com/' }, 'youtube-home-open');
     const q = stripWords(t, [/\b(youtube|yt)\b/, /\bvideos?\b/, /\b(per|pe|par|mein|on)\b/, /\b(gaana|chrome|browser|edge)\b/]);
     const query = restoreCase(input, q);
