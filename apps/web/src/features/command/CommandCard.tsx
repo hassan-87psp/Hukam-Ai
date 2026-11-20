@@ -12,7 +12,7 @@ export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'app.open': AppWindow, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
   'file.reveal': FolderOpen, 'web.open': Globe, 'web.search': Search, 'youtube.search': Youtube, 'youtube.play': Youtube,
   'device.status': Laptop, 'apps.list': AppWindow, 'window.active': Monitor, 'window.focus': Monitor, 'screen.capture': Monitor,
-  'browser.control': Monitor, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
+  'browser.control': Monitor, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.unread_senders': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
 };
 
 export function ActionIcon({ action, className }: { action: ActionName; className?: string }) {
@@ -171,6 +171,13 @@ export function CommandResult({ c }: { c: Command }) {
       );
     case 'browser.control':
       return <p className="text-xs text-ink2">{r.note ?? 'Browser input attempted. Verify the website result before continuing.'}</p>;
+    case 'whatsapp.unread_senders':
+      return <div className="space-y-2 text-sm">
+        <p className="text-xs text-ink2">{r.note || 'Visible unread sender names (not messages)'}</p>
+        {Array.isArray(r.senders) && r.senders.length > 0
+          ? <ul className="space-y-1">{r.senders.slice(0, 12).map((name: string, i: number) => <li key={i} className="rounded-lg bg-field/40 px-2 py-1">{name}</li>)}</ul>
+          : <p className="text-warn">No sender names could be verified.</p>}
+      </div>;
     case 'whatsapp.compose':
       return <p className="text-xs text-warn">Draft opened in WhatsApp — not sent. Press Send on the laptop.</p>;
     case 'app.open':
@@ -206,6 +213,10 @@ function ApprovalBox({ c }: { c: Command }) {
           <dt className="text-ink2">Effect</dt><dd className="text-ink2">Opens the chat with this text typed in. You press Send on the laptop.</dd>
         </>)}
         {c.action === 'screen.capture' && (<><dt className="text-ink2">Effect</dt><dd className="text-ink2">One screenshot of the main screen is sent to your account and auto-deleted per retention settings.</dd></>)}
+        {c.action === 'whatsapp.unread_senders' && (<>
+          <dt className="text-ink2">Data</dt><dd>Only sender names in the visible Unread chat list, not message bodies</dd>
+          <dt className="text-ink2">Privacy</dt><dd>Visible names will be transmitted to your authenticated HUKM web account and saved in command history.</dd>
+        </>)}
         {c.action === 'browser.control' && (<>
           <dt className="text-ink2">Browser</dt><dd>Foreground Chrome / Edge / Firefox only</dd>
           <dt className="text-ink2">Input</dt><dd>{a.kind === 'type' ? 'Type text into the selected field' : a.kind === 'click' ? `Click at ${a.x}, ${a.y}` : a.kind === 'scroll' ? `Scroll ${a.steps} steps` : `Press ${a.key}`}</dd>
