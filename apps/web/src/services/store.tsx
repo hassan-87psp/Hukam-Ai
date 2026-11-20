@@ -160,7 +160,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const say = useCallback((m: Localized, force = false) => {
     const s = settingsRef.current;
     if (s.speechMuted && !force) return;
-    const voice = pickVoice(voices.current, s.voiceURI);
+    const voice = pickVoice(voices.current, s.voiceURI, s.responseLang);
     speak(textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume, setSpeaking);
   }, []);
 
