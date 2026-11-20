@@ -4,7 +4,7 @@ import { cleanText, normalize } from './normalize';
 
 export type ParseResult =
   | { kind: 'command'; action: ActionName; args: Record<string, unknown>; normalized: string; matchedRule: string }
-  | { kind: 'reply'; topic: 'greeting' | 'help' | 'whatsapp-cancelled'; normalized: string }
+  | { kind: 'reply'; topic: 'greeting' | 'help' | 'whatsapp-cancelled' | 'conversation-cancelled'; normalized: string }
   | { kind: 'clarify'; topic: string; normalized: string }
   | { kind: 'unsupported'; reason: string; normalized: string };
 
@@ -186,9 +186,16 @@ export function parseCommand(input: string): ParseResult {
     return cmd('command.cancel', {}, 'cancel');
   if (/\b(command|kaam|task)\b/.test(t) && /\b(band karo|band kar do|stop)\b/.test(t)) return cmd('command.cancel', {}, 'cancel-band');
 
-  // whatsapp compose
+  // WhatsApp drafts are a conversation: missing recipient/content is a question.
+  // Actual sending is never performed; the existing approval only prepares a draft.
   const compose = parseCompose(input, t);
   if (compose) return cmd('whatsapp.compose', compose, 'whatsapp-compose');
+  if (/^(?:(?:whatsapp|wa)\s+)?(?:message|msg|text|reply)(?:\s+(?:bhejo|likho|karo|kar do|send|send karo|draft))?$/.test(t) ||
+      /^(?:send|write|draft)\s+(?:a\s+)?(?:whatsapp\s+)?(?:message|msg|text)$/.test(t))
+    return { kind: 'clarify', topic: 'message-contact', normalized: t };
+  if (/^(?:whatsapp\s+)?[a-z\p{L}][a-z\p{L}\s'.-]{0,45}\s+ko\s+(?:whatsapp\s+)?(?:message|msg|text|reply)\s+(?:bhejo|likho|send|karo|kar do|do|karna|bhejna)$/iu.test(t) ||
+      /^(?:send|write|draft)\s+(?:a\s+)?(?:whatsapp\s+)?(?:message|msg|text)\s+to\s+[a-z\p{L}][a-z\p{L}\s'.-]{0,45}$/iu.test(t))
+    return { kind: 'clarify', topic: 'message-body', normalized: t };
 
   // Read only the CURRENT VISIBLE WhatsApp Desktop chat. The laptop speaks
   // offline, with no message text sent to the relay. Always requires approval.
@@ -217,7 +224,12 @@ export function parseCommand(input: string): ParseResult {
   if (/\b(youtube|yt)\b/.test(t)) {
     const q = stripWords(t, [/\b(youtube|yt)\b/, /\bvideos?\b/, /\b(per|pe|par|mein|on)\b/, /\b(gaana|chrome|browser|edge)\b/]);
     const query = restoreCase(input, q);
-    if (!query) return cmd('web.open', { url: 'https://www.youtube.com/' }, 'youtube-home');
+    if (!query) {
+      if (/\b(play|chalao|lagao|bajao|search|dhoondo)\b/.test(t)) return { kind: 'clarify', topic: 'youtube-query', normalized: t };
+      return { kind: 'clarify', topic: 'youtube-choice', normalized: t };
+    }
+    if (/^(home|homepage|home page|main page)$/.test(query.toLowerCase()))
+      return cmd('web.open', { url: 'https://www.youtube.com/' }, 'youtube-home');
     if (PLAY.test(t)) return cmd('youtube.play', { query }, 'youtube-play');
     return cmd('youtube.search', { query }, 'youtube-search');
   }
@@ -228,6 +240,9 @@ export function parseCommand(input: string): ParseResult {
 
   // lock
   if (/\block\b/.test(t) && /\b(laptop|computer|pc|screen|system|windows)\b/.test(t)) return cmd('system.lock', {}, 'lock');
+
+  if (/^(?:koi\s+)?(?:app|application|program|software)\s*(?:kholo|open|launch|chalao|start)?$/.test(t))
+    return { kind: 'clarify', topic: 'which-app', normalized: t };
 
   // list applications
   if (/\b(applications|apps|programs|softwares?|windows)\b/.test(t) && /\b(open|khuli|khule|chal|chal rahi|chal rahe|running|kaunsi|which|what|list|batao|dikhao)\b/.test(t))
@@ -276,6 +291,9 @@ export function parseCommand(input: string): ParseResult {
     return cmd('file.search', base, 'file-default');
   }
 
+  if (/^(?:koi\s+)?folder\s*(?:kholo|open|dikhao|show)?$/.test(t))
+    return { kind: 'clarify', topic: 'which-folder', normalized: t };
+
   // folders: bare answers like "Desktop wala" are not requests to
   // open a folder. Without a pending conversation, ask for a full command.
   if (/^(desktop|downloads?|documents?|pictures?|music|videos?) (wala|wali|wale)$/.test(t))
@@ -303,6 +321,9 @@ export function parseCommand(input: string): ParseResult {
       }
     }
   }
+
+  if (/^(?:koi\s+)?(?:website|site|web page)\s*(?:kholo|open|dikhao|show)?$/.test(t))
+    return { kind: 'clarify', topic: 'which-website', normalized: t };
 
   // explicit URL
   const url = t.match(URL_RE);
