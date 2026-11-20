@@ -1,0 +1,17 @@
+{
+  "name": "HUKM AI — Your Personal AI Operator",
+  "short_name": "HUKM AI",
+  "description": "Control your Windows laptop by voice or text in Urdu, Roman Urdu or English.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#081526",
+  "theme_color": "#081526",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

@@ -1,0 +1,738 @@
+import { mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { WebSocket } from 'ws';
+import {
+  ACTIONS,
+  parseCommand,
+  requiresApproval,
+  validateCommand,
+  ackMessage,
+  type ParseResult,
+} from '../../../packages/command-protocol/src/index';
+import {
+  ALL_CAPABILITIES,
+  DEFAULT_SETTINGS,
+  FINAL_STATUSES,
+  type ActionName,
+  type Automation,
+  type Capability,
+  type Command,
+  type CommandSource,
+  type CommandStatus,
+  type Device,
+  type DeviceToServer,
+  type ServerToClient,
+  type ServerToDevice,
+  type UserSettings,
+} from '../../../packages/shared-types/src/index';
+import type { RelayConfig } from './config';
+import { all, one, run, type DB, type Row } from './db';
+import { addMs, log, newId, nowIso, parseJson } from './util';
+
+export class HttpError extends Error {
+  constructor(public status: number, public code: string, message: string) {
+    super(message);
+  }
+}
+
+// ---- row mappers -------------------------------------------------------
+
+export function toCommand(r: Row): Command {
+  return {
+    id: r.id,
+    deviceId: r.device_id ?? null,
+    source: r.source,
+    inputText: r.input_text ?? null,
+    action: r.action,
+    args: parseJson(r.args, {}),
+    requiresApproval: !!r.requires_approval,
+    status: r.status,
+    createdAt: r.created_at,
+    approvedAt: r.approved_at ?? null,
+    dispatchedAt: r.dispatched_at ?? null,
+    startedAt: r.started_at ?? null,
+    finishedAt: r.finished_at ?? null,
+    durationMs: r.duration_ms ?? null,
+    result: parseJson(r.result, null),
+    error: r.error_code ? { code: r.error_code, message: r.error_message ?? '' } : null,
+    automationRunId: r.automation_run_id ?? null,
+    screenshotId: r.screenshot_id ?? null,
+  };
+}
+
+function toAutomation(r: Row): Automation {
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    steps: parseJson(r.steps, []),
+    enabled: !!r.enabled,
+    deviceId: r.device_id ?? null,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    lastRunAt: r.last_run_at ?? null,
+    lastRunStatus: r.last_run_status ?? null,
+  };
+}
+
+interface DeviceConn {
+  ws: WebSocket;
+  deviceId: string;
+  userId: string;
+  lastMsg: number;
+  ip: string | null;
+}
+
+export class Relay {
+  private devices = new Map<string, DeviceConn>();
+  private clients = new Map<string, Set<WebSocket>>(); // userId → sockets
+  private timer: NodeJS.Timeout | null = null;
+  private screenshotDir: string;
+
+  constructor(public db: DB, public config: RelayConfig) {
+    this.screenshotDir = join(config.dataDir, 'screenshots');
+    mkdirSync(this.screenshotDir, { recursive: true });
+  }
+
+  start() {
+    this.timer = setInterval(() => this.sweep(), 1000);
+    this.timer.unref?.();
+  }
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    for (const c of this.devices.values()) c.ws.close(1001, 'server shutting down');
+    for (const set of this.clients.values()) for (const ws of set) ws.close(1001, 'server shutting down');
+  }
+
+  // ---- audit ----------------------------------------------------------
+  audit(userId: string | null, actor: 'user' | 'device' | 'system', event: string, detail: Record<string, unknown> | null = null, deviceId: string | null = null, ip: string | null = null) {
+    run(this.db, 'INSERT INTO audit_logs (id, user_id, device_id, actor, event, detail, ip, at) VALUES (?,?,?,?,?,?,?,?)',
+      newId('a_'), userId, deviceId, actor, event, detail ? JSON.stringify(detail) : null, ip, nowIso());
+  }
+
+  // ---- clients --------------------------------------------------------
+  addClient(userId: string, ws: WebSocket) {
+    let set = this.clients.get(userId);
+    if (!set) this.clients.set(userId, (set = new Set()));
+    set.add(ws);
+    ws.on('close', () => set!.delete(ws));
+    this.sendClient(ws, { type: 'hello', userId });
+  }
+  private sendClient(ws: WebSocket, m: ServerToClient) {
+    if (ws.readyState === 1) ws.send(JSON.stringify(m));
+  }
+  broadcast(userId: string, m: ServerToClient) {
+    const set = this.clients.get(userId);
+    if (!set) return;
+    const s = JSON.stringify(m);
+    for (const ws of set) if (ws.readyState === 1) ws.send(s);
+  }
+  clientCount(userId: string) {
+    return this.clients.get(userId)?.size ?? 0;
+  }
+
+  // ---- settings -------------------------------------------------------
+  getSettings(userId: string): UserSettings {
+    const r = one(this.db, 'SELECT settings FROM user_settings WHERE user_id = ?', userId);
+    const s = parseJson<Partial<UserSettings>>(r?.settings, {});
+    return { ...DEFAULT_SETTINGS, ...s, approvalRequired: { ...DEFAULT_SETTINGS.approvalRequired, ...(s.approvalRequired ?? {}) } };
+  }
+  saveSettings(userId: string, patch: Partial<UserSettings>): UserSettings {
+    const cur = this.getSettings(userId);
+    const next = sanitizeSettings({ ...cur, ...patch });
+    run(this.db, `INSERT INTO user_settings (user_id, settings, updated_at) VALUES (?,?,?)
+      ON CONFLICT(user_id) DO UPDATE SET settings = excluded.settings, updated_at = excluded.updated_at`, userId, JSON.stringify(next), nowIso());
+    this.broadcast(userId, { type: 'settings.updated', settings: next });
+    return next;
+  }
+
+  // ---- devices --------------------------------------------------------
+  isOnline(deviceId: string) {
+    return this.devices.has(deviceId);
+  }
+
+  deviceDto(r: Row): Device {
+    const last = one(this.db, 'SELECT action, status, created_at FROM commands WHERE device_id = ? ORDER BY created_at DESC LIMIT 1', r.id);
+    return {
+      id: r.id,
+      name: r.name,
+      os: r.os ?? null,
+      osVersion: r.os_version ?? null,
+      hostname: r.hostname ?? null,
+      controllerVersion: r.controller_version ?? null,
+      online: this.isOnline(r.id),
+      paused: !!r.paused,
+      status: r.status,
+      lastSeen: this.isOnline(r.id) ? nowIso() : r.last_seen ?? null,
+      createdAt: r.created_at,
+      capabilitiesReported: parseJson(r.capabilities_reported, []),
+      capabilitiesEnabled: parseJson(r.capabilities_enabled, []),
+      controllerConfig: parseJson(r.controller_config, null),
+      lastCommand: last ? { action: last.action, status: last.status, at: last.created_at } : null,
+      stats: parseJson(r.stats, null),
+    };
+  }
+
+  listDevices(userId: string): Device[] {
+    return all(this.db, "SELECT * FROM devices WHERE user_id = ? AND status = 'paired' ORDER BY created_at", userId).map((r) => this.deviceDto(r));
+  }
+
+  getDeviceRow(userId: string, deviceId: string): Row {
+    const r = one(this.db, "SELECT * FROM devices WHERE id = ? AND user_id = ? AND status = 'paired'", deviceId, userId);
+    if (!r) throw new HttpError(404, 'NOT_FOUND', 'device not found');
+    return r;
+  }
+
+  private pushDevice(deviceId: string) {
+    const r = one(this.db, 'SELECT * FROM devices WHERE id = ?', deviceId);
+    if (r && r.status === 'paired') this.broadcast(r.user_id, { type: 'device.updated', device: this.deviceDto(r) });
+  }
+
+  private connEvent(deviceId: string, event: string, ip: string | null = null) {
+    run(this.db, 'INSERT INTO connection_events (id, device_id, event, ip, at) VALUES (?,?,?,?,?)', newId('ce_'), deviceId, event, ip, nowIso());
+  }
+
+  connectionHistory(userId: string, deviceId: string) {
+    this.getDeviceRow(userId, deviceId);
+    return all(this.db, 'SELECT event, ip, at FROM connection_events WHERE device_id = ? ORDER BY at DESC LIMIT 50', deviceId);
+  }
+
+  updateDevice(userId: string, deviceId: string, patch: { name?: unknown; capabilitiesEnabled?: unknown }) {
+    const r = this.getDeviceRow(userId, deviceId);
+    if (patch.name !== undefined) {
+      if (typeof patch.name !== 'string' || !patch.name.trim() || patch.name.length > 60) throw new HttpError(400, 'BAD_REQUEST', 'invalid name');
+      run(this.db, 'UPDATE devices SET name = ? WHERE id = ?', patch.name.trim(), deviceId);
+      this.audit(userId, 'user', 'device.renamed', { from: r.name, to: patch.name.trim() }, deviceId);
+    }
+    if (patch.capabilitiesEnabled !== undefined) {
+      if (!Array.isArray(patch.capabilitiesEnabled) || patch.capabilitiesEnabled.some((c) => !ALL_CAPABILITIES.includes(c as Capability)))
+        throw new HttpError(400, 'BAD_REQUEST', 'invalid capabilities');
+      const caps = [...new Set(patch.capabilitiesEnabled as Capability[])];
+      run(this.db, 'UPDATE devices SET capabilities_enabled = ? WHERE id = ?', JSON.stringify(caps), deviceId);
+      this.audit(userId, 'user', 'device.capabilities', { enabled: caps }, deviceId);
+      this.sendDevice(deviceId, { type: 'capabilities', enabledCapabilities: caps });
+    }
+    this.pushDevice(deviceId);
+    return this.deviceDto(one(this.db, 'SELECT * FROM devices WHERE id = ?', deviceId)!);
+  }
+
+  setPaused(userId: string, deviceId: string, paused: boolean, reason: string) {
+    this.getDeviceRow(userId, deviceId);
+    run(this.db, 'UPDATE devices SET paused = ? WHERE id = ?', paused ? 1 : 0, deviceId);
+    this.connEvent(deviceId, paused ? 'paused' : 'resumed');
+    this.audit(userId, 'user', paused ? 'device.paused' : 'device.resumed', { reason }, deviceId);
+    if (paused) {
+      const open = all(this.db, "SELECT id FROM commands WHERE device_id = ? AND status IN ('pending','awaiting_approval','running')", deviceId);
+      for (const c of open) this.finish(c.id, 'cancelled', null, { code: 'EMERGENCY_STOP', message: reason });
+      this.sendDevice(deviceId, { type: 'pause' });
+    } else {
+      this.sendDevice(deviceId, { type: 'resume' });
+    }
+    this.pushDevice(deviceId);
+  }
+
+  emergencyStopAll(userId: string) {
+    const devs = all(this.db, "SELECT id FROM devices WHERE user_id = ? AND status = 'paired'", userId);
+    for (const d of devs) this.setPaused(userId, d.id, true, 'emergency stop');
+    const open = all(this.db, "SELECT id FROM commands WHERE user_id = ? AND status IN ('pending','awaiting_approval','running')", userId);
+    for (const c of open) this.finish(c.id, 'cancelled', null, { code: 'EMERGENCY_STOP', message: 'emergency stop' });
+    return devs.length;
+  }
+
+  removeDevice(userId: string, deviceId: string) {
+    this.getDeviceRow(userId, deviceId);
+    const open = all(this.db, "SELECT id FROM commands WHERE device_id = ? AND status IN ('pending','awaiting_approval','running')", deviceId);
+    for (const c of open) this.finish(c.id, 'cancelled', null, { code: 'DEVICE_REMOVED', message: 'device was unpaired' });
+    run(this.db, "UPDATE devices SET status = 'revoked', paused = 1 WHERE id = ?", deviceId);
+    this.connEvent(deviceId, 'unpaired');
+    this.audit(userId, 'user', 'device.unpaired', null, deviceId);
+    const conn = this.devices.get(deviceId);
+    if (conn) {
+      this.sendDevice(deviceId, { type: 'revoked' });
+      conn.ws.close(4003, 'revoked');
+      this.devices.delete(deviceId);
+    }
+    this.broadcast(userId, { type: 'device.removed', deviceId });
+  }
+
+  // ---- device socket --------------------------------------------------
+  sendDevice(deviceId: string, m: ServerToDevice): boolean {
+    const c = this.devices.get(deviceId);
+    if (!c || c.ws.readyState !== 1) return false;
+    c.ws.send(JSON.stringify(m));
+    return true;
+  }
+
+  attachDevice(row: Row, ws: WebSocket, ip: string | null) {
+    const existing = this.devices.get(row.id);
+    if (existing) existing.ws.close(4000, 'replaced by a newer connection');
+    const conn: DeviceConn = { ws, deviceId: row.id, userId: row.user_id, lastMsg: Date.now(), ip };
+    this.devices.set(row.id, conn);
+    run(this.db, 'UPDATE devices SET last_seen = ? WHERE id = ?', nowIso(), row.id);
+    this.connEvent(row.id, 'connected', ip);
+    this.audit(row.user_id, 'device', 'device.connected', null, row.id, ip);
+    log('info', 'device connected', { deviceId: row.id });
+
+    ws.on('message', (data) => {
+      conn.lastMsg = Date.now();
+      let msg: DeviceToServer;
+      try {
+        msg = JSON.parse(data.toString());
+      } catch {
+        return;
+      }
+      try {
+        this.onDeviceMessage(conn, msg);
+      } catch (e) {
+        log('error', 'device message failed', { err: String(e) });
+      }
+    });
+    ws.on('pong', () => (conn.lastMsg = Date.now()));
+    ws.on('close', () => {
+      if (this.devices.get(row.id) === conn) {
+        this.devices.delete(row.id);
+        run(this.db, 'UPDATE devices SET last_seen = ? WHERE id = ?', nowIso(), row.id);
+        this.connEvent(row.id, 'disconnected', ip);
+        log('info', 'device disconnected', { deviceId: row.id });
+        this.pushDevice(row.id);
+      }
+    });
+  }
+
+  private onDeviceMessage(conn: DeviceConn, msg: DeviceToServer) {
+    const { deviceId, userId } = conn;
+    switch (msg.type) {
+      case 'hello': {
+        const r = one(this.db, 'SELECT * FROM devices WHERE id = ?', deviceId)!;
+        const reported = (Array.isArray(msg.capabilities) ? msg.capabilities : []).filter((c) => ALL_CAPABILITIES.includes(c));
+        const firstHello = !r.controller_config;
+        const enabled = firstHello ? reported : parseJson<Capability[]>(r.capabilities_enabled, []);
+        run(this.db, `UPDATE devices SET os = ?, os_version = ?, hostname = ?, controller_version = ?, capabilities_reported = ?,
+          capabilities_enabled = ?, controller_config = ?, last_seen = ? WHERE id = ?`,
+          String(msg.os ?? '').slice(0, 40), String(msg.osVersion ?? '').slice(0, 80), String(msg.hostname ?? '').slice(0, 80),
+          String(msg.controllerVersion ?? '').slice(0, 20), JSON.stringify(reported), JSON.stringify(enabled),
+          JSON.stringify(msg.config ?? {}), nowIso(), deviceId);
+        this.sendDevice(deviceId, { type: 'welcome', deviceId, paused: !!r.paused, enabledCapabilities: enabled });
+        this.pushDevice(deviceId);
+        this.dispatchQueued(deviceId);
+        break;
+      }
+      case 'heartbeat':
+        if (msg.stats) run(this.db, 'UPDATE devices SET stats = ?, last_seen = ? WHERE id = ?', JSON.stringify(msg.stats).slice(0, 500), nowIso(), deviceId);
+        break;
+      case 'ack':
+        run(this.db, "UPDATE commands SET delivered_at = COALESCE(delivered_at, ?) WHERE id = ? AND device_id = ?", nowIso(), msg.commandId, deviceId);
+        break;
+      case 'started': {
+        const c = one(this.db, 'SELECT * FROM commands WHERE id = ? AND device_id = ?', msg.commandId, deviceId);
+        if (c && c.status === 'pending') {
+          run(this.db, "UPDATE commands SET status = 'running', started_at = ?, delivered_at = COALESCE(delivered_at, ?) WHERE id = ?", nowIso(), nowIso(), c.id);
+          this.pushCommand(c.id);
+        }
+        break;
+      }
+      case 'result': {
+        const c = one(this.db, 'SELECT * FROM commands WHERE id = ? AND device_id = ?', msg.commandId, deviceId);
+        // Always acknowledge so the controller can drop it from its outbox, even if we no longer accept it.
+        this.sendDevice(deviceId, { type: 'result_ack', commandId: msg.commandId });
+        if (!c) return;
+        if (FINAL_STATUSES.includes(c.status)) {
+          log('info', 'late result ignored', { commandId: c.id, status: c.status });
+          return;
+        }
+        let result = msg.result && typeof msg.result === 'object' ? { ...msg.result } : {};
+        let screenshotId: string | null = null;
+        if (msg.ok && msg.screenshot?.dataBase64) {
+          screenshotId = this.storeScreenshot(userId, deviceId, c.id, msg.screenshot);
+          result = { ...result, screenshotId };
+        }
+        const json = JSON.stringify(result);
+        const safeResult = json.length > 200_000 ? { truncated: true } : result;
+        if (screenshotId) run(this.db, 'UPDATE commands SET screenshot_id = ? WHERE id = ?', screenshotId, c.id);
+        this.finish(c.id, msg.ok ? 'completed' : 'failed', safeResult, msg.ok ? null : {
+          code: String(msg.error?.code ?? 'FAILED').slice(0, 40),
+          message: String(msg.error?.message ?? 'failed').slice(0, 500),
+        }, typeof msg.durationMs === 'number' ? Math.round(msg.durationMs) : null);
+        this.audit(userId, 'device', msg.ok ? 'command.completed' : 'command.failed', { commandId: c.id, action: c.action }, deviceId);
+        break;
+      }
+    }
+  }
+
+  private storeScreenshot(userId: string, deviceId: string, commandId: string, s: { mime: string; dataBase64: string; width: number; height: number }) {
+    const mime = s.mime === 'image/png' ? 'image/png' : 'image/jpeg';
+    const buf = Buffer.from(s.dataBase64, 'base64');
+    if (buf.length > 3 * 1024 * 1024) throw new Error('screenshot too large');
+    const id = newId('s_');
+    const file = `${id}.${mime === 'image/png' ? 'png' : 'jpg'}`;
+    writeFileSync(join(this.screenshotDir, file), buf);
+    const hours = this.getSettings(userId).screenshotRetentionHours;
+    run(this.db, 'INSERT INTO screenshots (id, user_id, device_id, command_id, file_name, mime, width, height, bytes, created_at, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+      id, userId, deviceId, commandId, file, mime, s.width | 0, s.height | 0, buf.length, nowIso(), addMs(hours * 3600_000));
+    return id;
+  }
+
+  getScreenshot(userId: string, id: string) {
+    const r = one(this.db, 'SELECT * FROM screenshots WHERE id = ? AND user_id = ?', id, userId);
+    if (!r) throw new HttpError(404, 'NOT_FOUND', 'screenshot not found or expired');
+    return { path: join(this.screenshotDir, r.file_name), mime: r.mime as string };
+  }
+  listScreenshots(userId: string) {
+    return all(this.db, 'SELECT id, device_id AS deviceId, command_id AS commandId, width, height, bytes, created_at AS createdAt, expires_at AS expiresAt FROM screenshots WHERE user_id = ? ORDER BY created_at DESC LIMIT 50', userId);
+  }
+  deleteScreenshot(userId: string, id: string) {
+    const r = one(this.db, 'SELECT * FROM screenshots WHERE id = ? AND user_id = ?', id, userId);
+    if (!r) throw new HttpError(404, 'NOT_FOUND', 'screenshot not found');
+    try {
+      unlinkSync(join(this.screenshotDir, r.file_name));
+    } catch {}
+    run(this.db, 'DELETE FROM screenshots WHERE id = ?', id);
+    this.audit(userId, 'user', 'screenshot.deleted', { id });
+  }
+
+  // ---- commands -------------------------------------------------------
+  pushCommand(id: string) {
+    const r = one(this.db, 'SELECT * FROM commands WHERE id = ?', id);
+    if (r) this.broadcast(r.user_id, { type: 'command.updated', command: toCommand(r) });
+  }
+
+  getCommand(userId: string, id: string): Command {
+    const r = one(this.db, 'SELECT * FROM commands WHERE id = ? AND user_id = ?', id, userId);
+    if (!r) throw new HttpError(404, 'NOT_FOUND', 'command not found');
+    return toCommand(r);
+  }
+
+  listCommands(userId: string, q: { limit?: number; status?: string; deviceId?: string; before?: string; automationRunId?: string }) {
+    const where = ['user_id = ?'];
+    const p: any[] = [userId];
+    if (q.status) { where.push('status = ?'); p.push(q.status); }
+    if (q.deviceId) { where.push('device_id = ?'); p.push(q.deviceId); }
+    if (q.before) { where.push('created_at < ?'); p.push(q.before); }
+    if (q.automationRunId) { where.push('automation_run_id = ?'); p.push(q.automationRunId); }
+    const limit = Math.min(Math.max(q.limit ?? 50, 1), 200);
+    return all(this.db, `SELECT * FROM commands WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ${limit}`, ...p).map(toCommand);
+  }
+
+  clearHistory(userId: string) {
+    const n = run(this.db, "DELETE FROM commands WHERE user_id = ? AND status IN ('completed','failed','cancelled','timed_out')", userId).changes;
+    this.audit(userId, 'user', 'history.cleared', { deleted: Number(n) });
+    return Number(n);
+  }
+
+  /**
+   * Create a command from free text (parsed by the deterministic engine) or a structured action.
+   * Returns either a stored command or a conversational outcome (reply/clarify/unsupported).
+   */
+  createCommand(userId: string, input: {
+    deviceId?: unknown; text?: unknown; action?: unknown; args?: unknown; source?: unknown; clientRequestId?: unknown; automationRunId?: string | null;
+  }): { kind: 'command'; command: Command; duplicate: boolean } | Exclude<ParseResult, { kind: 'command' }> | { kind: 'clarify'; topic: string; normalized: string } {
+    const source: CommandSource = (['text', 'voice', 'quick', 'automation', 'ui'] as const).includes(input.source as any) ? (input.source as CommandSource) : 'ui';
+    const clientRequestId = typeof input.clientRequestId === 'string' && input.clientRequestId.length <= 64 ? input.clientRequestId : null;
+
+    if (clientRequestId) {
+      const dup = one(this.db, 'SELECT * FROM commands WHERE user_id = ? AND client_request_id = ?', userId, clientRequestId);
+      if (dup) return { kind: 'command', command: toCommand(dup), duplicate: true };
+    }
+
+    let action: ActionName;
+    let args: Record<string, unknown>;
+    let text: string | null = null;
+    if (typeof input.text === 'string') {
+      text = input.text.trim().slice(0, 500);
+      const parsed = parseCommand(text);
+      if (parsed.kind !== 'command') return parsed;
+      action = parsed.action;
+      args = parsed.args;
+    } else if (typeof input.action === 'string') {
+      action = input.action as ActionName;
+      args = (input.args as Record<string, unknown>) ?? {};
+    } else {
+      throw new HttpError(400, 'BAD_REQUEST', 'text or action is required');
+    }
+
+    const v = validateCommand(action, args);
+    if (!v.ok) throw new HttpError(400, 'INVALID_COMMAND', v.error);
+    args = v.args;
+    const def = ACTIONS[action];
+    const settings = this.getSettings(userId);
+
+    if (action === 'whatsapp.compose' && !args.phone) {
+      const wanted = String(args.contact).toLowerCase();
+      const contact = settings.whatsappContacts.find((c) => c.name.toLowerCase() === wanted);
+      if (!contact) return { kind: 'clarify', topic: 'contact-unknown', normalized: text ?? '' };
+      args = { ...args, contact: contact.name, phone: contact.phone };
+    }
+
+    // relay-only action
+    if (action === 'command.cancel') {
+      const target = one(this.db, "SELECT id FROM commands WHERE user_id = ? AND status IN ('pending','awaiting_approval','running') ORDER BY created_at DESC LIMIT 1", userId);
+      if (target) this.cancelCommand(userId, target.id, 'cancelled by voice/text command');
+      const id = newId('c_');
+      const now = nowIso();
+      run(this.db, `INSERT INTO commands (id, user_id, device_id, client_request_id, source, input_text, action, args, requires_approval, status, timeout_ms, created_at, finished_at, duration_ms, result, automation_run_id)
+        VALUES (?,?,?,?,?,?,?,?,0,'completed',?,?,?,0,?,?)`, id, userId, null, clientRequestId, source, text, action, '{}', def.timeoutMs, now, now,
+        JSON.stringify({ cancelled: target ? 1 : 0, targetId: target?.id ?? null }), input.automationRunId ?? null);
+      this.pushCommand(id);
+      return { kind: 'command', command: this.getCommand(userId, id), duplicate: false };
+    }
+
+    // pick device
+    let deviceRow: Row | undefined;
+    if (typeof input.deviceId === 'string' && input.deviceId) deviceRow = this.getDeviceRow(userId, input.deviceId);
+    else {
+      const devs = all(this.db, "SELECT * FROM devices WHERE user_id = ? AND status = 'paired' ORDER BY created_at", userId);
+      deviceRow = devs.find((d) => this.isOnline(d.id)) ?? devs[0];
+    }
+    if (!deviceRow) throw new HttpError(409, 'NO_DEVICE', 'no paired device');
+
+    const enabled = parseJson<Capability[]>(deviceRow.capabilities_enabled, []);
+    const id = newId('c_');
+    const now = nowIso();
+    const needsApproval = requiresApproval(action, settings.approvalRequired);
+    let status: CommandStatus = needsApproval ? 'awaiting_approval' : 'pending';
+    let error: { code: string; message: string } | null = null;
+    if (deviceRow.paused) {
+      status = 'failed';
+      error = { code: 'PAUSED', message: 'controller is paused (emergency stop)' };
+    } else if (def.capability && deviceRow.controller_config && !enabled.includes(def.capability)) {
+      status = 'failed';
+      error = { code: 'CAPABILITY_DISABLED', message: `${def.capability} is disabled for this device` };
+    }
+    run(this.db, `INSERT INTO commands (id, user_id, device_id, client_request_id, source, input_text, action, args, requires_approval, status, timeout_ms, created_at, finished_at, error_code, error_message, automation_run_id)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, id, userId, deviceRow.id, clientRequestId, source, text, action, JSON.stringify(args), needsApproval ? 1 : 0,
+      status, def.timeoutMs, now, error ? now : null, error?.code ?? null, error?.message ?? null, input.automationRunId ?? null);
+    this.audit(userId, 'user', 'command.created', { commandId: id, action, source, status }, deviceRow.id);
+
+    if (status === 'awaiting_approval') {
+      run(this.db, 'INSERT INTO command_approvals (id, command_id, user_id, requested_at, expires_at, summary) VALUES (?,?,?,?,?,?)',
+        newId('ap_'), id, userId, now, addMs(this.config.approvalTtlMs), ackMessage(action, args).en);
+    }
+    this.pushCommand(id);
+    if (status === 'pending') this.dispatchQueued(deviceRow.id);
+    return { kind: 'command', command: this.getCommand(userId, id), duplicate: false };
+  }
+
+  decide(userId: string, commandId: string, approve: boolean) {
+    const c = one(this.db, 'SELECT * FROM commands WHERE id = ? AND user_id = ?', commandId, userId);
+    if (!c) throw new HttpError(404, 'NOT_FOUND', 'command not found');
+    if (c.status !== 'awaiting_approval') throw new HttpError(409, 'NOT_AWAITING', `command is ${c.status}`);
+    const now = nowIso();
+    run(this.db, "UPDATE command_approvals SET decided_at = ?, decision = ? WHERE command_id = ? AND decided_at IS NULL", now, approve ? 'approved' : 'rejected', commandId);
+    this.audit(userId, 'user', approve ? 'command.approved' : 'command.rejected', { commandId, action: c.action }, c.device_id);
+    if (approve) {
+      run(this.db, "UPDATE commands SET status = 'pending', approved_at = ? WHERE id = ?", now, commandId);
+      this.pushCommand(commandId);
+      if (c.device_id) this.dispatchQueued(c.device_id);
+    } else {
+      this.finish(commandId, 'cancelled', null, { code: 'REJECTED', message: 'rejected by user' });
+    }
+    return this.getCommand(userId, commandId);
+  }
+
+  cancelCommand(userId: string, commandId: string, reason = 'cancelled by user') {
+    const c = one(this.db, 'SELECT * FROM commands WHERE id = ? AND user_id = ?', commandId, userId);
+    if (!c) throw new HttpError(404, 'NOT_FOUND', 'command not found');
+    if (FINAL_STATUSES.includes(c.status)) return toCommand(c);
+    this.finish(commandId, 'cancelled', null, { code: 'CANCELLED', message: reason });
+    this.audit(userId, 'user', 'command.cancelled', { commandId }, c.device_id);
+    return this.getCommand(userId, commandId);
+  }
+
+  listApprovals(userId: string) {
+    return all(this.db, "SELECT * FROM commands WHERE user_id = ? AND status = 'awaiting_approval' ORDER BY created_at DESC", userId).map(toCommand);
+  }
+
+  private finish(id: string, status: CommandStatus, result: Record<string, unknown> | null, error: { code: string; message: string } | null, durationMs: number | null = null) {
+    const c = one(this.db, 'SELECT * FROM commands WHERE id = ?', id);
+    if (!c || FINAL_STATUSES.includes(c.status)) return;
+    const now = nowIso();
+    const dur = durationMs ?? (c.started_at ? Date.now() - Date.parse(c.started_at) : null);
+    run(this.db, 'UPDATE commands SET status = ?, finished_at = ?, duration_ms = ?, result = COALESCE(?, result), error_code = ?, error_message = ? WHERE id = ?',
+      status, now, dur, result ? JSON.stringify(result) : null, error?.code ?? null, error?.message ?? null, id);
+    if (c.status === 'awaiting_approval' && status !== 'completed') {
+      run(this.db, "UPDATE command_approvals SET decided_at = COALESCE(decided_at, ?), decision = COALESCE(decision, ?) WHERE command_id = ?", now, status === 'timed_out' ? 'expired' : 'rejected', id);
+    }
+    if ((status === 'cancelled' || status === 'timed_out') && c.device_id && c.dispatched_at) this.sendDevice(c.device_id, { type: 'cancel', commandId: id });
+    this.pushCommand(id);
+  }
+
+  private dispatchQueued(deviceId: string) {
+    if (!this.isOnline(deviceId)) return;
+    const dev = one(this.db, 'SELECT paused FROM devices WHERE id = ?', deviceId);
+    if (!dev || dev.paused) return;
+    const rows = all(this.db, "SELECT * FROM commands WHERE device_id = ? AND status = 'pending' AND delivered_at IS NULL ORDER BY created_at LIMIT 20", deviceId);
+    for (const r of rows) {
+      const ok = this.sendDevice(deviceId, {
+        type: 'command',
+        command: { id: r.id, action: r.action, args: parseJson(r.args, {}), createdAt: r.created_at, timeoutMs: r.timeout_ms },
+      });
+      if (ok) run(this.db, 'UPDATE commands SET dispatched_at = COALESCE(dispatched_at, ?) WHERE id = ?', nowIso(), r.id);
+    }
+  }
+
+  /** Periodic housekeeping: timeouts, queue expiry, approval expiry, heartbeats, screenshot retention. */
+  sweep() {
+    const now = Date.now();
+    const open = all(this.db, "SELECT * FROM commands WHERE status IN ('pending','awaiting_approval','running')");
+    for (const c of open) {
+      if (c.status === 'awaiting_approval') {
+        if (now - Date.parse(c.created_at) > this.config.approvalTtlMs) this.finish(c.id, 'timed_out', null, { code: 'APPROVAL_EXPIRED', message: 'approval was not given in time' });
+        continue;
+      }
+      const startRef = c.dispatched_at ? Date.parse(c.dispatched_at) : null;
+      if (startRef !== null) {
+        if (now - startRef > c.timeout_ms) this.finish(c.id, 'timed_out', null, { code: 'TIMEOUT', message: `no result within ${Math.round(c.timeout_ms / 1000)}s` });
+      } else {
+        const queuedSince = Date.parse(c.approved_at ?? c.created_at);
+        if (now - queuedSince > this.config.queueTtlMs) this.finish(c.id, 'timed_out', null, { code: 'DEVICE_OFFLINE', message: 'device stayed offline' });
+      }
+    }
+    // heartbeat watchdog
+    for (const [id, conn] of this.devices) {
+      if (now - conn.lastMsg > this.config.heartbeatTimeoutMs) {
+        log('warn', 'device heartbeat lost', { deviceId: id });
+        conn.ws.terminate();
+      } else if (now - conn.lastMsg > this.config.heartbeatTimeoutMs / 3 && conn.ws.readyState === 1) {
+        conn.ws.ping();
+      }
+    }
+    // screenshot retention (cheap; indexed)
+    if (now % 60_000 < 1000) {
+      const expired = all(this.db, 'SELECT id, file_name FROM screenshots WHERE expires_at < ?', nowIso());
+      for (const s of expired) {
+        try {
+          unlinkSync(join(this.screenshotDir, s.file_name));
+        } catch {}
+        run(this.db, 'DELETE FROM screenshots WHERE id = ?', s.id);
+      }
+      // command history & audit retention per user
+      for (const u of all(this.db, 'SELECT id FROM users')) {
+        const days = this.getSettings(u.id).historyRetentionDays;
+        const cutoff = new Date(now - days * 86400_000).toISOString();
+        run(this.db, "DELETE FROM commands WHERE user_id = ? AND created_at < ? AND status IN ('completed','failed','cancelled','timed_out')", u.id, cutoff);
+        run(this.db, 'DELETE FROM audit_logs WHERE user_id = ? AND at < ?', u.id, cutoff);
+      }
+      run(this.db, 'DELETE FROM sessions WHERE expires_at < ?', nowIso());
+      run(this.db, 'DELETE FROM pairing_codes WHERE expires_at < ? AND used_at IS NULL', new Date(now - 86400_000).toISOString());
+    }
+  }
+
+  // ---- automations ----------------------------------------------------
+  listAutomations(userId: string) {
+    return all(this.db, 'SELECT * FROM automations WHERE user_id = ? ORDER BY created_at', userId).map(toAutomation);
+  }
+  saveAutomation(userId: string, id: string | null, body: Record<string, unknown>) {
+    const name = typeof body.name === 'string' ? body.name.trim().slice(0, 80) : '';
+    const description = typeof body.description === 'string' ? body.description.trim().slice(0, 300) : '';
+    const steps = Array.isArray(body.steps) ? body.steps.filter((s): s is string => typeof s === 'string').map((s) => s.trim().slice(0, 300)).filter(Boolean) : null;
+    const enabled = body.enabled === undefined ? null : !!body.enabled;
+    const now = nowIso();
+    if (!id) {
+      if (!name || !steps?.length) throw new HttpError(400, 'BAD_REQUEST', 'name and at least one step are required');
+      if (steps.length > 15) throw new HttpError(400, 'BAD_REQUEST', 'max 15 steps');
+      for (const s of steps) {
+        const p = parseCommand(s);
+        if (p.kind !== 'command') throw new HttpError(400, 'BAD_STEP', `step not understood: "${s}"`);
+        if (p.action === 'whatsapp.compose' || p.action === 'system.lock') throw new HttpError(400, 'BAD_STEP', `step not allowed in automations: "${s}"`);
+      }
+      id = newId('au_');
+      run(this.db, 'INSERT INTO automations (id, user_id, name, description, steps, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)',
+        id, userId, name, description, JSON.stringify(steps), enabled === false ? 0 : 1, now, now);
+    } else {
+      const cur = one(this.db, 'SELECT * FROM automations WHERE id = ? AND user_id = ?', id, userId);
+      if (!cur) throw new HttpError(404, 'NOT_FOUND', 'automation not found');
+      if (steps) {
+        if (!steps.length || steps.length > 15) throw new HttpError(400, 'BAD_REQUEST', '1–15 steps required');
+        for (const s of steps) {
+          const p = parseCommand(s);
+          if (p.kind !== 'command') throw new HttpError(400, 'BAD_STEP', `step not understood: "${s}"`);
+          if (p.action === 'whatsapp.compose' || p.action === 'system.lock') throw new HttpError(400, 'BAD_STEP', `step not allowed in automations: "${s}"`);
+        }
+      }
+      run(this.db, 'UPDATE automations SET name = ?, description = ?, steps = ?, enabled = ?, updated_at = ? WHERE id = ?',
+        name || cur.name, body.description !== undefined ? description : cur.description, steps ? JSON.stringify(steps) : cur.steps,
+        enabled === null ? cur.enabled : enabled ? 1 : 0, now, id);
+    }
+    this.audit(userId, 'user', 'automation.saved', { id, name });
+    const a = toAutomation(one(this.db, 'SELECT * FROM automations WHERE id = ?', id)!);
+    this.broadcast(userId, { type: 'automation.updated', automation: a });
+    return a;
+  }
+  deleteAutomation(userId: string, id: string) {
+    const n = run(this.db, 'DELETE FROM automations WHERE id = ? AND user_id = ?', id, userId).changes;
+    if (!n) throw new HttpError(404, 'NOT_FOUND', 'automation not found');
+    this.audit(userId, 'user', 'automation.deleted', { id });
+  }
+
+  /** Runs steps sequentially; each step waits for its command to finish. Stops on the first failure. */
+  runAutomation(userId: string, id: string, deviceId?: string) {
+    const r = one(this.db, 'SELECT * FROM automations WHERE id = ? AND user_id = ?', id, userId);
+    if (!r) throw new HttpError(404, 'NOT_FOUND', 'automation not found');
+    if (!r.enabled) throw new HttpError(409, 'DISABLED', 'automation is disabled');
+    const steps = parseJson<string[]>(r.steps, []);
+    const runId = newId('run_');
+    run(this.db, "UPDATE automations SET last_run_at = ?, last_run_status = 'running' WHERE id = ?", nowIso(), id);
+    this.audit(userId, 'user', 'automation.run', { id, runId });
+    const setStatus = (s: string) => {
+      run(this.db, 'UPDATE automations SET last_run_status = ? WHERE id = ?', s, id);
+      const a = one(this.db, 'SELECT * FROM automations WHERE id = ?', id);
+      if (a) this.broadcast(userId, { type: 'automation.updated', automation: toAutomation(a) });
+    };
+    (async () => {
+      for (const step of steps) {
+        let out;
+        try {
+          out = this.createCommand(userId, { text: step, source: 'automation', deviceId, automationRunId: runId });
+        } catch (e) {
+          setStatus('failed');
+          return;
+        }
+        if (out.kind !== 'command') { setStatus('failed'); return; }
+        const cmdId = out.command.id;
+        const final = await this.waitFinal(cmdId, 5 * 60_000);
+        if (final !== 'completed') { setStatus(final ?? 'failed'); return; }
+      }
+      setStatus('completed');
+    })().catch((e) => log('error', 'automation failed', { err: String(e) }));
+    return { runId };
+  }
+
+  private waitFinal(id: string, maxMs: number): Promise<CommandStatus | null> {
+    const start = Date.now();
+    return new Promise((resolve) => {
+      const t = setInterval(() => {
+        const r = one(this.db, 'SELECT status FROM commands WHERE id = ?', id);
+        if (!r) { clearInterval(t); resolve(null); return; }
+        if (FINAL_STATUSES.includes(r.status)) { clearInterval(t); resolve(r.status); return; }
+        if (Date.now() - start > maxMs) { clearInterval(t); resolve('timed_out'); }
+      }, 300);
+    });
+  }
+}
+
+export function sanitizeSettings(s: UserSettings): UserSettings {
+  const clamp = (n: unknown, lo: number, hi: number, d: number) => (typeof n === 'number' && isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d);
+  const approval: Partial<Record<ActionName, boolean>> = {};
+  for (const [k, v] of Object.entries(s.approvalRequired ?? {})) if (k in ACTIONS) approval[k as ActionName] = !!v;
+  const contacts = (Array.isArray(s.whatsappContacts) ? s.whatsappContacts : [])
+    .filter((c) => c && typeof c.name === 'string' && typeof c.phone === 'string')
+    .map((c) => ({ name: c.name.trim().slice(0, 60), phone: c.phone.replace(/\D/g, '').slice(0, 15) }))
+    .filter((c) => c.name && c.phone.length >= 8)
+    .slice(0, 200);
+  return {
+    theme: s.theme === 'light' ? 'light' : 'dark',
+    responseLang: (['roman', 'ur', 'en'] as const).includes(s.responseLang) ? s.responseLang : 'roman',
+    recognitionLang: typeof s.recognitionLang === 'string' && /^[a-z]{2}(-[A-Z]{2})?$/.test(s.recognitionLang) ? s.recognitionLang : 'ur-PK',
+    voiceURI: typeof s.voiceURI === 'string' ? s.voiceURI.slice(0, 200) : null,
+    speechRate: clamp(s.speechRate, 0.5, 2, 1),
+    speechVolume: clamp(s.speechVolume, 0, 1, 1),
+    speechMuted: !!s.speechMuted,
+    reducedMotion: (['system', 'on', 'off'] as const).includes(s.reducedMotion) ? s.reducedMotion : 'system',
+    audioReactiveOrb: !!s.audioReactiveOrb,
+    notifications: { toasts: s.notifications?.toasts !== false, browser: !!s.notifications?.browser },
+    approvalRequired: approval,
+    screenshotRetentionHours: clamp(s.screenshotRetentionHours, 1, 24 * 30, 24),
+    historyRetentionDays: clamp(s.historyRetentionDays, 1, 3650, 90),
+    whatsappContacts: contacts,
+  };
+}

@@ -1,0 +1,15 @@
+{
+  "server_url": "https://your-relay.example.com",
+  "allowed_folders": ["downloads", "documents", "desktop", "pictures", "music", "videos"],
+  "extra_allowed_dirs": ["D:\\Work"],
+  "apps": ["chrome", "edge", "notepad", "calculator", "explorer", "vscode", "word", "excel", "powerpoint", "paint", "settings", "taskmgr"],
+  "capabilities": ["system", "apps", "folders", "files", "browser", "youtube", "screen", "input", "whatsapp"],
+  "screen_capture": true,
+  "browser": "chrome",
+  "whatsapp_mode": "web",
+  "search_max_depth": 6,
+  "search_max_entries": 150000,
+  "search_time_budget_s": 25.0,
+  "heartbeat_s": 20,
+  "log_level": "INFO"
+}
