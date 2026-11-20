@@ -40,12 +40,14 @@ export default function WhatsApp() {
             <p className="rounded-xl bg-field/40 p-3 text-xs leading-relaxed text-ink2 ring-1 ring-line/10">
               HUKM uses your own WhatsApp Web / Desktop on the laptop. It can open WhatsApp, read the <b className="text-ink">unread count</b> shown in the window title, and open a chat with a <b className="text-ink">pre-typed draft</b>. It never reads messages, never presses Send, and never sends in bulk.
             </p>
-            <div className="flex gap-2">
-              <button className="btn-ghost flex-1" disabled={!activeDevice?.online} onClick={() => runAction('whatsapp.open', {}, { label: 'WhatsApp kholo' })}>Open WhatsApp</button>
-              <button className="btn-primary flex-1" disabled={!activeDevice?.online || !!checking} onClick={() => runAction('whatsapp.check', {}, { label: 'WhatsApp check karo' })}>
-                {checking ? <Spinner /> : <RefreshCw className="h-4 w-4" />} Check
-              </button>
+            <div className="grid grid-cols-2 gap-2">
+              <button className="btn-primary" disabled={!activeDevice?.online} onClick={() => runAction('whatsapp.open', { mode: 'desktop' }, { label: 'WhatsApp Desktop kholo' })}>Open Desktop App</button>
+              <button className="btn-ghost" disabled={!activeDevice?.online} onClick={() => runAction('whatsapp.open', { mode: 'web' }, { label: 'WhatsApp Web kholo' })}>Open Web</button>
             </div>
+            <button className="btn-ghost w-full" disabled={!activeDevice?.online || !!checking} onClick={() => runAction('whatsapp.check', { mode: 'desktop' }, { label: 'WhatsApp unread count check karo' })}>
+              {checking ? <Spinner /> : <RefreshCw className="h-4 w-4" />} Check unread count
+            </button>
+            <p className="text-xs text-ink2">Voice: "WhatsApp kholo" = Desktop; "WhatsApp Web kholo" = Browser. Purane Windows Controller ko bhi update karna hoga. Actual message text reading abhi supported nahi.</p>
           </div>
         </Card>
 
