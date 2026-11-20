@@ -6,6 +6,7 @@
   hukm-controller status
   hukm-controller unpair          # forget local credentials (also remove it in the web app)
   hukm-controller config          # show config file location and current settings
+  hukm-controller autostart on|off|status  # opt-in, local-only Windows startup
 """
 from __future__ import annotations
 
@@ -23,6 +24,7 @@ from .communication.client import ControllerClient
 from .communication.pairing import PairingError, claim
 from .config import IS_WINDOWS, Config, data_dir
 from .security import credentials
+from .system import autostart
 
 BANNER = r"""
   ╦ ╦╦ ╦╦╔═╔╦╗  ╔═╗╦
@@ -131,6 +133,8 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("status", help="show pairing status")
     sub.add_parser("unpair", help="forget this laptop's credentials")
     sub.add_parser("config", help="show configuration")
+    ap = sub.add_parser("autostart", help="opt in/out of starting the controller at Windows sign-in")
+    ap.add_argument("state", choices=["on", "off", "status"])
     a = p.parse_args(argv)
 
     if a.cmd == "pair":
@@ -152,6 +156,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Config file: {Config.path()}\n")
         print(json.dumps(asdict(cfg), indent=2))
         return 0
+    if a.cmd == "autostart":
+        try:
+            if a.state == "on":
+                if not credentials.load_device():
+                    print("Pair this controller first, before enabling autostart.")
+                    return 1
+                path = autostart.enable()
+                print(f"Autostart ENABLED for your Windows sign-in. Visible minimized controller: {path}")
+            elif a.state == "off":
+                print("Autostart DISABLED." if autostart.disable() else "Autostart was already disabled.")
+            else:
+                print("Autostart is " + ("ENABLED" if autostart.is_enabled() else "DISABLED"))
+            return 0
+        except (OSError, RuntimeError) as e:
+            print(f"Autostart failed: {e}")
+            return 1
     if credentials.load_device():
         return do_run()
     return interactive_first_run()
