@@ -1,4 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { BookOpen, Check, ExternalLink, FolderKanban, MessageSquare, Plus, Save, Send, Trash2 } from 'lucide-react';
 import { get, post, patch, del } from '../services/api';
 
@@ -125,6 +126,9 @@ export default function Projects(){
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div><h2 className="font-display text-xl font-bold">{project.name}</h2><p className="text-xs text-ink2">Project-specific AI context and saved history</p></div>
           <div className="flex gap-2">
+            <Link to={'/chat?projectId='+encodeURIComponent(project.id)} className="btn-primary px-3 py-2 text-xs">
+              <MessageSquare size={15}/> Run HUKM Task
+            </Link>
             {project.chatgptProjectUrl&&<a href={project.chatgptProjectUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost px-3 py-2 text-xs"><ExternalLink size={15}/> Open ChatGPT Project</a>}
             <button className="btn-ghost px-3 py-2 text-xs text-bad" onClick={()=>void remove()} disabled={saving} title="Delete Project"><Trash2 size={16}/></button>
           </div>
@@ -136,7 +140,7 @@ export default function Projects(){
           </button>)}
         </div>
         {tab==='chat'&&<div>
-          <p className="mb-3 text-xs text-ink2">Gemini uses this project's saved instructions and notes for conversation. This chat does not directly execute laptop actions.</p>
+          <p className="mb-3 text-xs text-ink2">Gemini receives this project's saved instructions and notes as context. No laptop action is executed by this chat; use Run HUKM Task for supervised actions.</p>
           <div className="scroll-thin mb-3 flex max-h-[55vh] min-h-[270px] flex-col gap-3 overflow-y-auto rounded-xl bg-field/30 p-3">
             {messages.length===0&&<p className="py-14 text-center text-sm text-ink2">Start a conversation in this Project. Messages will be saved here.</p>}
             {messages.map(m=><div key={m.id} className={`max-w-[88%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${m.role==='user'?'self-end bg-blue text-white':'self-start bg-field ring-1 ring-line/15'}`}>{m.content}</div>)}
