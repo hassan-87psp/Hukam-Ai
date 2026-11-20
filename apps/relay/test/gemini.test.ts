@@ -36,7 +36,7 @@ describe('Gemini chat-only integration', () => {
         }) as typeof fetch,
       },
     );
-    expect(requestUrl).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent');
+    expect(requestUrl).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent');
     expect(requestUrl).not.toContain('FAKE_TEST_SECRET');
     expect(authHeader).toBe('FAKE_TEST_SECRET');
     expect(request.contents).toEqual([
