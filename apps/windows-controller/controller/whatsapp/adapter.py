@@ -23,9 +23,17 @@ def open_whatsapp(mode: str, browser_pref: str) -> dict:
     """Prefer the installed WhatsApp app. Never silently swap to Chrome."""
     if mode == "desktop":
         try:
+            before = windows.snapshot()
             launcher.open_uri("whatsapp:")
-            return {"opened": "desktop", "messagesRead": False}
-        except (OSError, launcher.LaunchError) as exc:
+            procs = ["WhatsApp.exe", "WhatsAppDesktop.exe", "ApplicationFrameHost.exe", "msedgewebview2.exe"]
+            seen = windows.wait_for_window(before, processes=procs, title_contains="WhatsApp", timeout=3)
+            focused = windows.focus_by_process(procs, title_contains="WhatsApp") if seen != "unverifiable" else None
+            return {
+                "opened": "desktop", "messagesRead": False,
+                "foreground": None if seen == "unverifiable" else focused is not None,
+                "verified": None if seen == "unverifiable" else (seen is not None or focused is not None),
+            }
+        except (OSError, launcher.LaunchError):
             return {
                 "opened": None,
                 "needsChoice": True,
