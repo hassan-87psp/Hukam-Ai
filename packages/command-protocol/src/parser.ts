@@ -186,6 +186,19 @@ export function parseCommand(input: string): ParseResult {
     return cmd('command.cancel', {}, 'cancel');
   if (/\b(command|kaam|task)\b/.test(t) && /\b(band karo|band kar do|stop)\b/.test(t)) return cmd('command.cancel', {}, 'cancel-band');
 
+  // The first operator foundation: explicit, one-step browser controls.
+  // No model-generated coordinates and no implicit website submissions.
+  // The relay requires a separate owner approval for every browser input.
+  const click = t.match(/^(?:browser\s+)?(?:click|tap)\s+(?:at\s+)?(\d{1,4})[\s,]+(\d{1,4})(?:\s+(?:karo|kar do))?$/);
+  if (click) return cmd('browser.control', { kind: 'click', x: Number(click[1]), y: Number(click[2]) }, 'browser-click');
+  const typed = input.trim().match(/^(?:browser\s+)?(?:type|likho)(?:\s+text)?\s*:\s*(.{1,1000})$/is);
+  if (typed) return cmd('browser.control', { kind: 'type', text: typed[1].trim() }, 'browser-type');
+  const scroll = t.match(/^(?:browser\s+)?scroll\s+(up|down)(?:\s+(\d))?(?:\s+karo)?$/);
+  if (scroll) return cmd('browser.control',
+    { kind: 'scroll', steps: (scroll[1] === 'up' ? 1 : -1) * Number(scroll[2] ?? 2) }, 'browser-scroll');
+  const press = t.match(/^(?:browser\s+)?press\s+(enter|tab|escape|backspace|home|end|arrowdown|arrowup|ctrl\+l|ctrl\+a)$/);
+  if (press) return cmd('browser.control', { kind: 'key', key: press[1] }, 'browser-key');
+
   // WhatsApp drafts are a conversation: missing recipient/content is a question.
   // Actual sending is never performed; the existing approval only prepares a draft.
   const compose = parseCompose(input, t);
