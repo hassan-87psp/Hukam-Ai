@@ -4,6 +4,7 @@ import {
   clarifyMessage,
   failureMessage,
   parseCommand,
+  parseWhatsAppChoice,
   pick,
   replyMessage,
   STATUS_MESSAGES,
@@ -376,7 +377,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Immediate local acknowledgement from the same deterministic parser the relay uses.
       const local = parseCommand(t);
       const hasDevice = devices.length > 0;
-      if (local.kind === 'command' && local.action !== 'command.cancel' && hasDevice) agent(ackMessage(local.action, local.args), 'info');
+      // A choice like "Desktop wala" otherwise looks like "open Desktop folder".
+      const choosingWhatsApp = pendingWhatsAppChoice && !!parseWhatsAppChoice(t);
+      if (local.kind === 'command' && local.action !== 'command.cancel' && hasDevice && !choosingWhatsApp)
+        agent(ackMessage(local.action, local.args), 'info');
       if (local.kind === 'command' && !hasDevice && local.action !== 'command.cancel') {
         agent(STATUS_MESSAGES.noDevice, 'warn');
         return;
@@ -386,7 +390,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         const out = await post('/api/commands', { text: t, source, clientRequestId: uid(), deviceId: activeDevice?.id });
         // A one-word follow-up ("Desktop wala") is resolved on the relay,
         // so it has no optimistic local parser acknowledgement.
-        if (out.kind === 'command' && local.kind !== 'command')
+        if (out.kind === 'command' && (local.kind !== 'command' || choosingWhatsApp))
           agent(ackMessage(out.command.action, out.command.args), 'info');
         handleCreated(out, { silentAck: true });
       } catch (e) {
@@ -397,7 +401,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSubmitting(false);
       }
     },
-    [activeDevice, addChat, agent, devices.length, handleCreated],
+    [activeDevice, addChat, agent, devices.length, handleCreated, pendingWhatsAppChoice],
   );
 
   const runAction = useCallback(
