@@ -123,6 +123,8 @@ describe('contextual follow-up', () => {
     expect(resolveDialogue(state('search-what'), 'message bhejo', contacts)).toMatchObject({ handled: false });
     expect(resolveDialogue(state('message-contact'), 'Chrome kholo', contacts)).toMatchObject({ handled: false });
     expect(resolveDialogue(state('whatsapp-choice'), 'Notepad kholo', contacts)).toMatchObject({ handled: false });
+    expect(resolveDialogue(state('youtube-choice'), 'Whatsapp per msg dakho kis ka aya howa ha', contacts))
+      .toMatchObject({ handled: false });
   });
 
   it('has safe quick replies without ever suggesting a Send action', () => {
