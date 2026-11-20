@@ -16,7 +16,8 @@ function AgentBubble({ m }: { m: Extract<ChatMessage, { kind: 'agent' }> }) {
     <div className="flex animate-fade-up items-end gap-2.5">
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue/15 ring-1 ring-ice/25"><BrainMark className="h-5 w-5" /></span>
       <div className={cx('glass max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 ring-1', tone)}>
-        <p className={cx('text-[15px] leading-relaxed', settings.responseLang === 'ur' && 'urdu text-right')} lang={settings.responseLang === 'ur' ? 'ur' : undefined}>{text}</p>
+        {m.provider === 'gemini' && <span className="mb-1 inline-block text-[10px] font-medium tracking-wide text-ice">GEMINI AI</span>}
+        <p className={cx('whitespace-pre-wrap break-words text-[15px] leading-relaxed', settings.responseLang === 'ur' && m.provider !== 'gemini' && 'urdu text-right')} lang={settings.responseLang === 'ur' && m.provider !== 'gemini' ? 'ur' : undefined}>{text}</p>
         <div className="mt-1 flex items-center justify-between gap-3">
           <span className="text-[10px] text-ink2">{clock(m.at)}</span>
           <button onClick={() => say(m.msg, true)} className="text-ink2 hover:text-ice" aria-label="Speak this reply"><Volume2 className="h-3.5 w-3.5" /></button>
@@ -50,7 +51,7 @@ export default function Chat() {
       <div className="flex items-center justify-between py-3">
         <div>
           <h1 className="font-display text-xl font-bold">AI Chat</h1>
-          <p className="text-xs text-ink2">Messages, proposed actions and real results from your laptop.</p>
+          <p className="text-xs text-ink2">Chat naturally with Gemini. Laptop commands still use HUKM's permission-controlled controller.</p>
         </div>
         {chat.length > 0 && (
           <button className="btn-ghost px-3 py-2 text-xs" onClick={clearChat}><Trash2 className="h-4 w-4" /> Clear</button>
@@ -58,7 +59,7 @@ export default function Chat() {
       </div>
       <div className="flex-1 space-y-3 pb-4">
         {chat.length === 0 && (
-          <EmptyState icon={<Bot className="h-5 w-5" />} title="Start a conversation" body="Try “Downloads folder kholo”, “Notepad open karo”, “Invoice PDF search karo” or “YouTube par Gold analysis play karo”." />
+          <EmptyState icon={<Bot className="h-5 w-5" />} title="Ask HUKM AI anything" body="Roman Urdu mein message likhein, jaise 'Aaj kya seekhoon?' Ya laptop command: 'Notepad kholo'." />
         )}
         {chat.map((m) => {
           if (m.kind === 'user') return <UserBubble key={m.id} m={m} />;
@@ -83,7 +84,8 @@ export default function Chat() {
       )}
       <div className="sticky bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 -mx-1 pb-3 pt-2 lg:bottom-0 lg:pb-6">
         <div className="pointer-events-none absolute inset-x-0 -top-6 bottom-0 bg-gradient-to-t from-bg via-bg/95 to-transparent" aria-hidden />
-        <div className="relative rounded-3xl p-1"><CommandComposer placeholder="Type or speak a command…" /></div>
+        <div className="relative rounded-3xl p-1"><CommandComposer placeholder="HUKM AI ko message likhein…" /></div>
+        <p className="relative mt-1 px-3 text-center text-[10px] text-ink2">Gemini replies ke liye aapka message aur recent AI conversation Google ko bheji jaati hai. Laptop files ya WhatsApp chats automatically share nahi hote.</p>
       </div>
     </div>
   );
