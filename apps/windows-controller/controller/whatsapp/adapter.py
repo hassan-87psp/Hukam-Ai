@@ -20,14 +20,22 @@ TITLE_RE = re.compile(r"^\((\d+)\)\s*WhatsApp\b", re.I)
 
 
 def open_whatsapp(mode: str, browser_pref: str) -> dict:
+    """Prefer the installed WhatsApp app. Never silently swap to Chrome."""
     if mode == "desktop":
         try:
             launcher.open_uri("whatsapp:")
-            return {"opened": "desktop"}
-        except Exception:
-            pass
+            return {"opened": "desktop", "messagesRead": False}
+        except (OSError, launcher.LaunchError) as exc:
+            return {
+                "opened": None,
+                "needsChoice": True,
+                "note": "WhatsApp Desktop could not be launched. Install it or say 'WhatsApp Web kholo' to use the browser.",
+                "messagesRead": False,
+            }
+    if mode != "web":
+        raise launcher.LaunchError("WhatsApp mode must be desktop or web")
     launcher.open_url("https://web.whatsapp.com/", browser_pref)
-    return {"opened": "web"}
+    return {"opened": "web", "messagesRead": False}
 
 
 def unread_from_titles(titles: list[str]) -> int | None:
