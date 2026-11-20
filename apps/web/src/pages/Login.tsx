@@ -1,4 +1,4 @@
-import { KeyRound, LogIn, ShieldCheck } from 'lucide-react';
+import { LogIn, ShieldCheck } from 'lucide-react';
 import { lazy, Suspense, useState } from 'react';
 import Logo from '../components/Logo';
 import { Spinner } from '../components/ui';
@@ -42,15 +42,10 @@ export default function Login() {
         <form onSubmit={submit} className="glass-strong w-full max-w-md animate-fade-up rounded-3xl p-7">
           <div className="mb-7 flex justify-center lg:justify-start"><Logo /></div>
           <h1 className="font-display text-2xl font-bold">{isSetup ? 'Create your owner account' : 'Welcome back'}</h1>
-          <p className="mt-1 text-sm text-ink2">{isSetup ? 'First run. Only one owner account can be created on this relay.' : 'Sign in to control your devices.'}</p>
+          <p className="mt-1 text-sm text-ink2">{isSetup ? 'Create your private test account with your email and password.' : 'Sign in to control your devices.'}</p>
           <div className="mt-6 space-y-4">
             {isSetup && (
               <>
-                <div>
-                  <label className="label" htmlFor="code">Setup code</label>
-                  <input id="code" className="input font-mono tracking-widest" placeholder="XXXX-XXXX" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} required autoComplete="off" />
-                  <p className="mt-1.5 flex items-start gap-1.5 text-xs text-ink2"><KeyRound className="mt-0.5 h-3.5 w-3.5 shrink-0" /> Printed in the relay server’s console on first start. It stops strangers from claiming your relay.</p>
-                </div>
                 <div>
                   <label className="label" htmlFor="name">Your name</label>
                   <input id="name" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoComplete="name" />
