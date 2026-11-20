@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { BookOpen, Check, ExternalLink, FolderKanban, MessageSquare, Plus, Save, Send, Trash2 } from 'lucide-react';
 import { get, post, patch, del } from '../services/api';
 import { useStore } from '../services/store';
@@ -17,6 +17,7 @@ function errMsg(e:unknown) { return e instanceof Error ? e.message : String(e); 
 
 export default function Projects(){
   const {runAction}=useStore();
+  const navigate=useNavigate();
   const [items,setItems]=useState<Project[]>([]);
   const [selected,setSelected]=useState<string|null>(null);
   const [edit,setEdit]=useState({...empty});
@@ -131,9 +132,12 @@ export default function Projects(){
             <Link to={'/chat?projectId='+encodeURIComponent(project.id)} className="btn-primary px-3 py-2 text-xs">
               <MessageSquare size={15}/> Run HUKM Task
             </Link>
-            {project.chatgptProjectUrl&&<button onClick={()=>void runAction('browser.profile_open',{
-                url:project.chatgptProjectUrl, profile:project.chromeProfile
-              },{label:'Open '+project.name+' in Chrome profile '+project.chromeProfile})}
+            {project.chatgptProjectUrl&&<button onClick={()=>void (async()=>{
+                const out=await runAction('browser.profile_open',{
+                  url:project.chatgptProjectUrl, profile:project.chromeProfile
+                },{label:'Open '+project.name+' in Chrome profile '+project.chromeProfile});
+                if(out) navigate('/chat?projectId='+encodeURIComponent(project.id));
+              })()}
               disabled={!/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile)}
               title="Requires Default or Profile N configured in this Project"
               className="btn-ghost px-3 py-2 text-xs"><ExternalLink size={15}/> Open in saved Chrome profile</button>}
