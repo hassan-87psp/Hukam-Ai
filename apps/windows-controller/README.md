@@ -1,4 +1,4 @@
-HUKM AI Windows Controller v1.2.2 — Local Install & Safety
+HUKM AI Windows Controller v1.3.0 — Local Install & Safety
 ======================================================
 
 This is a Windows controller that lets your own authorised HUKM AI account
@@ -11,7 +11,7 @@ This version fixes the frozen EXE startup error: attempted relative import with 
 2. Extract this ZIP. Double-click hukm-controller.exe. If prompted by
    Windows SmartScreen, verify you trust the file from your own HUKM project.
 3. Keep the visible Controller window open to allow remote control.
-4. In HUKM AI > Devices, confirm the controller version is 1.2.2.
+4. In HUKM AI > Devices, confirm the controller version is 1.3.0.
 5. If not paired, go to Devices > Pair and follow on-screen instructions.
    NEVER share your device token or Windows login password.
 
@@ -28,9 +28,17 @@ BROWSER OPERATOR (EXPERIMENTAL - APPROVAL REQUIRED EVERY TIME):
 - Only the foreground Chrome, Edge or Firefox window accepts this bounded input. Windows desktop, terminal and other apps are not directly controlled through this action.
 - HUKM shows exactly what will be typed/clicked and waits for explicit approval. Screenshot approval remains separate.
 - Successful delivery is not proof a website task finished. The user verifies results, and third-party services may restrict automation.
-- On a laptop, close the old Controller process before opening v1.2.2; existing encrypted device pairing is preserved.
+- On a laptop, close the old Controller process before opening v1.3.0; existing encrypted device pairing is preserved.
 - Don't type passwords or recovery codes in remote HUKM chat.
 - This is groundwork, not yet an autonomous visual agent or calendar/WhatsApp end-to-end workflow.
+
+CHROME PROFILE AND TASK INPUT (V1.3.0):
+- Saved Project Chrome profile must be the real directory: Default or Profile 1 to Profile 99.
+- HUKM checks the profile directory exists under LOCALAPPDATA before launching Chrome with that profile.
+- Supported destinations for this action are ChatGPT, Google Calendar and Outlook Calendar. Login/page verification is not yet available.
+- Notepad typing requires a visible foreground Notepad.exe and explicit approval. Text is delivered, not independently verified.
+- Compound tasks may be planned with Gemini and executed one step at a time only AFTER review; each risky action needs its own approval.
+- This does not yet provide autonomous UI interpretation, full calendar event creation, WhatsApp reply sending or ChatGPT image/download workflows.
 
 WHATSAPP (EXPERIMENTAL):
 - "WhatsApp kis kis ka message aaya hai?" triggers an approval-gated Windows UI Automation check of visible unread sender titles.
