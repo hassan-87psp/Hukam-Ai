@@ -665,9 +665,11 @@ export class Relay {
         if (p.kind !== 'command') throw new HttpError(400, 'BAD_STEP', `step not understood: "${s}"`);
         if (p.action === 'whatsapp.compose' || p.action === 'system.lock') throw new HttpError(400, 'BAD_STEP', `step not allowed in automations: "${s}"`);
       }
+      const schedule = parseDailySchedule(body.schedule);
       id = newId('au_');
-      run(this.db, 'INSERT INTO automations (id, user_id, name, description, steps, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)',
-        id, userId, name, description, JSON.stringify(steps), enabled === false ? 0 : 1, now, now);
+      run(this.db, 'INSERT INTO automations (id, user_id, name, description, steps, enabled, created_at, updated_at, schedule_enabled, schedule_time, schedule_timezone) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+        id, userId, name, description, JSON.stringify(steps), enabled === false ? 0 : 1, now, now,
+        schedule.enabled ? 1 : 0, schedule.time, schedule.timezone);
     } else {
       const cur = one(this.db, 'SELECT * FROM automations WHERE id = ? AND user_id = ?', id, userId);
       if (!cur) throw new HttpError(404, 'NOT_FOUND', 'automation not found');
@@ -679,9 +681,18 @@ export class Relay {
           if (p.action === 'whatsapp.compose' || p.action === 'system.lock') throw new HttpError(400, 'BAD_STEP', `step not allowed in automations: "${s}"`);
         }
       }
+      const schedule = parseDailySchedule(body.schedule, {
+        enabled: !!cur.schedule_enabled,
+        time: cur.schedule_time ?? null,
+        timezone: cur.schedule_timezone ?? 'Asia/Kuala_Lumpur',
+      });
       run(this.db, 'UPDATE automations SET name = ?, description = ?, steps = ?, enabled = ?, updated_at = ? WHERE id = ?',
         name || cur.name, body.description !== undefined ? description : cur.description, steps ? JSON.stringify(steps) : cur.steps,
         enabled === null ? cur.enabled : enabled ? 1 : 0, now, id);
+      if (body.schedule !== undefined) {
+        run(this.db, 'UPDATE automations SET schedule_enabled = ?, schedule_time = ?, schedule_timezone = ?, last_scheduled_day = NULL WHERE id = ?',
+          schedule.enabled ? 1 : 0, schedule.time, schedule.timezone, id);
+      }
     }
     this.audit(userId, 'user', 'automation.saved', { id, name });
     const a = toAutomation(one(this.db, 'SELECT * FROM automations WHERE id = ?', id)!);
