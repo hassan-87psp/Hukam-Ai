@@ -2,7 +2,7 @@ import { CalendarClock, CheckCircle2, Pencil, Play, Plus, Trash2, XCircle, Zap }
 import { useMemo, useState } from 'react';
 import { parseCommand } from '../../../../packages/command-protocol/src/index';
 import type { Automation } from '../../../../packages/shared-types/src/index';
-import { Badge, Card, EmptyState, Modal, NotConnected, PageHeader, Spinner, Toggle } from '../components/ui';
+import { Badge, Card, EmptyState, Modal, PageHeader, Spinner, Toggle } from '../components/ui';
 import { PageFrame } from '../layouts/AppShell';
 import { ACTION_LABEL, describeArgs, timeAgo } from '../lib/format';
 import { del, patch, post, useStore } from '../services/store';
@@ -20,16 +20,24 @@ function Editor({ open, onClose, initial }: { open: boolean; onClose: () => void
   const [desc, setDesc] = useState(initial?.description ?? '');
   const [steps, setSteps] = useState((initial?.steps ?? []).join('\n'));
   const [busy, setBusy] = useState(false);
+  const [scheduleOn, setScheduleOn] = useState(initial?.schedule?.enabled ?? false);
+  const [scheduleTime, setScheduleTime] = useState(initial?.schedule?.time ?? '09:00');
+  const [timezone, setTimezone] = useState(initial?.schedule?.timezone ?? 'Asia/Kuala_Lumpur');
   const lines = steps.split('\n').map((s) => s.trim()).filter(Boolean);
   const parsed = useMemo(() => lines.map((l) => ({ l, p: parseCommand(l) })), [steps]); // eslint-disable-line react-hooks/exhaustive-deps
-  const valid = name.trim() && lines.length > 0 && lines.length <= 15 && parsed.every((x) => x.p.kind === 'command' && x.p.action !== 'whatsapp.compose' && x.p.action !== 'system.lock');
+  const valid = name.trim() && lines.length > 0 && lines.length <= 15 &&
+    parsed.every((x) => x.p.kind === 'command' && x.p.action !== 'whatsapp.compose' && x.p.action !== 'system.lock') &&
+    (!scheduleOn || /^([01]\\d|2[0-3]):[0-5]\\d$/.test(scheduleTime));
   return (
     <Modal open={open} onClose={onClose} title={initial?.id ? 'Edit automation' : 'New automation'} wide
       footer={<><button className="btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn-primary" disabled={!valid || busy} onClick={async () => {
           setBusy(true);
           try {
-            const body = { name: name.trim(), description: desc.trim(), steps: lines };
+            const body = {
+              name: name.trim(), description: desc.trim(), steps: lines,
+              schedule: { enabled: scheduleOn, time: scheduleTime, timezone },
+            };
             if (initial?.id) await patch(`/api/automations/${initial.id}`, body);
             else await post('/api/automations', body);
             toast({ title: 'Automation saved', tone: 'ok' });
@@ -63,6 +71,20 @@ function Editor({ open, onClose, initial }: { open: boolean; onClose: () => void
             })}
           </ul>
         )}
+        <div className="rounded-xl border border-line/20 bg-field/30 p-4">
+          <Toggle checked={scheduleOn} onChange={setScheduleOn} label="Daily schedule (optional)" description="Off by default. Only enable when you want HUKM to run these commands each day." />
+          {scheduleOn && <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div><label htmlFor="auto-time" className="label">Daily time</label>
+              <input id="auto-time" type="time" className="input" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)} />
+            </div>
+            <div><label htmlFor="auto-zone" className="label">Timezone</label>
+              <select id="auto-zone" className="input" value={timezone} onChange={(e) => setTimezone(e.target.value)}>
+                {['Asia/Kuala_Lumpur', 'Asia/Karachi', 'Asia/Dubai', 'Europe/London', 'America/New_York', 'UTC'].map((tz) => <option value={tz} key={tz}>{tz}</option>)}
+              </select>
+            </div>
+          </div>}
+          <p className="mt-2 text-xs text-ink2">Free Render can sleep; this is best-effort only, not guaranteed to run at the exact minute. If an action requires approval, it still waits for your approval.</p>
+        </div>
         <p className="text-xs text-ink2">Steps run one after another and stop at the first failure. Messaging and locking are not allowed in automations; steps that need approval wait for it.</p>
       </div>
     </Modal>
@@ -89,6 +111,7 @@ export default function Automations() {
                   <div className="min-w-0">
                     <p className="font-display font-semibold">{a.name}</p>
                     {a.description && <p className="text-sm text-ink2">{a.description}</p>}
+                    {a.schedule?.enabled && a.schedule.time && <p className="mt-1 flex items-center gap-1 text-xs text-blue2"><CalendarClock className="h-3.5 w-3.5" /> Daily {a.schedule.time} · {a.schedule.timezone}</p>}
                   </div>
                 </div>
                 <Toggle checked={a.enabled} onChange={async (v) => { await patch(`/api/automations/${a.id}`, { enabled: v }); }} />
@@ -136,7 +159,10 @@ export default function Automations() {
         ))}
       </div>
       <div className="mt-8 grid gap-4 lg:grid-cols-2">
-        <NotConnected title="Scheduled runs" body="Running automations on a timetable is not built in Version 1. Nothing runs on its own — every run starts from this page." />
+        <Card className="p-5">
+          <p className="flex items-center gap-2 font-display font-semibold"><CalendarClock className="h-5 w-5 text-ice" /> Daily schedules</p>
+          <p className="mt-2 text-sm text-ink2">Open any automation and enable its Daily schedule to select a local time and timezone. Existing automations remain unscheduled unless you opt in. Free hosting can sleep, so missed times are not replayed.</p>
+        </Card>
         <Card className="p-5">
           <p className="flex items-center gap-2 font-display font-semibold"><CalendarClock className="h-5 w-5 text-ice" /> Automation history</p>
           <ul className="mt-3 space-y-1 text-sm">
