@@ -135,9 +135,11 @@ export function pickVoice(voices: SpeechSynthesisVoice[], uri: string | null, la
     if (v) return v;
   }
   const english = () => (
+    voices.find((v) => v.lang.toLowerCase() === 'en-pk' && voiceGender(v) === 'female') ??
+    voices.find((v) => v.lang.toLowerCase() === 'en-in' && voiceGender(v) === 'female') ??
+    voices.find((v) => v.lang.toLowerCase().startsWith('en') && voiceGender(v) === 'female') ??
     voices.find((v) => v.lang.toLowerCase() === 'en-pk') ??
     voices.find((v) => v.lang.toLowerCase() === 'en-in') ??
-    voices.find((v) => v.lang.toLowerCase().startsWith('en') && voiceGender(v) === 'female') ??
     voices.find((v) => v.lang.toLowerCase().startsWith('en') && v.default) ??
     voices.find((v) => v.lang.toLowerCase().startsWith('en')) ??
     voices.find((v) => v.lang.toLowerCase().startsWith('hi')) ??
