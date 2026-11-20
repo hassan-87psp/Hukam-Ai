@@ -50,6 +50,15 @@ describe('app intents — same intent for different phrasing', () => {
   it('excel app (not a file)', () => expect(c('Excel kholo').args).toEqual({ app: 'excel' }));
 });
 
+describe('operator website shortcuts', () => {
+  it('opens Google Calendar in the browser', () => {
+    expect(c('Google Calendar kholo')).toMatchObject({ action: 'web.open', args: { url: 'https://calendar.google.com/calendar/u/0/r' } });
+  });
+  it('opens Outlook Calendar in the browser', () => {
+    expect(c('Outlook Calendar kholo')).toMatchObject({ action: 'web.open', args: { url: 'https://outlook.office.com/calendar/' } });
+  });
+});
+
 describe('folders', () => {
   it('Downloads folder kholo', () => expect(c('Downloads folder kholo.')).toMatchObject({ action: 'folder.open', args: { folder: 'downloads' } }));
   it('polite mixed', () => expect(c('Please mera downloads folder open kar do')).toMatchObject({ action: 'folder.open', args: { folder: 'downloads' } }));
