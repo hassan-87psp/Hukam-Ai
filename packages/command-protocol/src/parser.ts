@@ -177,12 +177,12 @@ export function parseCommand(input: string): ParseResult {
   const compose = parseCompose(input, t);
   if (compose) return cmd('whatsapp.compose', compose, 'whatsapp-compose');
 
-  // Reading personal WhatsApp message bodies is not implemented.
-  // Never misrepresent unread-chat counts as reading actual message content.
+  // Read only the CURRENT VISIBLE WhatsApp Desktop chat. The laptop speaks
+  // offline, with no message text sent to the relay. Always requires approval.
   if (/\b(whatsapp|messages?|chats?)\b/.test(t) &&
       /\b(read|parho|parh|parhke|parhkar|padho|pad|sunao|sunana)\b/.test(t) &&
       /\b(messages?|msgs?|chats?)\b/.test(t))
-    return { kind: 'unsupported', reason: 'whatsapp-message-read', normalized: t };
+    return cmd('whatsapp.read_visible', {}, 'whatsapp-read-visible');
 
   // "<name> ke naye messages batao" — reads unread-chat counts only.
   if (/\b(unread|naye|nayi|new) (messages|message|chats)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-unread');
