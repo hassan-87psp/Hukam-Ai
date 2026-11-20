@@ -55,17 +55,16 @@ def test_check_openable_blocks_outside_and_executables(sandbox, tmp_path):
 
 
 def test_notepad_multiline_typing_validation_and_simulation(sandbox):
-    data = v.validate("notepad.type", {"text": "1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9"})
-    assert data["text"].count("\\n") == 8
+    data = v.validate("notepad.type", {"text": chr(10).join(str(i) for i in range(1, 10))})
+    assert data["text"].splitlines() == [str(i) for i in range(1, 10)]
     result = run(make_exec(), "notepad.type", data)
     assert result.ok
     assert result.result["inputDelivered"] is True
     assert result.result["verified"] is False
     with pytest.raises(v.ValidationError):
-        v.validate("notepad.type", {"text": "cmd\\x00"})
+        v.validate("notepad.type", {"text": "cmd" + chr(0)})
     with pytest.raises(v.ValidationError):
         v.validate("notepad.type", {"text": ""})
-
 
 def test_chrome_profile_launch_rejects_wrong_profile_and_site(sandbox):
     from controller.browser import profiles
