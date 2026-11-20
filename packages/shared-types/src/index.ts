@@ -56,6 +56,7 @@ export type ActionName =
   | 'whatsapp.open'
   | 'whatsapp.check'
   | 'whatsapp.compose'
+  | 'whatsapp.read_visible'
   | 'command.cancel';
 
 export type Lang = 'roman' | 'ur' | 'en';
