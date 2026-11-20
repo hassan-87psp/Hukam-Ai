@@ -191,8 +191,10 @@ export function parseCommand(input: string): ParseResult {
   if (/\bwhatsapp\b/.test(t)) {
     const mode = /\b(web|browser|chrome)\b/.test(t) ? 'web' : 'desktop';
     if (/\b(unread|naye|nayi|messages|message|check|dekho|dekh|batao|dikhao|kitne|koi)\b/.test(t)) return cmd('whatsapp.check', { mode }, 'whatsapp-check');
-    if (OPEN.test(t) || t === 'whatsapp' || t === 'whatsapp desktop' || t === 'whatsapp web')
-      return cmd('whatsapp.open', { mode }, 'whatsapp-open');
+    if (OPEN.test(t) || t === 'whatsapp' || t === 'whatsapp desktop' || t === 'whatsapp web') {
+      if (mode === 'web') return cmd('web.open', { url: 'https://web.whatsapp.com/' }, 'whatsapp-web-open');
+      return cmd('whatsapp.open', { mode: 'desktop' }, 'whatsapp-desktop-open');
+    }
     return cmd('whatsapp.check', { mode }, 'whatsapp-default');
   }
 
