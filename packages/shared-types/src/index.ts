@@ -156,7 +156,7 @@ export interface UserSettings {
 export const DEFAULT_SETTINGS: UserSettings = {
   theme: 'dark',
   responseLang: 'roman',
-  recognitionLang: 'ur-PK',
+  recognitionLang: 'en-PK',
   voiceURI: null,
   speechRate: 1,
   speechVolume: 1,
