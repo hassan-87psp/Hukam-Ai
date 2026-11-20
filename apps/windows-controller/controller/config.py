@@ -66,11 +66,40 @@ class Config:
                         setattr(cfg, k, v)
             except (OSError, ValueError):
                 pass
-        cfg.capabilities = [c for c in cfg.capabilities if c in ALL_CAPABILITIES]
-        cfg.apps = [a for a in cfg.apps if a in DEFAULT_APPS]
-        cfg.allowed_folders = [f for f in cfg.allowed_folders if f in DEFAULT_ALLOWED_FOLDERS + ["home"]]
+        # A malformed or old config must never crash the controller or create
+        # an unbounded heartbeat loop. Keep explicitly disabled capabilities.
+        def clean_list(value: object, allowed: list[str], fallback: list[str]) -> list[str]:
+            if not isinstance(value, list):
+                return list(fallback)
+            return list(dict.fromkeys(x for x in value if isinstance(x, str) and x in allowed))
+
+        cfg.capabilities = clean_list(cfg.capabilities, ALL_CAPABILITIES, ALL_CAPABILITIES)
+        cfg.apps = clean_list(cfg.apps, DEFAULT_APPS, DEFAULT_APPS)
+        cfg.allowed_folders = clean_list(
+            cfg.allowed_folders, DEFAULT_ALLOWED_FOLDERS + ["home"], DEFAULT_ALLOWED_FOLDERS
+        )
+        if not isinstance(cfg.extra_allowed_dirs, list):
+            cfg.extra_allowed_dirs = []
+        cfg.extra_allowed_dirs = [
+            x for x in cfg.extra_allowed_dirs if isinstance(x, str) and x and len(x) <= 1024
+        ][:30]
+        if cfg.browser not in ("default", "chrome", "edge"):
+            cfg.browser = "default"
+        if cfg.whatsapp_mode not in ("desktop", "web"):
+            cfg.whatsapp_mode = "desktop"
+        cfg.screen_capture = cfg.screen_capture is True
         if not cfg.screen_capture and "screen" in cfg.capabilities:
             cfg.capabilities.remove("screen")
+        def bounded_number(v: object, low: float, high: float, default: float) -> float:
+            return float(v) if type(v) in (int, float) and low <= float(v) <= high else default
+        cfg.heartbeat_s = int(bounded_number(cfg.heartbeat_s, 10, 120, 20))
+        cfg.search_max_depth = int(bounded_number(cfg.search_max_depth, 1, 10, 6))
+        cfg.search_max_entries = int(bounded_number(cfg.search_max_entries, 1000, 300000, 150000))
+        cfg.search_time_budget_s = bounded_number(cfg.search_time_budget_s, 1, 60, 25)
+        if cfg.log_level not in ("DEBUG", "INFO", "WARNING", "ERROR"):
+            cfg.log_level = "INFO"
+        if not isinstance(cfg.server_url, str):
+            cfg.server_url = ""
         return cfg
 
     def save(self) -> None:
