@@ -137,6 +137,7 @@ export function pickVoice(voices: SpeechSynthesisVoice[], uri: string | null, la
   const english = () => (
     voices.find((v) => v.lang.toLowerCase() === 'en-pk') ??
     voices.find((v) => v.lang.toLowerCase() === 'en-in') ??
+    voices.find((v) => v.lang.toLowerCase().startsWith('en') && voiceGender(v) === 'female') ??
     voices.find((v) => v.lang.toLowerCase().startsWith('en') && v.default) ??
     voices.find((v) => v.lang.toLowerCase().startsWith('en')) ??
     voices.find((v) => v.lang.toLowerCase().startsWith('hi')) ??
@@ -159,9 +160,32 @@ export function textForVoice(m: Localized, voice: SpeechSynthesisVoice | null, l
   return m.en;
 }
 
-let lastUtterance: { text: string; voice: SpeechSynthesisVoice | null; rate: number; volume: number } | null = null;
+let lastUtterance: {
+  text: string;
+  voice: SpeechSynthesisVoice | null;
+  rate: number;
+  volume: number;
+  cloudUrdu?: string;
+} | null = null;
+let cloudRequest: AbortController | null = null;
+let cloudAudio: HTMLAudioElement | null = null;
+let cloudObjectUrl: string | null = null;
+let speechSerial = 0;
 
-export function speak(text: string, voice: SpeechSynthesisVoice | null, rate: number, volume: number, onState?: (speaking: boolean) => void) {
+function clearCloud() {
+  cloudRequest?.abort();
+  cloudRequest = null;
+  if (cloudAudio) {
+    cloudAudio.pause();
+    cloudAudio.removeAttribute('src');
+    cloudAudio.load();
+    cloudAudio = null;
+  }
+  if (cloudObjectUrl) URL.revokeObjectURL(cloudObjectUrl);
+  cloudObjectUrl = null;
+}
+
+function localSpeech(text: string, voice: SpeechSynthesisVoice | null, rate: number, volume: number, onState?: (speaking: boolean) => void) {
   if (!ttsSupported() || !text) return;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
@@ -174,15 +198,79 @@ export function speak(text: string, voice: SpeechSynthesisVoice | null, rate: nu
   u.onstart = () => onState?.(true);
   u.onend = () => onState?.(false);
   u.onerror = () => onState?.(false);
-  lastUtterance = { text, voice, rate, volume };
   speechSynthesis.speak(u);
 }
 
+/** Use Pakistani Urdu female cloud synthesis, falling back to device TTS if offline. */
+export function speak(
+  text: string,
+  voice: SpeechSynthesisVoice | null,
+  rate: number,
+  volume: number,
+  onState?: (speaking: boolean) => void,
+  cloudUrdu?: string,
+  onCloudFailure?: () => void,
+) {
+  stopSpeaking();
+  lastUtterance = { text, voice, rate, volume, cloudUrdu };
+  if (!cloudUrdu) {
+    localSpeech(text, voice, rate, volume, onState);
+    return;
+  }
+  const serial = speechSerial;
+  const request = new AbortController();
+  cloudRequest = request;
+  void (async () => {
+    try {
+      const res = await fetch('/api/voice/tts', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/json', 'x-hukm-client': 'web' },
+        body: JSON.stringify({ text: cloudUrdu.slice(0, 450) }),
+        signal: request.signal,
+      });
+      if (!res.ok) throw new Error('Pakistani voice unavailable: ' + res.status);
+      if (!res.headers.get('content-type')?.includes('audio/mpeg'))
+        throw new Error('Invalid voice audio response');
+      const blob = await res.blob();
+      if (!blob.size) throw new Error('Empty voice audio');
+      if (serial !== speechSerial) return;
+      cloudObjectUrl = URL.createObjectURL(blob);
+      const player = new Audio(cloudObjectUrl);
+      cloudAudio = player;
+      player.volume = Math.max(0, Math.min(1, volume));
+      player.playbackRate = Math.max(0.5, Math.min(2, rate));
+      player.onended = () => {
+        if (serial === speechSerial) {
+          onState?.(false);
+          clearCloud();
+        }
+      };
+      player.onerror = () => {
+        if (serial === speechSerial) {
+          onState?.(false);
+          clearCloud();
+        }
+      };
+      await player.play();
+      if (serial === speechSerial) onState?.(true);
+    } catch (error) {
+      if (serial !== speechSerial || request.signal.aborted) return;
+      clearCloud();
+      onCloudFailure?.();
+      localSpeech(text, voice, rate, volume, onState);
+    }
+  })();
+}
+
 export function stopSpeaking() {
+  speechSerial++;
+  clearCloud();
   if (ttsSupported()) speechSynthesis.cancel();
 }
 
 export function replayLast(onState?: (s: boolean) => void) {
-  if (lastUtterance) speak(lastUtterance.text, lastUtterance.voice, lastUtterance.rate, lastUtterance.volume, onState);
+  if (lastUtterance)
+    speak(lastUtterance.text, lastUtterance.voice, lastUtterance.rate, lastUtterance.volume, onState, lastUtterance.cloudUrdu);
 }
 export const hasLastUtterance = () => !!lastUtterance;
