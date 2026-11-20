@@ -176,7 +176,9 @@ export const STATUS_MESSAGES = {
   noDevice: L('Koi laptop connected nahi hai. Devices page se pair karein.', 'کوئی لیپ ٹاپ منسلک نہیں۔ ڈیوائسز صفحے سے جوڑیں۔', 'No laptop is paired. Pair one from Devices.'),
 };
 
-export function replyMessage(topic: 'greeting' | 'help' | 'whatsapp-cancelled'): Localized {
+export function replyMessage(topic: 'greeting' | 'help' | 'whatsapp-cancelled' | 'conversation-cancelled'): Localized {
+  if (topic === 'conversation-cancelled')
+    return L('Theek hai, is kaam ko cancel kar diya. Aur kuch?', 'ٹھیک ہے، اس کام کو منسوخ کر دیا۔ اور کچھ؟', 'Okay, I cancelled that request. Anything else?');
   if (topic === 'whatsapp-cancelled')
     return L('Theek hai, WhatsApp abhi nahi kholunga. Aur kuch karna hai?', 'ٹھیک ہے، ابھی واٹس ایپ نہیں کھولوں گا۔ اور کچھ کرنا ہے؟', "Okay, I won't open WhatsApp. Anything else?");
   if (topic === 'greeting')
@@ -196,6 +198,20 @@ export function clarifyMessage(topic: string): Localized {
         'جی، واٹس ایپ ڈیسک ٹاپ ایپ کھولوں یا واٹس ایپ ویب براؤزر میں؟ ڈیسک ٹاپ یا ویب بتا دیں۔',
         'Would you like WhatsApp Desktop or WhatsApp Web? Say Desktop or Web.',
       );
+    case 'youtube-choice':
+      return L('Ji, YouTube ka home page kholoon, koi video search karoon ya video chalaoon?', 'جی، یوٹیوب ہوم کھولوں، ویڈیو تلاش کروں یا چلاؤں؟', 'Shall I open YouTube Home, search for a video or play one?');
+    case 'youtube-query':
+      return L('Theek hai, kis topic ki video chahiye? Naam bata dein.', 'ٹھیک ہے، کس موضوع کی ویڈیو چاہیے؟ نام بتائیں۔', 'Which video or topic should I look for?');
+    case 'which-app':
+      return L('Ji, kaunsi app kholoon? Jaise Chrome, Notepad ya Excel.', 'جی، کون سی ایپ کھولوں؟ مثلاً کروم، نوٹ پیڈ یا ایکسل۔', 'Which app should I open? For example Chrome, Notepad or Excel.');
+    case 'which-folder':
+      return L('Kaunsa folder kholoon? Desktop, Downloads ya Documents?', 'کون سا فولڈر کھولوں؟ ڈیسک ٹاپ، ڈاؤن لوڈز یا ڈاکیومنٹس؟', 'Which folder should I open? Desktop, Downloads or Documents?');
+    case 'which-website':
+      return L('Kaunsi website kholoon? Naam ya web address bata dein.', 'کون سی ویب سائٹ کھولوں؟ نام یا ایڈریس بتائیں۔', 'Which website should I open? Tell me its name or address.');
+    case 'message-contact':
+      return L('Ji, WhatsApp par kisko message tayyar karna hai? Saved contact ka naam batayein.', 'جی، واٹس ایپ پر کس کے لیے میسج تیار کرنا ہے؟ محفوظ کانٹیکٹ کا نام بتائیں۔', 'Who should I draft a WhatsApp message for? Say a saved contact name.');
+    case 'message-body':
+      return L('Aur message mein kya likhoon? Aap bolein, main draft karunga; send nahi karunga.', 'اور پیغام میں کیا لکھوں؟ آپ بتائیں، صرف ڈرافٹ بناؤں گا، بھیجوں گا نہیں۔', 'What should I write in the message? I will only draft it, not send it.');
     case 'which-file':
       return L('Kaunsi file? File ka naam ya type batayein, jaise "invoice PDF dhoondo".', 'کون سی فائل؟ فائل کا نام یا قسم بتائیں۔', 'Which file? Give a name or type, e.g. "find invoice PDF".');
     case 'search-what':
