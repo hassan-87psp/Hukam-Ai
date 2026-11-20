@@ -37,7 +37,7 @@ echo.
 echo SUCCESS: HUKM Controller installed in a permanent folder.
 echo Pairing and configuration in APPDATA were NOT deleted or replaced.
 echo Run START_HUKM.cmd to connect. Enable Autostart only after testing.
-pause
+if /I not "%CI%"=="true" pause
 exit /b 0
 :rollback
 echo ERROR: Installation verification failed. Trying automatic EXE rollback...
@@ -47,5 +47,5 @@ if exist "%DEST%\hukm-controller.previous.exe" (
 )
 :error
 echo Install / update FAILED. Existing user data was preserved.
-pause
+if /I not "%CI%"=="true" pause
 exit /b 1
