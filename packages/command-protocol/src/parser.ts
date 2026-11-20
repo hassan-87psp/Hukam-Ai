@@ -250,7 +250,7 @@ export function parseCommand(input: string): ParseResult {
 
   // YouTube homepage: treat common Roman Urdu "open kro/mro" typo as
   // an opener, never as a video title or a Google/YouTube search query.
-  if (/^(?:(?:youtube|yt)\s+(?:open|khol|kholo)|(?:open|khol|kholo)\s+(?:youtube|yt))(?:\s+(?:kro|karo|mro|kar do))?$/.test(t))
+  if (/^(?:(?:youtube|yt)\s+open|open\s+(?:youtube|yt))(?:\s+(?:kro|karo|mro|kar do))?$/.test(t))
     return cmd('web.open', { url: 'https://www.youtube.com/' }, 'youtube-home-open');
 
   // youtube
