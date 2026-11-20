@@ -183,6 +183,12 @@ export function parseCommand(input: string): ParseResult {
   if (/^(help|madad|commands|kya kar sakte ho|what can you do|tum kya kar sakte ho|aap kya kar sakte hain)$/.test(t))
     return { kind: 'reply', topic: 'help', normalized: t };
 
+  // Calendar shortcuts must win over the generic "Google search" rule.
+  if (/\b(?:google\s+calendar|gcal)\b/.test(t) && OPEN.test(t))
+    return cmd('web.open', { url: 'https://calendar.google.com/calendar/u/0/r' }, 'google-calendar-open');
+  if (/\b(?:outlook\s+calendar|microsoft\s+calendar)\b/.test(t) && OPEN.test(t))
+    return cmd('web.open', { url: 'https://outlook.office.com/calendar/' }, 'outlook-calendar-open');
+
   // cancel current command
   if (CANCEL.test(t) && (/\b(command|kaam|task|current|yeh|ye|this|it|isay|ise)\b/.test(t) || t.split(' ').length <= 2))
     return cmd('command.cancel', {}, 'cancel');
