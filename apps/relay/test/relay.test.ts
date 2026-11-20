@@ -237,6 +237,61 @@ describe('device pairing', () => {
   });
 });
 
+describe('supervised AI computer operator', () => {
+  it('prevents untrusted model proposals from being executed as commands', async () => {
+    const {validatePlanShape}=await import('../src/operator');
+    expect(()=>validatePlanShape({summary:'shell',steps:[{action:'shell.exec',args:{cmd:'whoami'}}]})).toThrow();
+    expect(()=>validatePlanShape({summary:'click',steps:[{action:'browser.control',args:{kind:'click',x:100,y:200}}]})).toThrow();
+    expect(()=>validatePlanShape({summary:'delete',steps:[{action:'file.delete',args:{path:'C:/x'}}]})).toThrow();
+  });
+  it('generates an owner-reviewed multi-step task, then executes with audited status', async () => {
+    const originalFetch=globalThis.fetch;
+    const oldKey=process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY='FAKE_OPERATOR_TEST_KEY';
+    let sentToGoogle=0;
+    try {
+      globalThis.fetch=((input:any,init?:any)=>{
+        if(String(input).startsWith('https://generativelanguage.googleapis.com/')){
+          sentToGoogle++;
+          return Promise.resolve(new Response(JSON.stringify({
+            candidates:[{content:{parts:[{text:JSON.stringify({
+              summary:'Open Notepad and check the active window',
+              steps:[{action:'app.open',args:{app:'notepad'}},{action:'window.active',args:{}}]
+            })}]}}]
+          }),{status:200}));
+        }
+        return originalFetch(input,init);
+      }) as typeof fetch;
+      const before=(h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands').get() as any).n;
+      const plan=await api('POST','/api/operator/plan',{text:'Notepad kholo aur active window check karo'});
+      expect(plan.status).toBe(200);
+      expect(plan.data.steps).toHaveLength(2);
+      expect(sentToGoogle).toBe(1);
+      expect((h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands').get() as any).n).toBe(before);
+      device.auto=()=>({ok:true,result:{opened:true}});
+      const started=await api('POST','/api/operator/plans/'+plan.data.id+'/run',{});
+      expect(started.status).toBe(200);
+      let status='';
+      let detail:any;
+      for(let i=0;i<80;i++){
+        const r=await api('GET','/api/operator/runs/'+started.data.id);
+        detail=r.data;status=detail.status;
+        if(['unverified','completed','failed'].includes(status))break;
+        await new Promise(resolve=>setTimeout(resolve,80));
+      }
+      expect(status).toBe('unverified');
+      expect(detail.commandIds).toHaveLength(2);
+      expect((await api('POST','/api/operator/plans/'+plan.data.id+'/run',{})).status).toBe(409);
+      expect((await api('GET','/api/operator/runs/'+started.data.id,undefined,{cookie:null})).status).toBe(401);
+    }finally{
+      globalThis.fetch=originalFetch;
+      if(oldKey===undefined)delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY=oldKey;
+      device.auto=null;
+    }
+  });
+});
+
 describe('commands', () => {
   it('runs "Downloads folder kholo" end to end and records history', async () => {
     device.auto = (cmd) => ({ ok: true, result: { folder: cmd.args.folder, path: 'C:\\Users\\h\\Downloads' } });
