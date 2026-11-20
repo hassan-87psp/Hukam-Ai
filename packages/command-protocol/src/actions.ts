@@ -272,6 +272,14 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({ kind, key: a.key });
     },
   },
+  'notepad.type': {
+    name: 'notepad.type', capability: 'input', label: 'Type into active Notepad',
+    timeoutMs: 20000, alwaysApprove: true,
+    validate(a) {
+      const text = str(a.text, 'text', 1200);
+      return isErr(text) ? text : ok({ text });
+    },
+  },
   'system.lock': {
     name: 'system.lock', capability: 'system', label: 'Lock computer', timeoutMs: 10000, alwaysApprove: true,
     validate: () => ok({}),
