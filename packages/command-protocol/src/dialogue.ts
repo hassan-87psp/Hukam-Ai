@@ -22,7 +22,7 @@ export type DialogueResolution =
 
 const command = (action: ActionName, args: Record<string, unknown>, normalized: string): ParseResult =>
   ({ kind: 'command', action, args, normalized, matchedRule: 'dialogue-followup' });
-const question = (topic: DialogueTopic, normalized: string): ParseResult =>
+const question = (topic: string, normalized: string): ParseResult =>
   ({ kind: 'clarify', topic, normalized });
 const isCancel = (t: string): boolean =>
   /^(?:cancel|rehne do|rehnay do|choro|chor do|chhod do|nahi|nahin|no|never mind|stop|bas|skip|forget it)$/.test(t);
