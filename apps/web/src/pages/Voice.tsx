@@ -19,13 +19,13 @@ export default function Voice() {
     listVoices().then(setVoices);
   }, []);
   const urduVoices = voices.filter((v) => v.lang.toLowerCase().startsWith('ur'));
-  const selected = pickVoice(voices, settings.voiceURI);
+  const selected = pickVoice(voices, settings.voiceURI, settings.responseLang);
   const lastAgent = [...chat].reverse().find((m) => m.kind === 'agent');
   const lastUser = [...chat].reverse().find((m) => m.kind === 'user' && m.source === 'voice');
 
   return (
     <PageFrame>
-      <PageHeader title="Voice Assistant" subtitle="Push-to-talk in Urdu, Roman Urdu or English. Replies are spoken with your device’s voices." />
+      <PageHeader title="Voice Assistant" subtitle="Roman Urdu ya English mein boliye. HUKM Roman Urdu mein jawab bolay ga (device voice se)." />
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
         <Card className="flex flex-col items-center px-5 pb-8 pt-2 text-center">
           <div className="h-[260px] w-full max-w-md">
@@ -83,7 +83,7 @@ export default function Voice() {
                 <select id="rlang" className="input" value={settings.recognitionLang} onChange={(e) => saveSettings({ recognitionLang: e.target.value })}>
                   {RECOGNITION_LANGS.map((l) => <option key={l.code} value={l.code}>{l.label} ({l.code})</option>)}
                 </select>
-                <p className="mt-1.5 text-xs text-ink2">ur-PK returns Urdu script (it’s mapped to commands automatically). If ur-PK is unsupported or inaccurate on your phone, try en-PK or hi-IN for Roman Urdu speech. Accuracy has not been benchmarked — test with your own voice.</p>
+                <p className="mt-1.5 text-xs text-ink2">Roman Urdu / English (en-PK) recommended hai. Misaal: "Notepad kholo" ya "Chrome open karo". Recognition ki accuracy browser aur accent par depend karti hai.</p>
               </div>
             </div>
           </Card>
@@ -95,14 +95,13 @@ export default function Voice() {
             } />
             <div className="space-y-3 px-5 pb-5 pt-3 text-sm">
               {!ttsSupported() && <p className="text-warn">This browser cannot speak replies.</p>}
-              <Row label="Urdu voices on this device">
-                {urduVoices.length ? <Badge tone="ok" dot>{urduVoices.length} found</Badge> : <Badge tone="warn" dot>None</Badge>}
+              <Row label="Roman Urdu spoken replies">
+                {ttsSupported() ? <Badge tone="ok" dot>Available</Badge> : <Badge tone="warn" dot>Unavailable</Badge>}
               </Row>
-              {!urduVoices.length && (
-                <p className="rounded-xl bg-warn/10 px-3 py-2 text-xs text-warn ring-1 ring-warn/20">
-                  No Urdu voice is installed in this browser, so replies are spoken in English. Microsoft Edge offers natural ur-PK voices (Asad, Uzma); on Android install Urdu in Google Speech Services. A cloud voice engine can be added later (see roadmap).
-                </p>
-              )}
+              <p className="rounded-xl bg-field/40 px-3 py-2 text-xs text-ink2 ring-1 ring-line/15">
+                HUKM Roman Urdu text bolay ga, English translation nahi. Browser ki voice ke hisaab se pronunciation English accent mein ho sakti hai. Natural Pakistani voice ke liye cloud voice engine chahiye.
+                {urduVoices.length > 0 ? ` Is device par ${urduVoices.length} Urdu voice(s) bhi available hain.` : ''}
+              </p>
               <div>
                 <label className="label" htmlFor="voice">Voice</label>
                 <select id="voice" className="input" value={settings.voiceURI ?? ''} onChange={(e) => saveSettings({ voiceURI: e.target.value || null })}>
