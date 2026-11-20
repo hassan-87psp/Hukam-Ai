@@ -63,7 +63,7 @@ export async function chatWithGemini(
   if (!key?.trim())
     throw new GeminiError(503, 'AI_NOT_CONFIGURED', 'Gemini AI is not configured on this server yet.');
   // Fixed Google API host, no user-controlled URLs or tool/function calls.
-  const model = options.model ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
+  const model = options.model ?? process.env.GEMINI_MODEL ?? 'gemini-3.5-flash-lite';
   if (!/^gemini-[a-z0-9.-]{3,55}$/.test(model))
     throw new GeminiError(503, 'AI_MODEL_CONFIG', 'Gemini model configuration is invalid.');
   const contents = [
@@ -102,8 +102,10 @@ export async function chatWithGemini(
         throw new GeminiError(429, 'AI_QUOTA', 'Gemini free quota is busy or exhausted. Try again later.');
       if (response.status === 401 || response.status === 403)
         throw new GeminiError(503, 'AI_ACCESS', 'Gemini API key or project is not authorized for this model.');
-      if (response.status === 400 || response.status === 404)
+      if (response.status === 404)
         throw new GeminiError(503, 'AI_MODEL_UNAVAILABLE', 'Gemini model is unavailable for this project. Check its access in AI Studio.');
+      if (response.status === 400)
+        throw new GeminiError(502, 'AI_BAD_REQUEST', 'Gemini could not process this request. Please try again.');
       throw new GeminiError(502, 'AI_UPSTREAM', 'Gemini is temporarily unavailable. Please retry.');
     }
     // Cap response size to limit memory use; never propagate raw upstream errors.
