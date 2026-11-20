@@ -97,22 +97,33 @@ class Executor:
             raise ActionError("NOT_ALLOWED", f"{key} is not in this laptop's application allowlist")
         before = windows.snapshot()
         used = launcher.start_program(apps.APP_CANDIDATES[key])
-        seen = windows.wait_for_window(before, processes=apps.APP_PROCESSES.get(key), timeout=6)
+        processes = apps.APP_PROCESSES.get(key) or []
+        seen = windows.wait_for_window(before, processes=processes, timeout=4)
         res = {"app": key, "label": apps.APP_LABELS.get(key, key), "launched": True, "target": Path(used).name if used else None}
         if seen == "unverifiable":
             res["windowDetected"] = None
+            res["foreground"] = None
         else:
-            res["windowDetected"] = seen is not None
-            if seen:
-                res["windowTitle"] = seen.title
+            focused = windows.focus_by_process(processes) if processes else None
+            if focused is None and seen is not None and windows.bring_to_front(seen):
+                focused = seen
+            res["windowDetected"] = seen is not None or focused is not None
+            res["foreground"] = focused is not None
+            if focused or seen:
+                res["windowTitle"] = (focused or seen).title
         return res
 
     def do_folder_open(self, a, _c):
         p = self.folder_path(a["folder"])
         before = windows.snapshot()
         launcher.open_path(p)
-        seen = windows.wait_for_window(before, processes=["explorer.exe"], title_contains=p.name, timeout=4)
-        return {"folder": a["folder"], "path": str(p), "windowDetected": None if seen == "unverifiable" else seen is not None}
+        seen = windows.wait_for_window(before, processes=["explorer.exe"], title_contains=p.name, timeout=3)
+        focused = windows.focus_by_process(["explorer.exe"], title_contains=p.name) if seen != "unverifiable" else None
+        return {
+            "folder": a["folder"], "path": str(p),
+            "windowDetected": None if seen == "unverifiable" else (seen is not None or focused is not None),
+            "foreground": None if seen == "unverifiable" else focused is not None,
+        }
 
     def do_folder_list(self, a, _c):
         p = self.folder_path(a["folder"])
