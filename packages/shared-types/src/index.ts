@@ -56,6 +56,7 @@ export type ActionName =
   | 'system.lock'
   | 'whatsapp.open'
   | 'whatsapp.check'
+  | 'whatsapp.unread_senders'
   | 'whatsapp.compose'
   | 'whatsapp.read_visible'
   | 'command.cancel';
