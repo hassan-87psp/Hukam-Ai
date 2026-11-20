@@ -1,6 +1,6 @@
 import { AlertTriangle, CheckCircle2, Mic, MicOff, Repeat, Square, Volume2, VolumeX } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { pick } from '../../../../packages/command-protocol/src/index';
+import { dialogueChoices, pick } from '../../../../packages/command-protocol/src/index';
 import { Badge, Card, CardHeader, cx, PageHeader } from '../components/ui';
 import Waveform from '../features/command/Waveform';
 import { useReducedMotion, useVoiceInput } from '../hooks/useVoice';
@@ -11,7 +11,7 @@ import { hasLastUtterance, listVoices, RECOGNITION_LANGS, replayLast, stopSpeaki
 const BrainOrb = lazy(() => import('../features/brain/BrainOrb'));
 
 export default function Voice() {
-  const { settings, saveSettings, brain, audioLevel, chat, speaking, say, pendingWhatsAppChoice, runText } = useStore();
+  const { settings, saveSettings, brain, audioLevel, chat, speaking, say, pendingDialogueTopic, runText } = useStore();
   const voice = useVoiceInput();
   const reduced = useReducedMotion();
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -36,7 +36,7 @@ export default function Voice() {
   // After HUKM asks a spoken follow-up, listen once more when speech ENDS.
   // No permanent microphone monitoring; browser permission and availability apply.
   useEffect(() => {
-    if (!pendingWhatsAppChoice || !lastAgent || !lastUser || lastAgent.at < lastUser.at) {
+    if (!pendingDialogueTopic || !lastAgent || !lastUser || lastAgent.at < lastUser.at) {
       autoPrompt.current = null;
       heardPrompt.current = false;
       didAutoListen.current = false;
@@ -53,7 +53,7 @@ export default function Voice() {
       didAutoListen.current = true;
       void voice.start();
     }
-  }, [pendingWhatsAppChoice, lastAgent?.id, lastAgent?.at, lastUser?.at, speaking, voice.listening, voice.supported, voice.start]);
+  }, [pendingDialogueTopic, lastAgent?.id, lastAgent?.at, lastUser?.at, speaking, voice.listening, voice.supported, voice.start]);
 
   return (
     <PageFrame>
@@ -93,12 +93,14 @@ export default function Voice() {
               </div>
             </div>
           )}
-          {pendingWhatsAppChoice && (
+          {pendingDialogueTopic && (
             <div className="mt-3 w-full max-w-lg rounded-2xl border border-ice/25 bg-blue/10 p-3 text-left">
-              <p className="mb-2 text-sm font-medium">{voice.listening ? 'Boliye: Desktop ya Web' : 'WhatsApp Desktop ya Web? Boliye ya select karein.'}</p>
-              <div className="flex gap-2">
-                <button className="btn-primary flex-1" onClick={() => void runText('Desktop wala')}>Desktop App</button>
-                <button className="btn-ghost flex-1" onClick={() => void runText('Web wala')}>WhatsApp Web</button>
+              <p className="mb-2 text-sm font-medium">{voice.listening ? 'Boliye, main sun raha hoon.' : 'Aapka jawab? Boliye ya option select karein.'}</p>
+              <div className="flex flex-wrap gap-2">
+                {dialogueChoices(pendingDialogueTopic).map((choice) => (
+                  <button key={choice.value} className="btn-primary" onClick={() => void runText(choice.value)}>{choice.label}</button>
+                ))}
+                <button className="btn-ghost" onClick={() => void runText('Rehne do')}>Cancel</button>
               </div>
             </div>
           )}
