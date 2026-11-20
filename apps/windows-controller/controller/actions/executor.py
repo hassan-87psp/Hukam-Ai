@@ -223,13 +223,13 @@ class Executor:
         return {"width": shot["width"], "height": shot["height"], "bytes": shot["bytes"], "_screenshot": shot}
 
     # -- whatsapp -------------------------------------------------------
-    def do_whatsapp_open(self, _a, _c):
-        return wa.open_whatsapp(self.cfg.whatsapp_mode, self.cfg.browser)
+    def do_whatsapp_open(self, a, _c):
+        return wa.open_whatsapp(a.get("mode", self.cfg.whatsapp_mode), self.cfg.browser)
 
-    def do_whatsapp_check(self, _a, _c):
+    def do_whatsapp_check(self, a, _c):
         if not launcher.IS_WINDOWS and not launcher.SIMULATE:
             raise ActionError("NOT_SUPPORTED", "WhatsApp check reads window titles and needs Windows")
-        return wa.check(self.cfg.whatsapp_mode, self.cfg.browser)
+        return wa.check(a.get("mode", self.cfg.whatsapp_mode), self.cfg.browser)
 
     def do_whatsapp_compose(self, a, _c):
         return {"contact": a["contact"], **wa.compose(a["phone"], a["message"], self.cfg.whatsapp_mode, self.cfg.browser)}
