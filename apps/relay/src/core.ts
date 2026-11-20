@@ -705,7 +705,7 @@ export class Relay {
       for (const s of steps) {
         const p = parseCommand(s);
         if (p.kind !== 'command') throw new HttpError(400, 'BAD_STEP', `step not understood: "${s}"`);
-        if (p.action === 'whatsapp.compose' || p.action === 'system.lock') throw new HttpError(400, 'BAD_STEP', `step not allowed in automations: "${s}"`);
+        if (p.action === 'whatsapp.compose' || p.action === 'system.lock' || p.action === 'whatsapp.read_visible' || p.action === 'whatsapp.read_visible') throw new HttpError(400, 'BAD_STEP', `step not allowed in automations: "${s}"`);
       }
       const schedule = parseDailySchedule(body.schedule);
       id = newId('au_');
