@@ -41,6 +41,11 @@ export const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...
 export const all = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).all(...p) as Row[];
 export const run = (db: DB, sql: string, ...p: any[]) => {
   const result = db.prepare(sql).run(...p);
-  writeHooks.get(db)?.();
+  // No-op DELETE/UPDATE operations must not trigger a whole cloud snapshot.
+  if (result.changes > 0) writeHooks.get(db)?.();
   return result;
 };
+
+/** Low-risk telemetry (session last_seen, device heartbeat) can remain local.
+ * The next durable write includes these updates in its cloud snapshot. */
+export const runVolatile = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).run(...p);
