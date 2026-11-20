@@ -59,6 +59,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('WhatsApp open kar raha hoon.', 'واٹس ایپ کھول رہا ہوں۔', 'Opening WhatsApp.');
     case 'whatsapp.check':
       return L('WhatsApp check kar raha hoon.', 'واٹس ایپ چیک کر رہا ہوں۔', 'Checking WhatsApp.');
+    case 'whatsapp.read_visible':
+      return L('Aapki approval ke baad WhatsApp ki khuli chat laptop par offline parhunga. Message text cloud par nahi bhejunga.', 'آپ کی منظوری کے بعد کھلی چیٹ لیپ ٹاپ پر آف لائن پڑھوں گا۔', 'With approval, I will read aloud the visible WhatsApp chat on your laptop only; no message contents are transferred.');
     case 'whatsapp.compose':
       return L(`${s(args.contact)} ke liye message tayyar kar raha hoon.`, `${s(args.contact)} کے لیے پیغام تیار کر رہا ہوں۔`, `Preparing a message for ${s(args.contact)}.`);
     case 'command.cancel':
@@ -128,6 +130,10 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
           ? L('WhatsApp par koi unread chat nazar nahi aa rahi.', 'واٹس ایپ پر کوئی ان ریڈ چیٹ نظر نہیں آ رہی۔', 'No unread chats are showing in WhatsApp.')
           : L(`WhatsApp par ${r.unreadChats} unread chats hain.`, `واٹس ایپ پر ${r.unreadChats} ان ریڈ چیٹس ہیں۔`, `WhatsApp shows ${r.unreadChats} unread chats.`);
       return L('WhatsApp open hai, lekin unread count parha nahi ja saka.', 'واٹس ایپ کھلا ہے، لیکن ان ریڈ تعداد نہیں پڑھی جا سکی۔', "WhatsApp is open, but the unread count couldn't be read.");
+    case 'whatsapp.read_visible':
+      if (r.messagesRead === true && r.spokenOnDevice === true)
+        return L('Jo WhatsApp chat screen par nazar aa rahi thi, uska visible text laptop par suna diya. Message cloud par nahi bheja.', 'واٹس ایپ کی کھلی چیٹ کا متن لیپ ٹاپ پر سنا دیا، سرور کو نہیں بھیجا۔', 'Visible WhatsApp chat text was spoken locally on the laptop. Nothing was sent to the cloud.');
+      return L('WhatsApp chat ka readable text nahi mila. Laptop par WhatsApp Desktop khol kar chat select karein.', 'واٹس ایپ چیٹ کا پڑھنے کے قابل متن نہیں ملا۔', 'No readable text found in the visible WhatsApp chat. Open a chat in the Desktop app.');
     case 'whatsapp.compose':
       return L(
         `Message ${s(args.contact)} ki chat mein likh diya hai — abhi bheja NAHI gaya. Laptop par Send dabayein.`,
