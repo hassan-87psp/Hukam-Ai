@@ -1,6 +1,6 @@
 import {
   Bell, ChevronDown, ChevronsLeft, ChevronsRight, FolderOpen, Globe, History, Home, LayoutDashboard, LogOut, Menu, MessageCircle,
-  MessagesSquare, Mic, Monitor, MoreHorizontal, OctagonX, Settings, ShieldAlert, User, X, Zap,
+  MessagesSquare, Mic, Monitor, MoreHorizontal, OctagonX, Settings, ShieldAlert, User, X, Zap, FolderKanban,
 } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -14,6 +14,7 @@ import { post, useStore } from '../services/store';
 export const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/chat', label: 'AI Chat', icon: MessagesSquare },
+  { to: '/projects', label: 'Projects', icon: FolderKanban },
   { to: '/voice', label: 'Voice', icon: Mic },
   { to: '/devices', label: 'Devices', icon: Monitor },
   { to: '/automations', label: 'Automations', icon: Zap },
