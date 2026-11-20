@@ -9,9 +9,13 @@ import { log } from './util';
 const VOICE = 'ur-PK-UzmaNeural';
 const MAX_AUDIO = 2 * 1024 * 1024;
 const MAX_TEXT = 450;
+// Only cache the fixed public voice-test phrase; no private command text is stored.
+const PREVIEW = 'السلام علیکم، میں حکم ہوں۔';
+let previewAudio: Buffer | null = null;
 
 export async function femaleUrduAudio(input: string): Promise<Buffer> {
   const text = input.trim();
+  if (text === PREVIEW && previewAudio) return previewAudio;
   if (!text || text.length > MAX_TEXT) throw new Error('Voice text length invalid');
   // A Pakistani Urdu neural voice reads Urdu script more naturally than romanized text.
   if (!/[\u0600-\u06FF]/u.test(text)) throw new Error('Pakistani voice requires Urdu script');
@@ -50,6 +54,7 @@ export async function femaleUrduAudio(input: string): Promise<Buffer> {
   const mp3 = audio.subarray(0, 3).toString('ascii') === 'ID3'
     || audio[0] === 0xff && (audio[1] & 0xe0) === 0xe0;
   if (!mp3) throw new Error('Voice service returned invalid audio');
+  if (text === PREVIEW) previewAudio = audio;
   return audio;
 }
 
