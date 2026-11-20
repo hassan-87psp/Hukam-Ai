@@ -46,6 +46,8 @@ export class Projects {
     const description = value('description', 400);
     const instructions = value('instructions', 6000);
     const chromeProfile = value('chromeProfile', 100);
+    if(chromeProfile && !/^(?:Default|Profile [1-9][0-9]?)$/.test(chromeProfile))
+      throw new HttpError(400,'PROJECT_PROFILE','Chrome directory must be Default or Profile 1–99');
     const assetFolder = value('assetFolder', 350);
     const chatgptProjectUrl = value('chatgptProjectUrl', 500);
     if (chatgptProjectUrl) {
