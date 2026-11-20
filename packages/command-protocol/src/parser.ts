@@ -154,6 +154,19 @@ function parseCompose(original: string, norm: string): { contact: string; messag
   return { contact, message: message.replace(/^[\p{Ll}]/u, (c) => c.toUpperCase()) };
 }
 
+/** Resolve a short answer to "WhatsApp Desktop ya Web?" without using
+ * arbitrary strings as app names or URLs. An unclear reply is never executed. */
+export type WhatsAppChoice = 'desktop' | 'web' | 'cancel' | null;
+export function parseWhatsAppChoice(input: string): WhatsAppChoice {
+  const t = normalize(input);
+  if (/^(cancel|rehne do|rehnay do|choro|chor do|chhod do|nahi|nahin|no|never mind|stop|bas)$/i.test(t)) return 'cancel';
+  const web = /\b(web|browser|chrome|online)\b/.test(t) || /^(2|second|doosra|dosra|dusra)( wala)?$/.test(t);
+  const desktop = /\b(desktop|installed|install|application|laptop|pc)\b/.test(t)
+    || /\bapp\b/.test(t) || /^(1|first|pehla|pahla)( wala)?$/.test(t);
+  if (web && desktop) return null;
+  return web ? 'web' : desktop ? 'desktop' : null;
+}
+
 // ---- main ---------------------------------------------------------------
 
 export function parseCommand(input: string): ParseResult {
@@ -187,13 +200,15 @@ export function parseCommand(input: string): ParseResult {
   // "<name> ke naye messages batao" — reads unread-chat counts only.
   if (/\b(unread|naye|nayi|new) (messages|message|chats)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-unread');
 
-  // whatsapp: Desktop is preferred; explicitly saying Web/Chrome selects browser.
+  // An ambiguous WhatsApp launch should ASK which app, not silently choose.
+  // Explicit "WhatsApp Desktop/Web kholo" remains a single-step command.
   if (/\bwhatsapp\b/.test(t)) {
     const mode = /\b(web|browser|chrome)\b/.test(t) ? 'web' : 'desktop';
     if (/\b(unread|naye|nayi|messages|message|check|dekho|dekh|batao|dikhao|kitne|koi)\b/.test(t)) return cmd('whatsapp.check', { mode }, 'whatsapp-check');
     if (OPEN.test(t) || t === 'whatsapp' || t === 'whatsapp desktop' || t === 'whatsapp web') {
-      if (mode === 'web') return cmd('web.open', { url: 'https://web.whatsapp.com/' }, 'whatsapp-web-open');
-      return cmd('whatsapp.open', { mode: 'desktop' }, 'whatsapp-desktop-open');
+      if (/\b(web|browser|chrome)\b/.test(t)) return cmd('web.open', { url: 'https://web.whatsapp.com/' }, 'whatsapp-web-open');
+      if (/\b(desktop|app|application|installed|install|laptop)\b/.test(t)) return cmd('whatsapp.open', { mode: 'desktop' }, 'whatsapp-desktop-open');
+      return { kind: 'clarify', topic: 'whatsapp-choice', normalized: t };
     }
     return cmd('whatsapp.check', { mode }, 'whatsapp-default');
   }
