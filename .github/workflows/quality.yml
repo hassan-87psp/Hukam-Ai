@@ -58,16 +58,27 @@ jobs:
       - name: Build portable Windows Controller (no installer/auto-run)
         working-directory: apps/windows-controller
         run: python -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/hukm-controller.spec
+      - name: Smoke test frozen EXE entry point (real Windows, no controller connection)
+        shell: pwsh
+        working-directory: apps/windows-controller
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\dist\hukm-controller.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "Frozen EXE --version failed" }
+          & .\dist\hukm-controller.exe --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Frozen EXE --help failed" }
+          & .\dist\hukm-controller.exe status | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Frozen EXE status failed" }
       - name: Publish versioned Windows Controller ZIP
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
           Copy-Item apps/windows-controller/dist/hukm-controller.exe release/hukm-controller.exe
           Copy-Item apps/windows-controller/README.md release/README.txt
-          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.2.0.zip -Force
+          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.2.1.zip -Force
       - uses: actions/upload-artifact@v4
         with:
-          name: HUKM-Windows-Controller-v1.2.0
-          path: HUKM-Windows-Controller-v1.2.0.zip
+          name: HUKM-Windows-Controller-v1.2.1
+          path: HUKM-Windows-Controller-v1.2.1.zip
           retention-days: 14
           if-no-files-found: error
