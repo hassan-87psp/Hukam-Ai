@@ -147,6 +147,18 @@ export class Operator {
     if(typeof text!=='string'||text.trim().length<2||text.length>1200)
       throw new HttpError(400,'BAD_COMMAND','Write a command from 2 to 1200 characters');
     const request=text.trim();
+    // Do not let model-generated "open page" steps masquerade as
+    // completed calendar creation, private-message sending or image generation.
+    const lower=request.toLowerCase();
+    if(/(?:calendar|calender|meeting)/.test(lower) && /(?:add|create|schedule|banado|banao|set|invite|reschedule)/.test(lower))
+      throw new HttpError(422,'CALENDAR_INTEGRATION_MISSING',
+        'Creating or changing calendar events is not connected yet. Opening Calendar alone is not event creation.');
+    if(/whats?app/.test(lower) && /(?:send|bhej|reply|forward|file|attach)/.test(lower))
+      throw new HttpError(422,'WHATSAPP_SEND_UNSUPPORTED',
+        'WhatsApp sending/files workflow is not connected. HUKM will not claim it was sent.');
+    if(/(?:chatgpt|banner|image generation|pic bana|design bana)/.test(lower) && /(?:bana|create|generate|download|save)/.test(lower))
+      throw new HttpError(422,'CREATIVE_WORKFLOW_UNSUPPORTED',
+        'The ChatGPT content-generation/download workflow is not automated yet.');
     const project=projectId==null?null:this.projects.get(userId,String(projectId));
     const notes=project?this.projects.notes(userId,project.id).slice(0,8):[];
     const context=project?
@@ -163,6 +175,9 @@ export class Operator {
       if(!geminiConfigured())throw new HttpError(503,'AI_NOT_CONFIGURED','Natural-language planner requires Gemini');
       result=await askGeminiPlan(request,context);
     }
+    // Bound backup growth on Render's small SQLite storage.
+    run(this.db,`DELETE FROM operator_plans WHERE user_id=? AND id NOT IN
+      (SELECT id FROM operator_plans WHERE user_id=? ORDER BY created_at DESC LIMIT 500)`,userId,userId);
     const id=newId('plan_'),created=nowIso(),expires=addMs(10*60_000);
     run(this.db,'INSERT INTO operator_plans(id,user_id,project_id,request,summary,steps,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?)',
       id,userId,project?.id??null,request,result.summary,JSON.stringify(result.steps),created,expires);
