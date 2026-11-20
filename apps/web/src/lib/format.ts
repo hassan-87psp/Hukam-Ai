@@ -68,6 +68,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'whatsapp.open': 'Open WhatsApp',
   'whatsapp.check': 'Check WhatsApp',
   'whatsapp.compose': 'WhatsApp draft',
+  'whatsapp.read_visible': 'Read visible WhatsApp chat aloud',
   'command.cancel': 'Cancel',
 };
 
