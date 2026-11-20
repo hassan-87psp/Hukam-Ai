@@ -16,6 +16,15 @@ export default function OperatorPlanCard({plan}:{plan:OperatorPlan}){
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const {commandMap,activeDevice}=useStore();
+  // Rehydrate run status after a browser reload; never send the same plan twice.
+  useEffect(()=>{
+    let live=true;
+    void get<TaskRun[]>('/api/operator/runs').then(rows=>{
+      const existing=rows.find(x=>x.planId===plan.id);
+      if(live&&existing)setRunning(v=>v??existing);
+    }).catch(()=>{});
+    return ()=>{live=false;};
+  },[plan.id]);
   useEffect(()=>{
     if(!running||finished.has(running.status))return;
     let on=true;
