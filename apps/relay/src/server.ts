@@ -100,7 +100,9 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   const apiLimit = new RateLimiter(600, 60_000);
 
   const hasUser = () => !!one(db, 'SELECT 1 AS x FROM users LIMIT 1');
-  let setupCode: string | null = hasUser() ? null : config.setupCode ?? pairingCode();
+  // Temporary test-only bootstrap. Disable on production deployments.
+  const allowCodelessSetup = process.env.HUKM_ALLOW_CODELESS_SETUP === 'true';
+  let setupCode: string | null = (hasUser() || allowCodelessSetup) ? null : config.setupCode ?? pairingCode();
   if (setupCode) {
     log('info', 'first-run setup code (enter it in the web app to create the owner account)', { setupCode });
     console.log(`\n  ╭───────────────────────────────────────────╮\n  │  HUKM AI first-run setup code: ${setupCode}  │\n  ╰───────────────────────────────────────────╯\n`);
@@ -157,7 +159,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     if (hasUser()) throw new HttpError(409, 'ALREADY_SETUP', 'owner account already exists');
     if (!loginLimit.take(`setup:${c.ip}`)) throw new HttpError(429, 'RATE_LIMITED', 'too many attempts');
     const { email, name, password, setupCode: code } = c.body ?? {};
-    if (!setupCode || typeof code !== 'string' || normalizePairCode(code) !== normalizePairCode(setupCode))
+    if (!allowCodelessSetup && (!setupCode || typeof code !== 'string' || normalizePairCode(code) !== normalizePairCode(setupCode)))
       throw new HttpError(403, 'BAD_SETUP_CODE', 'setup code is wrong — it is printed in the relay console');
     if (typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, 'BAD_EMAIL', 'valid email required');
     if (typeof password !== 'string' || password.length < 10) throw new HttpError(400, 'WEAK_PASSWORD', 'password must be at least 10 characters');
