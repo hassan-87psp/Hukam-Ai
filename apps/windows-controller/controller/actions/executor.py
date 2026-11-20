@@ -9,6 +9,7 @@ from typing import Callable
 
 from ..browser import web
 from ..browser import operator as browser_operator
+from ..browser import profiles as browser_profiles
 from ..config import Config
 from ..files import search as files
 from ..screen import capture as screen
@@ -202,6 +203,12 @@ class Executor:
         return {"path": str(p), "folder": str(p.parent)}
 
     # -- browser --------------------------------------------------------
+    def do_browser_profile_open(self, a, _c):
+        try:
+            return browser_profiles.open_in_profile(a["url"],a["profile"])
+        except browser_profiles.ProfileError as exc:
+            raise ActionError("PROFILE_UNAVAILABLE",str(exc)) from exc
+
     def do_notepad_type(self, a, _c):
         if launcher.SIMULATE:
             launcher._record("notepad.type", "text (redacted)")
