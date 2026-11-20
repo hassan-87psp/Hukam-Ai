@@ -149,6 +149,13 @@ def validate(action: str, args: dict) -> dict:
         return {"query": _str(a.get("query"), "query", 200)}
     if action == "window.focus":
         return {"title": _str(a.get("title"), "title", 200)}
+    if action in ("whatsapp.open", "whatsapp.check"):
+        mode = a.get("mode")
+        if mode is None:
+            return {}
+        if mode not in ("desktop", "web"):
+            raise ValidationError("WhatsApp mode must be desktop or web")
+        return {"mode": mode}
     if action == "whatsapp.compose":
         phone = _str(a.get("phone"), "phone", 15)
         if not re.fullmatch(r"\d{8,15}", phone):
