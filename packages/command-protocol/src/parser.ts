@@ -276,7 +276,10 @@ export function parseCommand(input: string): ParseResult {
     return cmd('file.search', base, 'file-default');
   }
 
-  // folders
+  // folders: bare answers like "Desktop wala" are not requests to
+  // open a folder. Without a pending conversation, ask for a full command.
+  if (/^(desktop|downloads?|documents?|pictures?|music|videos?) (wala|wali|wale)$/.test(t))
+    return { kind: 'unsupported', reason: 'unknown', normalized: t };
   if (loc) {
     if (/\b(kya hai|kya kya|what is in|what's in|contents|list|dikhao|show)\b/.test(t)) return cmd('folder.list', { folder: loc }, 'folder-list');
     return cmd('folder.open', { folder: loc }, 'folder-open');
