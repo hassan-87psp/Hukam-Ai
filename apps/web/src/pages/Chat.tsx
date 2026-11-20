@@ -1,6 +1,6 @@
 import { Bot, Mic, Trash2, Volume2 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { pick } from '../../../../packages/command-protocol/src/index';
+import { dialogueChoices, pick } from '../../../../packages/command-protocol/src/index';
 import { BrainMark } from '../components/Logo';
 import { cx, EmptyState } from '../components/ui';
 import CommandCard from '../features/command/CommandCard';
@@ -38,7 +38,7 @@ function UserBubble({ m }: { m: Extract<ChatMessage, { kind: 'user' }> }) {
 }
 
 export default function Chat() {
-  const { chat, commandMap, devices, clearChat, pendingWhatsAppChoice, runText } = useStore();
+  const { chat, commandMap, devices, clearChat, pendingDialogueTopic, runText } = useStore();
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -68,12 +68,15 @@ export default function Chat() {
         })}
         <div ref={end} />
       </div>
-      {pendingWhatsAppChoice && (
+      {pendingDialogueTopic && (
         <div className="mx-1 mb-3 rounded-2xl border border-ice/25 bg-blue/10 p-3">
-          <p className="mb-2 text-sm font-medium">WhatsApp konsa kholoon? Aap bol bhi sakte hain.</p>
+          <p className="mb-2 text-sm font-medium">HUKM aapke jawab ka intezar kar raha hai. Type karein ya bolein.</p>
           <div className="flex flex-wrap gap-2">
-            <button className="btn-primary flex-1" onClick={() => void runText('Desktop wala')}>Desktop App</button>
-            <button className="btn-ghost flex-1" onClick={() => void runText('Web wala')}>WhatsApp Web</button>
+            {dialogueChoices(pendingDialogueTopic).map((choice) => (
+              <button key={choice.value} className="btn-primary" onClick={() => void runText(choice.value)}>
+                {choice.label}
+              </button>
+            ))}
             <button className="btn-ghost" onClick={() => void runText('Rehne do')}>Cancel</button>
           </div>
         </div>
