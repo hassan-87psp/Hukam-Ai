@@ -8,7 +8,7 @@ import { loadConfig, type RelayConfig } from './config';
 import { restoreCloudSnapshot, startCloudBackup } from './backup';
 import { femaleUrduAudio, reportFemaleVoiceError } from './female-tts';
 import { HttpError, Relay } from './core';
-import { all, one, openDb, run, setWriteHook, type Row } from './db';
+import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
 export const VERSION = '1.0.0';
@@ -131,7 +131,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     if (!s || Date.parse(s.expires_at) < Date.now()) return null;
     const u = one(db, 'SELECT * FROM users WHERE id = ?', s.user_id);
     if (!u) return null;
-    if (Date.now() - Date.parse(s.last_seen) > 60_000) run(db, 'UPDATE sessions SET last_seen = ? WHERE id = ?', nowIso(), s.id);
+    if (Date.now() - Date.parse(s.last_seen) > 60_000) runVolatile(db, 'UPDATE sessions SET last_seen = ? WHERE id = ?', nowIso(), s.id);
     return { user: u, session: s };
   }
 
