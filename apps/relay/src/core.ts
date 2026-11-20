@@ -92,7 +92,7 @@ function parseDailySchedule(value: unknown, current?: DailySchedule): DailySched
   const enabled = v.enabled === undefined ? fallback.enabled : v.enabled === true;
   const time = v.time === undefined ? fallback.time : v.time;
   const timezone = v.timezone === undefined ? fallback.timezone : v.timezone;
-  if (time !== null && (typeof time !== 'string' || !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time)))
+  if (time !== null && (typeof time !== 'string' || !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(time)))
     throw new HttpError(400, 'BAD_SCHEDULE', 'schedule time must be HH:mm (24-hour)');
   if (enabled && time === null)
     throw new HttpError(400, 'BAD_SCHEDULE', 'time required when schedule is enabled');
