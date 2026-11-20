@@ -12,7 +12,7 @@ export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'app.open': AppWindow, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
   'file.reveal': FolderOpen, 'web.open': Globe, 'web.search': Search, 'youtube.search': Youtube, 'youtube.play': Youtube,
   'device.status': Laptop, 'apps.list': AppWindow, 'window.active': Monitor, 'window.focus': Monitor, 'screen.capture': Monitor,
-  'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
+  'browser.control': Monitor, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
 };
 
 export function ActionIcon({ action, className }: { action: ActionName; className?: string }) {
@@ -169,6 +169,8 @@ export function CommandResult({ c }: { c: Command }) {
           {r.note && <p className="mt-1 text-xs text-ink2">{r.note}</p>}
         </div>
       );
+    case 'browser.control':
+      return <p className="text-xs text-ink2">{r.note ?? 'Browser input attempted. Verify the website result before continuing.'}</p>;
     case 'whatsapp.compose':
       return <p className="text-xs text-warn">Draft opened in WhatsApp — not sent. Press Send on the laptop.</p>;
     case 'app.open':
@@ -204,6 +206,12 @@ function ApprovalBox({ c }: { c: Command }) {
           <dt className="text-ink2">Effect</dt><dd className="text-ink2">Opens the chat with this text typed in. You press Send on the laptop.</dd>
         </>)}
         {c.action === 'screen.capture' && (<><dt className="text-ink2">Effect</dt><dd className="text-ink2">One screenshot of the main screen is sent to your account and auto-deleted per retention settings.</dd></>)}
+        {c.action === 'browser.control' && (<>
+          <dt className="text-ink2">Browser</dt><dd>Foreground Chrome / Edge / Firefox only</dd>
+          <dt className="text-ink2">Input</dt><dd>{a.kind === 'type' ? 'Type text into the selected field' : a.kind === 'click' ? `Click at ${a.x}, ${a.y}` : a.kind === 'scroll' ? `Scroll ${a.steps} steps` : `Press ${a.key}`}</dd>
+          {a.kind === 'type' && <><dt className="text-ink2">Text</dt><dd className="whitespace-pre-wrap break-words">{String(a.text ?? '')}</dd></>}
+          <dt className="text-ink2">Warning</dt><dd>Browser input may submit a form or change data. HUKM cannot independently verify the final website result.</dd>
+        </>)}
         {c.action === 'system.lock' && (<><dt className="text-ink2">Effect</dt><dd className="text-ink2">Locks Windows immediately. Unsaved work stays open.</dd></>)}
       </dl>
       <div className="mt-3 flex flex-wrap gap-2">
