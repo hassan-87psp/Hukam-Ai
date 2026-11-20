@@ -1,4 +1,4 @@
-HUKM AI Windows Controller v1.2.1 — Local Install & Safety
+HUKM AI Windows Controller v1.2.2 — Local Install & Safety
 ======================================================
 
 This is a Windows controller that lets your own authorised HUKM AI account
@@ -11,7 +11,7 @@ This version fixes the frozen EXE startup error: attempted relative import with 
 2. Extract this ZIP. Double-click hukm-controller.exe. If prompted by
    Windows SmartScreen, verify you trust the file from your own HUKM project.
 3. Keep the visible Controller window open to allow remote control.
-4. In HUKM AI > Devices, confirm the controller version is 1.2.1.
+4. In HUKM AI > Devices, confirm the controller version is 1.2.2.
 5. If not paired, go to Devices > Pair and follow on-screen instructions.
    NEVER share your device token or Windows login password.
 
@@ -28,11 +28,15 @@ BROWSER OPERATOR (EXPERIMENTAL - APPROVAL REQUIRED EVERY TIME):
 - Only the foreground Chrome, Edge or Firefox window accepts this bounded input. Windows desktop, terminal and other apps are not directly controlled through this action.
 - HUKM shows exactly what will be typed/clicked and waits for explicit approval. Screenshot approval remains separate.
 - Successful delivery is not proof a website task finished. The user verifies results, and third-party services may restrict automation.
-- On a laptop, close the old Controller process before opening v1.2.1; existing encrypted device pairing is preserved.
+- On a laptop, close the old Controller process before opening v1.2.2; existing encrypted device pairing is preserved.
 - Don't type passwords or recovery codes in remote HUKM chat.
 - This is groundwork, not yet an autonomous visual agent or calendar/WhatsApp end-to-end workflow.
 
 WHATSAPP (EXPERIMENTAL):
+- "WhatsApp kis kis ka message aaya hai?" triggers an approval-gated Windows UI Automation check of visible unread sender titles.
+- Only currently visible unread chat titles may be returned; no message body or chat preview is intended to be transferred.
+- Names from this approved command are sent to the user's HUKM account and stored in command history.
+- If the Unread filter or chat rows are inaccessible, HUKM reports unknown, never guesses the senders.
 - The unread check attempts to read the visible WhatsApp Desktop Unread filter via UI Automation and falls back to a numbered window title.
 - Plain WhatsApp window titles do not prove zero unread chats: when UIA is unsupported the result is UNKNOWN.
 - The controller never uploads chat text, snippets or screenshots as part of checking the unread badge.
