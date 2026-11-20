@@ -14,6 +14,7 @@ from ..screen import capture as screen
 from ..security import validation as v
 from ..system import apps, info, known_folders, launcher, windows
 from ..whatsapp import adapter as wa
+from ..whatsapp import reader as wa_reader
 
 log = logging.getLogger("hukm.exec")
 
@@ -244,3 +245,9 @@ class Executor:
 
     def do_whatsapp_compose(self, a, _c):
         return {"contact": a["contact"], **wa.compose(a["phone"], a["message"], self.cfg.whatsapp_mode, self.cfg.browser)}
+
+    def do_whatsapp_read_visible(self, _a, _c):
+        try:
+            return wa_reader.read_visible_aloud()
+        except wa_reader.ReadError as e:
+            raise ActionError("NOT_SUPPORTED", str(e)) from e
