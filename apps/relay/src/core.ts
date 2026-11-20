@@ -116,6 +116,7 @@ export class Relay {
   private clients = new Map<string, Set<WebSocket>>(); // userId → sockets
   private timer: NodeJS.Timeout | null = null;
   private lastMaintenance = 0;
+  private lastScheduleTick = 0;
   private screenshotDir: string;
 
   constructor(public db: DB, public config: RelayConfig) {
@@ -124,6 +125,9 @@ export class Relay {
   }
 
   start() {
+    // A process restart interrupts any in-memory automation runner. Do not
+    // leave it falsely marked running and block future invocations.
+    run(this.db, "UPDATE automations SET last_run_status = 'interrupted' WHERE last_run_status = 'running'");
     this.timer = setInterval(() => this.sweep(), 1000);
     this.timer.unref?.();
   }
@@ -625,6 +629,12 @@ export class Relay {
         conn.ws.ping();
       }
     }
+    // Optional daily schedules; disabled by default. Single-process and
+    // persisted last_scheduled_day prevent duplicate launches on reconnect.
+    if (now - this.lastScheduleTick >= 15_000) {
+      this.lastScheduleTick = now;
+      this.runDueSchedules(new Date(now));
+    }
     // screenshot retention (cheap; indexed)
     if (now - this.lastMaintenance >= 60_000) {
       this.lastMaintenance = now;
@@ -644,6 +654,38 @@ export class Relay {
       }
       run(this.db, 'DELETE FROM sessions WHERE expires_at < ?', nowIso());
       run(this.db, 'DELETE FROM pairing_codes WHERE expires_at < ? AND used_at IS NULL', new Date(now - 86400_000).toISOString());
+    }
+  }
+
+  /** Execute only schedules matching this exact local minute. Never catch up
+   * missed runs after the free Render service has slept or restarted. */
+  runDueSchedules(at: Date) {
+    const rows = all(this.db, `SELECT id, user_id, device_id, schedule_time, schedule_timezone,
+      last_scheduled_day, last_run_status FROM automations
+      WHERE enabled = 1 AND schedule_enabled = 1 AND schedule_time IS NOT NULL`);
+    for (const row of rows) {
+      if (row.last_run_status === 'running') continue;
+      try {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: row.schedule_timezone ?? 'Asia/Kuala_Lumpur',
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+        }).formatToParts(at);
+        const field = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
+        const day = [field('year'), field('month'), field('day')].join('-');
+        const minute = field('hour') + ':' + field('minute');
+        if (minute !== row.schedule_time || row.last_scheduled_day === day) continue;
+        // Claim the daily slot in SQLite before dispatch. A new tick or
+        // reconnect cannot duplicate the action for the same local day.
+        const claimed = run(this.db, `UPDATE automations SET last_scheduled_day = ?
+          WHERE id = ? AND (last_scheduled_day IS NULL OR last_scheduled_day != ?)`,
+          day, row.id, day).changes;
+        if (!claimed) continue;
+        this.runAutomation(row.user_id, row.id, row.device_id ?? undefined, 'system');
+      } catch (e) {
+        log('warn', 'scheduled automation could not start', { id: row.id, error: String(e) });
+        this.audit(row.user_id, 'system', 'automation.schedule.failed', { id: row.id });
+      }
     }
   }
 
@@ -706,14 +748,15 @@ export class Relay {
   }
 
   /** Runs steps sequentially; each step waits for its command to finish. Stops on the first failure. */
-  runAutomation(userId: string, id: string, deviceId?: string) {
+  runAutomation(userId: string, id: string, deviceId?: string, initiator: 'user' | 'system' = 'user') {
     const r = one(this.db, 'SELECT * FROM automations WHERE id = ? AND user_id = ?', id, userId);
     if (!r) throw new HttpError(404, 'NOT_FOUND', 'automation not found');
     if (!r.enabled) throw new HttpError(409, 'DISABLED', 'automation is disabled');
+    if (r.last_run_status === 'running') throw new HttpError(409, 'ALREADY_RUNNING', 'automation is already running');
     const steps = parseJson<string[]>(r.steps, []);
     const runId = newId('run_');
     run(this.db, "UPDATE automations SET last_run_at = ?, last_run_status = 'running' WHERE id = ?", nowIso(), id);
-    this.audit(userId, 'user', 'automation.run', { id, runId });
+    this.audit(userId, initiator, 'automation.run', { id, runId, scheduled: initiator === 'system' });
     const setStatus = (s: string) => {
       run(this.db, 'UPDATE automations SET last_run_status = ? WHERE id = ?', s, id);
       const a = one(this.db, 'SELECT * FROM automations WHERE id = ?', id);
@@ -734,7 +777,10 @@ export class Relay {
         if (final !== 'completed') { setStatus(final ?? 'failed'); return; }
       }
       setStatus('completed');
-    })().catch((e) => log('error', 'automation failed', { err: String(e) }));
+    })().catch((e) => {
+      log('error', 'automation failed', { err: String(e) });
+      setStatus('failed');
+    });
     return { runId };
   }
 
