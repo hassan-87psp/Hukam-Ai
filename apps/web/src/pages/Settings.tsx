@@ -70,7 +70,7 @@ export default function Settings() {
           <Section id="language" icon={<Languages className="h-5 w-5" />} title="Language & voice">
             <p className="label">Reply language</p>
             <Segmented value={settings.responseLang} onChange={(v) => saveSettings({ responseLang: v })} options={[{ value: 'roman', label: 'Roman Urdu' }, { value: 'ur', label: 'اردو' }, { value: 'en', label: 'English' }]} />
-            <p className="mt-2 text-xs text-ink2">Roman Urdu select karne par HUKM replies Roman letters mein likhay aur bolay ga. Browser ki voice ke hisaab se English accent ho sakta hai.</p>
+            <p className="mt-2 text-xs text-ink2">Default voice Pakistani female Uzma (free online test) hai. Screen par replies Roman Urdu rehte hain; speech Urdu Pakistan mein sunai degi. Agar free service unavailable ho to browser voice fallback hogi.</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Slider label="Speech speed" min={0.5} max={2} step={0.1} value={settings.speechRate} fmt={(v) => `${v.toFixed(1)}×`} onChange={(v) => saveSettings({ speechRate: v })} />
               <Slider label="Volume" min={0} max={1} step={0.05} value={settings.speechVolume} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => saveSettings({ speechVolume: v })} />
