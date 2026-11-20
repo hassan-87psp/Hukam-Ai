@@ -70,7 +70,7 @@ export default function Settings() {
           <Section id="language" icon={<Languages className="h-5 w-5" />} title="Language & voice">
             <p className="label">Reply language</p>
             <Segmented value={settings.responseLang} onChange={(v) => saveSettings({ responseLang: v })} options={[{ value: 'roman', label: 'Roman Urdu' }, { value: 'ur', label: 'اردو' }, { value: 'en', label: 'English' }]} />
-            <p className="mt-2 text-xs text-ink2">HUKM foran device voice mein bolega. Free Pakistani female Uzma ke liye Microsoft Edge browser mein Voice tab kholein; agar Uzma available ho to Automatic select karein.</p>
+            <p className="mt-2 text-xs text-ink2">Automatic option se HUKM free online Pakistani female Uzma voice try karega, Chrome par bhi. Online service busy ho to device female voice mein fallback hoga. Voice ke liye Urdu reply text Microsoft service ko bheja jata hai.</p>
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <Slider label="Speech speed" min={0.5} max={2} step={0.1} value={settings.speechRate} fmt={(v) => `${v.toFixed(1)}×`} onChange={(v) => saveSettings({ speechRate: v })} />
               <Slider label="Volume" min={0} max={1} step={0.05} value={settings.speechVolume} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => saveSettings({ speechVolume: v })} />
