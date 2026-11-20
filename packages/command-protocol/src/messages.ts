@@ -115,7 +115,13 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
     case 'system.lock':
       return L('Laptop lock ho gaya.', 'لیپ ٹاپ لاک ہو گیا۔', 'The laptop is locked.');
     case 'whatsapp.open':
-      return L('WhatsApp open ho gaya.', 'واٹس ایپ کھل گیا۔', 'WhatsApp is open.');
+      if (r.needsChoice)
+        return L('WhatsApp Desktop nahi khul saka. Kya WhatsApp Web kholoon? Agar haan, bolein "WhatsApp Web kholo".', 'واٹس ایپ ڈیسک ٹاپ نہیں کھل سکا۔ کیا واٹس ایپ ویب کھولوں؟', 'WhatsApp Desktop could not open. Say "Open WhatsApp Web" if you want the browser.');
+      if (r.opened === 'web' && args.mode === 'desktop')
+        return L('Purana laptop controller abhi Web mode mein hai. Controller ki WhatsApp setting Desktop karni hogi.', 'لیپ ٹاپ کنٹرولر ابھی ویب موڈ میں ہے۔', 'The laptop controller is still set to Web mode. Switch its WhatsApp setting to Desktop.');
+      if (r.opened === 'web')
+        return L('WhatsApp Web browser mein khul gaya.', 'واٹس ایپ ویب براؤزر میں کھل گیا۔', 'WhatsApp Web opened in the browser.');
+      return L('WhatsApp Desktop app khul gayi.', 'واٹس ایپ ڈیسک ٹاپ ایپ کھل گئی۔', 'WhatsApp Desktop opened.');
     case 'whatsapp.check':
       if (typeof r.unreadChats === 'number')
         return r.unreadChats === 0
@@ -192,6 +198,12 @@ export function clarifyMessage(topic: string): Localized {
 }
 
 export function unsupportedMessage(reason: string): Localized {
+  if (reason === 'whatsapp-message-read')
+    return L(
+      'WhatsApp ki asal messages parhne ka feature abhi connected nahi hai. Main sirf unread chats ka count check kar sakta hoon. Kisi message ka text read hone ka jhoota claim nahi karunga.',
+      'واٹس ایپ کے اصل پیغامات پڑھنے کی سہولت ابھی موجود نہیں۔ صرف ان ریڈ چیٹس کی تعداد دیکھ سکتا ہوں۔',
+      'Reading WhatsApp message contents is not connected. I can only check unread chat counts.',
+    );
   if (reason === 'close')
     return L(
       'Apps band karna Version 1 mein supported nahi (unsaved kaam zaya ho sakta hai).',
