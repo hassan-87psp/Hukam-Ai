@@ -14,7 +14,7 @@ import { Operator } from './operator';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
-export const VERSION = '1.0.0';
+export const VERSION = '1.3.0';
 const COOKIE = 'hukm_session';
 const MAX_BODY = 64 * 1024;
 
@@ -162,7 +162,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   };
 
   add('GET', '/api/health', false, () => ({ ok: true, version: VERSION, time: nowIso() }));
-  add('GET', '/api/system', true, () => ({ version: VERSION, providers: PROVIDER_STATUS, parser: 'deterministic' }));
+  add('GET', '/api/system', true, () => ({ version: VERSION, providers: PROVIDER_STATUS, parser: 'deterministic+reviewed Gemini planner', projects: 'persistent', operator: 'supervised' }));
   // Keys never leave the server. AI chat is intentionally NOT a device/action API.
   add('GET', '/api/ai/status', true, () => ({ configured: geminiConfigured(), provider: 'gemini' }));
   add('POST', '/api/ai/chat', true, async (c) => {
