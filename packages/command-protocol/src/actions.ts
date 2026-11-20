@@ -241,6 +241,37 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     name: 'screen.capture', capability: 'screen', label: 'Capture screenshot', timeoutMs: 20000, defaultApprove: true,
     validate: () => ok({}),
   },
+  'browser.control': {
+    name: 'browser.control', capability: 'input', label: 'Approved browser input',
+    timeoutMs: 20000, alwaysApprove: true,
+    validate(a) {
+      if (!['click', 'type', 'scroll', 'key'].includes(String(a.kind ?? '')))
+        return fail('browser action must be click, type, scroll or key');
+      const kind = String(a.kind);
+      if (kind === 'click') {
+        if (!Number.isInteger(a.x) || !Number.isInteger(a.y) ||
+            (a.x as number) < 0 || (a.y as number) < 0 ||
+            (a.x as number) > 9999 || (a.y as number) > 9999)
+          return fail('click coordinates must be integer pixels from 0 to 9999');
+        return ok({ kind, x: a.x, y: a.y });
+      }
+      if (kind === 'type') {
+        const text = str(a.text, 'text', 1000);
+        if (isErr(text)) return text;
+        return ok({ kind, text });
+      }
+      if (kind === 'scroll') {
+        if (!Number.isInteger(a.steps) || (a.steps as number) < -5 ||
+            (a.steps as number) > 5 || a.steps === 0)
+          return fail('scroll steps must be a non-zero integer from -5 to 5');
+        return ok({ kind, steps: a.steps });
+      }
+      const allowedKeys = ['enter', 'tab', 'escape', 'backspace', 'home', 'end',
+        'arrowdown', 'arrowup', 'ctrl+l', 'ctrl+a'];
+      if (!allowedKeys.includes(String(a.key ?? ''))) return fail('key is not in the browser allowlist');
+      return ok({ kind, key: a.key });
+    },
+  },
   'system.lock': {
     name: 'system.lock', capability: 'system', label: 'Lock computer', timeoutMs: 10000, alwaysApprove: true,
     validate: () => ok({}),
