@@ -78,25 +78,64 @@ def active_window() -> WindowInfo | None:
     return WindowInfo(hwnd, win32gui.GetWindowText(hwnd), _proc_name(pid), pid)
 
 
-def focus_window(title_part: str) -> WindowInfo | None:
-    """Bring the first window whose title contains title_part (case-insensitive) to the front."""
-    needle = title_part.lower()
-    for w in list_windows():
-        if needle in w.title.lower():
-            import win32con
-            import win32gui
+def bring_to_front(window: WindowInfo) -> bool:
+    """Restore a minimized app and verify it actually receives focus.
 
-            if win32gui.IsIconic(w.hwnd):
-                win32gui.ShowWindow(w.hwnd, win32con.SW_RESTORE)
+    Windows can deny SetForegroundWindow; report that honestly instead of
+    claiming a window is visible when only its process was launched.
+    """
+    if not IS_WINDOWS:
+        return False
+    import win32con
+    import win32gui
+
+    try:
+        if win32gui.IsIconic(window.hwnd):
+            win32gui.ShowWindow(window.hwnd, win32con.SW_RESTORE)
+        try:
+            win32gui.SetForegroundWindow(window.hwnd)
+        except Exception:
+            # The foreground-lock rule sometimes allows an ALT key sequence.
             try:
-                win32gui.SetForegroundWindow(w.hwnd)
-            except Exception:
-                # Windows may refuse foreground changes; an ALT key tap is the documented workaround.
                 import win32api
 
                 win32api.keybd_event(0x12, 0, 0, 0)
                 win32api.keybd_event(0x12, 0, 2, 0)
-                win32gui.SetForegroundWindow(w.hwnd)
+                win32gui.SetForegroundWindow(window.hwnd)
+            except Exception:
+                return False
+        return win32gui.GetForegroundWindow() == window.hwnd
+    except Exception:
+        return False
+
+
+def focus_window(title_part: str) -> WindowInfo | None:
+    """Focus a matching title, or return None when Windows denied focus."""
+    needle = title_part.lower()
+    for w in list_windows():
+        if needle in w.title.lower() and bring_to_front(w):
+            return w
+    return None
+
+
+def focus_by_process(processes: list[str], title_contains: str | None = None) -> WindowInfo | None:
+    """Focus an already-running *installed application*, never an unrelated browser tab.
+
+    Process names are taken from HUKM's fixed app allowlist, not arbitrary
+    remote commands. An optional title helps distinguish Windows app frames.
+    """
+    if not IS_WINDOWS:
+        return None
+    allowed = {p.casefold() for p in processes}
+    if not allowed:
+        return None
+    needle = title_contains.casefold() if title_contains else None
+    for w in list_windows():
+        if w.process.casefold() not in allowed:
+            continue
+        if needle and needle not in w.title.casefold():
+            continue
+        if bring_to_front(w):
             return w
     return None
 
