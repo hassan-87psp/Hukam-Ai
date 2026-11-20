@@ -30,7 +30,7 @@ const mapNote = (x: Row): ProjectNote => ({ id: x.id, title: x.title, content: x
 export class Projects {
   constructor(private db: DB) {}
   list(userId: string): Project[] {
-    return all(this.db, 'SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC LIMIT 100', userId).map(mapProject);
+    return all(this.db, 'SELECT * FROM projects WHERE user_id = ? ORDER BY updated_at DESC LIMIT 30', userId).map(mapProject);
   }
   get(userId: string, id: string): Project {
     const p = one(this.db, 'SELECT * FROM projects WHERE user_id = ? AND id = ?', userId, id);
@@ -39,7 +39,7 @@ export class Projects {
   }
   save(userId: string, id: string | null, data: Record<string, unknown>): Project {
     const old = id ? this.get(userId, id) : null;
-    if (!old && !id && this.list(userId).length >= 60) throw new HttpError(400, 'PROJECT_LIMIT', 'Maximum 60 projects');
+    if (!old && !id && this.list(userId).length >= 30) throw new HttpError(400, 'PROJECT_LIMIT', 'Maximum 30 projects');
     const value = (k: keyof Project, max: number) => data[k] === undefined ? (old?.[k] ?? '') : str(data[k], k, max);
     const name = value('name', 80);
     if (!name) throw new HttpError(400, 'PROJECT_NAME', 'Project name required');
@@ -84,7 +84,7 @@ export class Projects {
   messages(userId: string, projectId: string): ProjectMessage[] {
     this.get(userId, projectId);
     return all(this.db, `SELECT id,role,content,created_at FROM
-      (SELECT * FROM project_messages WHERE user_id=? AND project_id=? ORDER BY created_at DESC, rowid DESC LIMIT 100)
+      (SELECT * FROM project_messages WHERE user_id=? AND project_id=? ORDER BY created_at DESC, rowid DESC LIMIT 80)
       ORDER BY created_at ASC`, userId, projectId).map(mapMsg);
   }
   appendMessage(userId: string, projectId: string, role: 'user' | 'assistant', content: unknown): ProjectMessage {
@@ -96,7 +96,7 @@ export class Projects {
     run(this.db, 'INSERT INTO project_messages(id,user_id,project_id,role,content,created_at) VALUES(?,?,?,?,?,?)',
       id,userId,projectId,role,text,now);
     run(this.db, `DELETE FROM project_messages WHERE user_id=? AND project_id=? AND id NOT IN
-      (SELECT id FROM project_messages WHERE user_id=? AND project_id=? ORDER BY created_at DESC,rowid DESC LIMIT 100)`,
+      (SELECT id FROM project_messages WHERE user_id=? AND project_id=? ORDER BY created_at DESC,rowid DESC LIMIT 80)`,
       userId,projectId,userId,projectId);
     run(this.db, 'UPDATE projects SET updated_at=? WHERE id=? AND user_id=?',now,projectId,userId);
     return {id,role,content:text,createdAt:now};
@@ -115,7 +115,7 @@ export class Projects {
     this.get(userId,projectId);
     const prev = id ? one(this.db,'SELECT * FROM project_notes WHERE user_id=? AND project_id=? AND id=?',userId,projectId,id) : null;
     if (id && !prev) throw new HttpError(404,'NOTE_NOT_FOUND','Note not found');
-    if (!prev && this.notes(userId,projectId).length >= 100) throw new HttpError(400,'NOTE_LIMIT','Maximum 100 notes per project');
+    if (!prev && this.notes(userId,projectId).length >= 40) throw new HttpError(400,'NOTE_LIMIT','Maximum 40 notes per project');
     const title = body.title===undefined && prev ? prev.title : str(body.title,'title',120);
     const content = body.content===undefined && prev ? prev.content : str(body.content,'content',3500);
     if(!title) throw new HttpError(400,'NOTE_TITLE','Note title required');
