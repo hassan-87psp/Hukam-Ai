@@ -247,11 +247,19 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
   },
   'whatsapp.open': {
     name: 'whatsapp.open', capability: 'whatsapp', label: 'Open WhatsApp', timeoutMs: 15000,
-    validate: () => ok({}),
+    validate(a) {
+      if (a.mode === undefined) return ok({});
+      if (a.mode !== 'desktop' && a.mode !== 'web') return fail('WhatsApp mode must be desktop or web');
+      return ok({ mode: a.mode });
+    },
   },
   'whatsapp.check': {
     name: 'whatsapp.check', capability: 'whatsapp', label: 'Check WhatsApp', timeoutMs: 20000,
-    validate: () => ok({}),
+    validate(a) {
+      if (a.mode === undefined) return ok({});
+      if (a.mode !== 'desktop' && a.mode !== 'web') return fail('WhatsApp mode must be desktop or web');
+      return ok({ mode: a.mode });
+    },
   },
   'whatsapp.compose': {
     name: 'whatsapp.compose', capability: 'whatsapp', label: 'Prepare WhatsApp message', timeoutMs: 20000, alwaysApprove: true,
