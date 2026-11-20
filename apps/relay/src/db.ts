@@ -9,6 +9,9 @@ import { log, nowIso } from './util';
 
 export type DB = DatabaseSyncT;
 
+const writeHooks = new WeakMap<DB, () => void>();
+export function setWriteHook(db: DB, hook: () => void) { writeHooks.set(db, hook); }
+
 export function openDb(dataDir: string, migrationsDir: string): DB {
   mkdirSync(dataDir, { recursive: true });
   const db = new DatabaseSync(join(dataDir, 'hukm.db'));
@@ -36,4 +39,8 @@ export function openDb(dataDir: string, migrationsDir: string): DB {
 export type Row = Record<string, any>;
 export const one = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).get(...p) as Row | undefined;
 export const all = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).all(...p) as Row[];
-export const run = (db: DB, sql: string, ...p: any[]) => db.prepare(sql).run(...p);
+export const run = (db: DB, sql: string, ...p: any[]) => {
+  const result = db.prepare(sql).run(...p);
+  writeHooks.get(db)?.();
+  return result;
+};
