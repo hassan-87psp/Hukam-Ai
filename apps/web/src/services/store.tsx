@@ -383,11 +383,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const local = parseCommand(t);
       const maybeAi = !pendingDialogueTopic && (local.kind === 'unsupported' || local.kind === 'reply');
       const history = chat
-        .filter((m) => (m.kind === 'user' && m.aiChat) || (m.kind === 'agent' && m.provider === 'gemini'))
-        .slice(-10)
-        .map((m) => m.kind === 'user'
-          ? { role: 'user' as const, text: m.text.slice(0, 700) }
-          : { role: 'assistant' as const, text: pick(m.msg, 'roman').slice(0, 700) });
+        .flatMap((m) => m.kind === 'user' && m.aiChat
+          ? [{ role: 'user' as const, text: m.text.slice(0, 700) }]
+          : m.kind === 'agent' && m.provider === 'gemini'
+            ? [{ role: 'assistant' as const, text: pick(m.msg, 'roman').slice(0, 700) }]
+            : [])
+        .slice(-10);
       addChat({ id: uid(), kind: 'user', text: t, source, at: new Date().toISOString(), aiChat: maybeAi });
       // Immediate acknowledgement only for a known laptop action.
       const hasDevice = devices.length > 0;
