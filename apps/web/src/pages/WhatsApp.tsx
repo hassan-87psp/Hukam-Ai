@@ -38,7 +38,7 @@ export default function WhatsApp() {
             <div className="flex items-center justify-between"><span className="text-ink2">WhatsApp capability</span>{capOn ? <Badge tone="ok" dot>Enabled</Badge> : <Badge tone="warn" dot>Disabled</Badge>}</div>
             <div className="flex items-center justify-between"><span className="text-ink2">Official WhatsApp API</span><Badge tone="muted">Not connected</Badge></div>
             <p className="rounded-xl bg-field/40 p-3 text-xs leading-relaxed text-ink2 ring-1 ring-line/10">
-              HUKM uses your own WhatsApp Web / Desktop on the laptop. It can open WhatsApp, read the <b className="text-ink">unread count</b> shown in the window title, and open a chat with a <b className="text-ink">pre-typed draft</b>. It never reads messages, never presses Send, and never sends in bulk.
+              HUKM uses WhatsApp on your own laptop. It can open Desktop/Web, check an <b className="text-ink">unread-chat count</b> and prepare an unsent draft. An experimental approved reader can speak <b className="text-ink">only the currently visible Desktop chat</b> on the laptop; its text stays local. HUKM never sends messages automatically.
             </p>
             <div className="grid grid-cols-2 gap-2">
               <button className="btn-primary" disabled={!activeDevice?.online} onClick={() => runAction('whatsapp.open', { mode: 'desktop' }, { label: 'WhatsApp Desktop kholo' })}>Open Desktop App</button>
@@ -47,7 +47,11 @@ export default function WhatsApp() {
             <button className="btn-ghost w-full" disabled={!activeDevice?.online || !!checking} onClick={() => runAction('whatsapp.check', { mode: 'desktop' }, { label: 'WhatsApp unread count check karo' })}>
               {checking ? <Spinner /> : <RefreshCw className="h-4 w-4" />} Check unread count
             </button>
-            <p className="text-xs text-ink2">Voice: "WhatsApp kholo" = Desktop; "WhatsApp Web kholo" = Browser. Purane Windows Controller ko bhi update karna hoga. Actual message text reading abhi supported nahi.</p>
+            <button className="btn-ghost w-full" disabled={!activeDevice?.online} onClick={() => runAction('whatsapp.read_visible', {}, { label: 'Read visible WhatsApp chat aloud on laptop' })}>
+              <MessageCircle className="h-4 w-4" /> Read visible chat aloud (Approval required)
+            </button>
+            <p className="text-xs text-ink2">Pehle WhatsApp Desktop mein chat khol kar screen par rakhein. Ye experimental Windows UI Accessibility reader hai: sirf visible chat text laptop par offline bolega. Agar WhatsApp version support na kare to koi message nahi parha jayega. Text HUKM cloud ko nahi bheja jata.</p>
+            <p className="text-xs text-ink2">Voice: "WhatsApp kholo" = Desktop; "WhatsApp Web kholo" = Browser. Updated Windows Controller install karna zaroori hai.</p>
           </div>
         </Card>
 
@@ -62,7 +66,7 @@ export default function WhatsApp() {
                 </div>
               ) : <p className="text-sm text-ink2">{String(lastCheck.result?.note ?? '')}</p>
             ) : lastCheck && lastCheck.error ? <p className="text-sm text-bad">{lastCheck.error.message}</p> : <p className="text-sm text-ink2">Tap “Check” to read the unread count.</p>}
-            <NotConnected title="Recent chats & message reader" body="Listing chats and reading message text needs an authorised integration (e.g. the official WhatsApp Business Platform). Automating the personal WhatsApp interface is fragile and can put your account at risk, so V1 doesn’t do it. No messages are shown here because none are read." />
+            <NotConnected title="Full message history & summaries" body="Full WhatsApp inbox sync and remote message summaries are not connected. Reading the visible Desktop chat aloud is an experimental, approved action on your own laptop. No WhatsApp message text is stored in HUKM or displayed in this page." />
           </div>
         </Card>
 
