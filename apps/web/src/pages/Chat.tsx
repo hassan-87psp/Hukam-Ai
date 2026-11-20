@@ -38,7 +38,7 @@ function UserBubble({ m }: { m: Extract<ChatMessage, { kind: 'user' }> }) {
 }
 
 export default function Chat() {
-  const { chat, commandMap, devices, clearChat } = useStore();
+  const { chat, commandMap, devices, clearChat, pendingWhatsAppChoice, runText } = useStore();
   const end = useRef<HTMLDivElement>(null);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -68,6 +68,16 @@ export default function Chat() {
         })}
         <div ref={end} />
       </div>
+      {pendingWhatsAppChoice && (
+        <div className="mx-1 mb-3 rounded-2xl border border-ice/25 bg-blue/10 p-3">
+          <p className="mb-2 text-sm font-medium">WhatsApp konsa kholoon? Aap bol bhi sakte hain.</p>
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-primary flex-1" onClick={() => void runText('Desktop wala')}>Desktop App</button>
+            <button className="btn-ghost flex-1" onClick={() => void runText('Web wala')}>WhatsApp Web</button>
+            <button className="btn-ghost" onClick={() => void runText('Rehne do')}>Cancel</button>
+          </div>
+        </div>
+      )}
       <div className="sticky bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 -mx-1 pb-3 pt-2 lg:bottom-0 lg:pb-6">
         <div className="pointer-events-none absolute inset-x-0 -top-6 bottom-0 bg-gradient-to-t from-bg via-bg/95 to-transparent" aria-hidden />
         <div className="relative rounded-3xl p-1"><CommandComposer placeholder="Type or speak a command…" /></div>
