@@ -57,7 +57,7 @@ export function beginDialogue(topic: string, input: string, contacts: readonly W
   if (!allowed.includes(topic as DialogueTopic)) return { state: null };
   const result: DialogueState = { topic: topic as DialogueTopic, expiresAt: expiry };
   if (topic === 'which-file')
-    result.intent = /\b(khol|open|launch)\b/.test(normalize(input)) ? 'file.open' : 'file.search';
+    result.intent = /\b(kholo|khol|open|launch)\b/.test(normalize(input)) ? 'file.open' : 'file.search';
   if (topic === 'youtube-query')
     result.intent = /\b(play|chalao|lagao|bajao)\b/.test(normalize(input)) ? 'youtube.play' : 'youtube.search';
   if (topic === 'message-body') {
@@ -85,13 +85,14 @@ export function resolveDialogue(
   if (!t) return { handled: true, result: question(state.topic, t), next: state };
   if (isCancel(t)) return {
     handled: true,
-    result: { kind: 'reply', topic: 'conversation-cancelled', normalized: t },
+    result: { kind: 'reply', topic: state.topic === 'whatsapp-choice' ? 'whatsapp-cancelled' : 'conversation-cancelled', normalized: t },
   };
   const parsed = parseCommand(text);
   // A fresh incomplete question also supersedes the older conversation.
   // Example: after "search karo", "message bhejo" must ask who, not
   // accidentally search the phrase "message bhejo".
   if (parsed.kind === 'clarify' && parsed.topic !== state.topic &&
+      !(state.topic === 'which-app' && parsed.topic === 'whatsapp-choice') &&
       parsed.topic !== 'empty' && parsed.topic !== 'contact-unknown')
     return { handled: false };
   const fullNewAction = parsed.kind === 'command'
