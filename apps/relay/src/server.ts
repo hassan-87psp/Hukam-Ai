@@ -7,6 +7,7 @@ import { PROVIDER_STATUS } from '../../../packages/command-protocol/src/index';
 import { loadConfig, type RelayConfig } from './config';
 import { restoreCloudSnapshot, startCloudBackup } from './backup';
 import { femaleUrduAudio, reportFemaleVoiceError } from './female-tts';
+import { chatWithGemini, geminiConfigured, GeminiError } from './gemini';
 import { HttpError, Relay } from './core';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
@@ -104,6 +105,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   const pairLimit = new RateLimiter(10, 10 * 60_000);
   const cmdLimit = new RateLimiter(60, 60_000);
   const ttsLimit = new RateLimiter(10, 60_000);
+  const aiLimit = new RateLimiter(12, 60_000);
+  const aiDailyLimit = new RateLimiter(120, 24 * 60 * 60_000);
   const apiLimit = new RateLimiter(600, 60_000);
 
   const hasUser = () => !!one(db, 'SELECT 1 AS x FROM users LIMIT 1');
@@ -156,6 +159,18 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
 
   add('GET', '/api/health', false, () => ({ ok: true, version: VERSION, time: nowIso() }));
   add('GET', '/api/system', true, () => ({ version: VERSION, providers: PROVIDER_STATUS, parser: 'deterministic' }));
+  // Keys never leave the server. AI chat is intentionally NOT a device/action API.
+  add('GET', '/api/ai/status', true, () => ({ configured: geminiConfigured(), provider: 'gemini' }));
+  add('POST', '/api/ai/chat', true, async (c) => {
+    if (!aiLimit.take('gemini:' + c.user!.id) || !aiDailyLimit.take('gemini:' + c.user!.id))
+      throw new HttpError(429, 'AI_RATE_LIMIT', 'AI chat limit reached. Please try again later.');
+    try {
+      return await chatWithGemini(c.body?.message, c.body?.history);
+    } catch (e) {
+      if (e instanceof GeminiError) throw new HttpError(e.status, e.code, e.message);
+      throw new HttpError(502, 'AI_UNAVAILABLE', 'Gemini is temporarily unavailable.');
+    }
+  });
 
   // auth
   add('GET', '/api/auth/status', false, (c) => {
