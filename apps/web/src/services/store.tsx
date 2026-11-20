@@ -164,6 +164,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
   const dismissToast = useCallback((id: string) => setToasts((x) => x.filter((y) => y.id !== id)), []);
 
+  const lastVoiceWarning = useRef(0);
   const say = useCallback((m: Localized, force = false) => {
     const s = settingsRef.current;
     if (s.speechMuted && !force) return;
@@ -176,11 +177,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     speak(
       textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume,
       setSpeaking, cloudUrdu,
-      () => toast({
-        title: 'Uzma online voice unavailable',
-        body: 'Device ki female voice par switch kar diya hai.',
-        tone: 'warn',
-      }),
+      () => {
+        if (Date.now() - lastVoiceWarning.current < 60_000) return;
+        lastVoiceWarning.current = Date.now();
+        toast({
+          title: 'Uzma online voice unavailable',
+          body: 'Device ki female voice par switch kar diya hai.',
+          tone: 'warn',
+        });
+      },
     );
   }, [toast]);
 
