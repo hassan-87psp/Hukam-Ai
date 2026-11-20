@@ -33,8 +33,8 @@ export interface User {
 }
 
 export type ChatMessage =
-  | { id: string; kind: 'user'; text: string; source: CommandSource; at: string }
-  | { id: string; kind: 'agent'; msg: Localized; at: string; tone?: 'info' | 'ok' | 'warn' | 'bad' }
+  | { id: string; kind: 'user'; text: string; source: CommandSource; at: string; aiChat?: boolean }
+  | { id: string; kind: 'agent'; msg: Localized; at: string; tone?: 'info' | 'ok' | 'warn' | 'bad'; provider?: 'gemini' }
   | { id: string; kind: 'command'; commandId: string; at: string };
 
 export interface Toast {
@@ -195,8 +195,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addChat = useCallback((m: ChatMessage) => setChat((c) => [...c, m]), []);
   const agent = useCallback(
-    (msg: Localized, tone: 'info' | 'ok' | 'warn' | 'bad' = 'info', speakIt = true) => {
-      addChat({ id: uid(), kind: 'agent', msg, at: new Date().toISOString(), tone });
+    (msg: Localized, tone: 'info' | 'ok' | 'warn' | 'bad' = 'info', speakIt = true, provider?: 'gemini') => {
+      addChat({ id: uid(), kind: 'agent', msg, at: new Date().toISOString(), tone, provider });
       if (speakIt) say(msg);
     },
     [addChat, say],
@@ -377,10 +377,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const runText = useCallback(
     async (text: string, source: CommandSource = 'text') => {
       const t = text.trim();
-      if (!t) return;
-      addChat({ id: uid(), kind: 'user', text: t, source, at: new Date().toISOString() });
-      // Immediate local acknowledgement from the same deterministic parser the relay uses.
+      if (!t || submitting) return;
+      // Gemini is chat-only. A normal message does not require the laptop to
+      // be connected, and no command/device data is automatically sent to Google.
       const local = parseCommand(t);
+      const maybeAi = !pendingDialogueTopic && (local.kind === 'unsupported' || local.kind === 'reply');
+      const history = chat
+        .filter((m) => (m.kind === 'user' && m.aiChat) || (m.kind === 'agent' && m.provider === 'gemini'))
+        .slice(-10)
+        .map((m) => m.kind === 'user'
+          ? { role: 'user' as const, text: m.text.slice(0, 700) }
+          : { role: 'assistant' as const, text: pick(m.msg, 'roman').slice(0, 700) });
+      addChat({ id: uid(), kind: 'user', text: t, source, at: new Date().toISOString(), aiChat: maybeAi });
+      // Immediate acknowledgement only for a known laptop action.
       const hasDevice = devices.length > 0;
       // For a conversational follow-up the server may select a different
       // action than the local parser, so speak only the server's actual action.
@@ -398,7 +407,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         // so it has no optimistic local parser acknowledgement.
         if (out.kind === 'command' && (local.kind !== 'command' || inDialogue))
           agent(ackMessage(out.command.action, out.command.args), 'info');
-        handleCreated(out, { silentAck: true });
+        if (out.kind === 'unsupported' || out.kind === 'reply') {
+          // A private message-only AI call, never a tool invocation.
+          // No cloud AI connection is needed for laptop actions themselves.
+          try {
+            const ai = await post<{ kind: 'ai'; provider: 'gemini'; reply: string }>(
+              '/api/ai/chat', { message: t, history },
+            );
+            const msg: Localized = { roman: ai.reply, ur: ai.reply, en: ai.reply };
+            agent(msg, 'info', source === 'voice', 'gemini');
+          } catch (aiError) {
+            if (aiError instanceof ApiError && aiError.code === 'AI_NOT_CONFIGURED') {
+              // Offline or unconfigured installations keep their old reply.
+              handleCreated(out, { silentAck: true });
+            } else {
+              const message = aiError instanceof Error ? aiError.message : 'Gemini is unavailable.';
+              agent({ roman: message, ur: message, en: message }, 'warn', source === 'voice');
+            }
+          }
+        } else {
+          handleCreated(out, { silentAck: true });
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         agent({ roman: `Masla: ${msg}`, ur: `مسئلہ: ${msg}`, en: `Problem: ${msg}` }, 'bad');
@@ -407,7 +436,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSubmitting(false);
       }
     },
-    [activeDevice, addChat, agent, devices.length, handleCreated, pendingDialogueTopic],
+    [activeDevice, addChat, agent, chat, devices.length, handleCreated, pendingDialogueTopic, submitting],
   );
 
   const runAction = useCallback(
