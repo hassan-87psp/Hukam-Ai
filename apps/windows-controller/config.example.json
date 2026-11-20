@@ -6,7 +6,7 @@
   "capabilities": ["system", "apps", "folders", "files", "browser", "youtube", "screen", "input", "whatsapp"],
   "screen_capture": true,
   "browser": "chrome",
-  "whatsapp_mode": "web",
+  "whatsapp_mode": "desktop",
   "search_max_depth": 6,
   "search_max_entries": 150000,
   "search_time_budget_s": 25.0,
