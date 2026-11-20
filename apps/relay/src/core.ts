@@ -72,6 +72,11 @@ function toAutomation(r: Row): Automation {
     updatedAt: r.updated_at,
     lastRunAt: r.last_run_at ?? null,
     lastRunStatus: r.last_run_status ?? null,
+    schedule: {
+      enabled: !!r.schedule_enabled,
+      time: r.schedule_time ?? null,
+      timezone: r.schedule_timezone ?? 'Asia/Kuala_Lumpur',
+    },
   };
 }
 
