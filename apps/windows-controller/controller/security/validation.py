@@ -148,7 +148,10 @@ def validate(action: str, args: dict) -> dict:
     if action in ("web.search", "youtube.search", "youtube.play"):
         return {"query": _str(a.get("query"), "query", 200)}
     if action == "notepad.type":
-        return {"text": _str(a.get("text"), "text", 1200)}
+        text = a.get("text")
+        if not isinstance(text, str) or not text.strip() or len(text) > 1200 or re.search(r"[\x00-\x08\x0b-\x1f]", text):
+            raise ValidationError("invalid Notepad text")
+        return {"text": text}
     if action == "browser.control":
         kind = a.get("kind")
         if kind == "click":
