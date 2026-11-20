@@ -4,7 +4,7 @@ import { cleanText, normalize } from './normalize';
 
 export type ParseResult =
   | { kind: 'command'; action: ActionName; args: Record<string, unknown>; normalized: string; matchedRule: string }
-  | { kind: 'reply'; topic: 'greeting' | 'help'; normalized: string }
+  | { kind: 'reply'; topic: 'greeting' | 'help' | 'whatsapp-cancelled'; normalized: string }
   | { kind: 'clarify'; topic: string; normalized: string }
   | { kind: 'unsupported'; reason: string; normalized: string };
 
