@@ -292,6 +292,11 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({ mode: a.mode });
     },
   },
+  'whatsapp.unread_senders': {
+    name: 'whatsapp.unread_senders', capability: 'whatsapp',
+    label: 'List visible unread WhatsApp senders', timeoutMs: 30000, alwaysApprove: true,
+    validate: () => ok({}),
+  },
   'whatsapp.read_visible': {
     name: 'whatsapp.read_visible', capability: 'whatsapp', label: 'Read visible WhatsApp chat aloud (locally only)',
     timeoutMs: 60000, alwaysApprove: true,

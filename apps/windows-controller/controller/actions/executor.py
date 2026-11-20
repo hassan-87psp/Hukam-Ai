@@ -16,6 +16,7 @@ from ..security import validation as v
 from ..system import apps, info, known_folders, launcher, windows
 from ..whatsapp import adapter as wa
 from ..whatsapp import reader as wa_reader
+from ..whatsapp import unread_senders as wa_senders
 
 log = logging.getLogger("hukm.exec")
 
@@ -248,7 +249,16 @@ class Executor:
     def do_whatsapp_check(self, a, _c):
         if not launcher.IS_WINDOWS and not launcher.SIMULATE:
             raise ActionError("NOT_SUPPORTED", "WhatsApp check reads window titles and needs Windows")
-        return wa.check(a.get("mode", self.cfg.whatsapp_mode), self.cfg.browser)
+        result = wa.check(a.get("mode", self.cfg.whatsapp_mode), self.cfg.browser)
+        if result.get("unreadChats") is None and not result.get("opened"):
+            raise ActionError("UNVERIFIABLE", result.get("note", "WhatsApp unread count could not be verified"))
+        return result
+
+    def do_whatsapp_unread_senders(self, _a, _c):
+        try:
+            return wa_senders.read_unread_senders()
+        except wa_senders.UnreadSendersUnavailable as e:
+            raise ActionError("UNVERIFIABLE", str(e)) from e
 
     def do_whatsapp_compose(self, a, _c):
         return {"contact": a["contact"], **wa.compose(a["phone"], a["message"], self.cfg.whatsapp_mode, self.cfg.browser)}

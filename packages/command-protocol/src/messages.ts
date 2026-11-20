@@ -61,6 +61,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('WhatsApp open kar raha hoon.', 'واٹس ایپ کھول رہا ہوں۔', 'Opening WhatsApp.');
     case 'whatsapp.check':
       return L('WhatsApp check kar raha hoon.', 'واٹس ایپ چیک کر رہا ہوں۔', 'Checking WhatsApp.');
+    case 'whatsapp.unread_senders':
+      return L('WhatsApp ki visible unread chats ke names parhne ke liye approval chahiye.', 'نظر آنے والی ان ریڈ چیٹس کے نام پڑھنے کے لیے اجازت چاہیے۔', 'Approval is required to read visible unread sender names.');
     case 'whatsapp.read_visible':
       return L('Aapki approval ke baad WhatsApp ki khuli chat laptop par offline parhunga. Message text cloud par nahi bhejunga.', 'آپ کی منظوری کے بعد کھلی چیٹ لیپ ٹاپ پر آف لائن پڑھوں گا۔', 'With approval, I will read aloud the visible WhatsApp chat on your laptop only; no message contents are transferred.');
     case 'whatsapp.compose':
@@ -134,6 +136,13 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
           ? L('WhatsApp par koi unread chat nazar nahi aa rahi.', 'واٹس ایپ پر کوئی ان ریڈ چیٹ نظر نہیں آ رہی۔', 'No unread chats are showing in WhatsApp.')
           : L(`WhatsApp par ${r.unreadChats} unread chats hain.`, `واٹس ایپ پر ${r.unreadChats} ان ریڈ چیٹس ہیں۔`, `WhatsApp shows ${r.unreadChats} unread chats.`);
       return L('WhatsApp open hai, lekin unread count parha nahi ja saka.', 'واٹس ایپ کھلا ہے، لیکن ان ریڈ تعداد نہیں پڑھی جا سکی۔', "WhatsApp is open, but the unread count couldn't be read.");
+    case 'whatsapp.unread_senders': {
+      const senders = Array.isArray(r.senders) ? r.senders.filter((x): x is string => typeof x === 'string').slice(0, 12) : [];
+      if (!senders.length) return L('WhatsApp ne unread sender names verify nahi kiye.', 'واٹس ایپ کے ناموں کی تصدیق نہیں ہوئی۔', 'No unread sender names could be verified.');
+      return L(`WhatsApp par visible unread chats: ${senders.join(', ')}. Messages ka content nahi parha.`,
+        `نظر آنے والی ان ریڈ چیٹس: ${senders.join('، ')}۔ میسج نہیں پڑھے۔`,
+        `Visible unread chats: ${senders.join(', ')}. Message contents were not read.`);
+    }
     case 'whatsapp.read_visible':
       if (r.messagesRead === true && r.spokenOnDevice === true)
         return L('Jo WhatsApp chat screen par nazar aa rahi thi, uska visible text laptop par suna diya. Message cloud par nahi bheja.', 'واٹس ایپ کی کھلی چیٹ کا متن لیپ ٹاپ پر سنا دیا، سرور کو نہیں بھیجا۔', 'Visible WhatsApp chat text was spoken locally on the laptop. Nothing was sent to the cloud.');

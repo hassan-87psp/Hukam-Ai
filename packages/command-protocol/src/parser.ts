@@ -218,6 +218,13 @@ export function parseCommand(input: string): ParseResult {
       /^(?:send|write|draft)\s+(?:a\s+)?(?:whatsapp\s+)?(?:message|msg|text)\s+to\s+[a-z\p{L}][a-z\p{L}\s'.-]{0,45}$/iu.test(t))
     return { kind: 'clarify', topic: 'message-body', normalized: t };
 
+  // Sender names need a separate, explicitly approved laptop read.
+  // Do not mistake "kis ka message" for the simpler numeric unread check.
+  if (/\b(whatsapp|messages?|msgs?|chats?)\b/.test(t) &&
+      /\b(kis kis|kis ka|kiska|kis ke|kon|kaun|who|sender|senders|naam|name)\b/.test(t) &&
+      /\b(msg|msgs|message|messages|chat|chats|unread|naye|nayi|aaya|aya)\b/.test(t))
+    return cmd('whatsapp.unread_senders', {}, 'whatsapp-unread-senders');
+
   // Read only the CURRENT VISIBLE WhatsApp Desktop chat. The laptop speaks
   // offline, with no message text sent to the relay. Always requires approval.
   if (/\b(whatsapp|messages?|chats?)\b/.test(t) &&

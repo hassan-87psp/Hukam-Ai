@@ -24,7 +24,7 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "browser.control", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible",
+    "browser.control", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
 
 CAPABILITY_OF = {
@@ -32,7 +32,7 @@ CAPABILITY_OF = {
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
     "screen.capture": "screen", "browser.control": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
-    "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp",
+    "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp", "whatsapp.unread_senders": "whatsapp",
 }
 
 

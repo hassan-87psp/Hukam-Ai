@@ -59,6 +59,22 @@ describe('operator website shortcuts', () => {
   });
 });
 
+describe('WhatsApp unread sender intents', () => {
+  it('asks for names, not just a count', () => {
+    expect(c('whatsapp open ker ke msg dakho kis kis ka ya a')).toMatchObject({
+      action: 'whatsapp.unread_senders', args: {},
+    });
+    expect(c('whatsapp par kis ka message aaya hai')).toMatchObject({
+      action: 'whatsapp.unread_senders',
+    });
+    expect(c('whatsapp unread kitne hain')).toMatchObject({ action: 'whatsapp.check' });
+  });
+  it('always requires approval and validates empty args', () => {
+    expect(requiresApproval('whatsapp.unread_senders')).toBe(true);
+    expect(validateCommand('whatsapp.unread_senders', {}).ok).toBe(true);
+  });
+});
+
 describe('folders', () => {
   it('Downloads folder kholo', () => expect(c('Downloads folder kholo.')).toMatchObject({ action: 'folder.open', args: { folder: 'downloads' } }));
   it('polite mixed', () => expect(c('Please mera downloads folder open kar do')).toMatchObject({ action: 'folder.open', args: { folder: 'downloads' } }));

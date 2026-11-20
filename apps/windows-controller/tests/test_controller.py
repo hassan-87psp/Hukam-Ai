@@ -14,6 +14,7 @@ from controller.security import validation as v
 from controller.system import launcher
 from controller.whatsapp import adapter as whatsapp_adapter
 from controller.whatsapp.adapter import unread_from_titles, count_from_accessibility_items
+from controller.whatsapp import unread_senders as wa_senders
 
 
 def make_exec(**over):
@@ -249,6 +250,21 @@ def test_whatsapp_check_uses_accessibility_badge_when_title_omits_count(monkeypa
     assert result["source"] == "WhatsApp Desktop Unread filter"
     assert result["messagesRead"] is False
 
+
+
+def test_unread_sender_row_titles_are_bounded_and_ignore_previews():
+    assert wa_senders.first_row_title([
+        ("Ali", 208, 100), ("see you tomorrow", 235, 100),
+    ], 200) == "Ali"
+    assert wa_senders.first_row_title([("0:30", 205, 110), ("Chats", 205, 100)], 200) is None
+
+
+def test_unread_senders_simulated_safely(sandbox):
+    result = run(make_exec(), "whatsapp.unread_senders", {})
+    assert result.ok
+    assert result.result["visibleOnly"] is True
+    assert result.result["messagesRead"] is False
+    assert result.result["senders"] == ["Test Contact"]
 
 
 # ---- dedupe -----------------------------------------------------------------
