@@ -78,7 +78,10 @@ describe('whatsapp', () => {
   it('check', () => expect(c('WhatsApp check karo.').action).toBe('whatsapp.check'));
   it('unread', () => expect(c('WhatsApp par unread messages batao.').action).toBe('whatsapp.check'));
   it('contact unread → check', () => expect(c('Ali ke naye messages batao.').action).toBe('whatsapp.check'));
-  it('open', () => expect(c('WhatsApp khol do.').action).toBe('whatsapp.open'));
+  it('open desktop by default', () => expect(c('WhatsApp khol do.')).toMatchObject({ action: 'whatsapp.open', args: { mode: 'desktop' } }));
+  it('explicit web browser command', () => expect(c('WhatsApp Web kholo')).toMatchObject({ action: 'whatsapp.open', args: { mode: 'web' } }));
+  it('explicit desktop command', () => expect(c('WhatsApp Desktop kholo')).toMatchObject({ action: 'whatsapp.open', args: { mode: 'desktop' } }));
+  it('do not pretend to read WhatsApp message bodies', () => expect(parseCommand('WhatsApp messages read karo')).toMatchObject({ kind: 'unsupported', reason: 'whatsapp-message-read' }));
   it('compose roman', () =>
     expect(c('Ali ko message likho ke main 10 minute mein call karunga.')).toMatchObject({
       action: 'whatsapp.compose',
