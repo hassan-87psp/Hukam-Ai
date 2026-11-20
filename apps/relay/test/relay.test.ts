@@ -295,6 +295,47 @@ describe('automations', () => {
   });
 });
 
+describe('daily automation schedules', () => {
+  it('validates time and timezone and keeps existing automations opt-in', async () => {
+    const badClock = await api('POST', '/api/automations', {
+      name: 'bad time', steps: ['Chrome kholo'],
+      schedule: { enabled: true, time: '25:99', timezone: 'Asia/Kuala_Lumpur' },
+    });
+    expect(badClock.status).toBe(400);
+    const badZone = await api('POST', '/api/automations', {
+      name: 'bad timezone', steps: ['Chrome kholo'],
+      schedule: { enabled: true, time: '09:00', timezone: 'Mars/Olympus' },
+    });
+    expect(badZone.status).toBe(400);
+    const items = (await api('GET', '/api/automations')).data;
+    expect(items.every((a: any) => a.schedule && !a.schedule.enabled)).toBe(true);
+  });
+
+  it('runs a scheduled routine once per local day, and never early', async () => {
+    device.auto = () => ({ ok: true, result: {} });
+    const saved = await api('POST', '/api/automations', {
+      name: 'daily smoke test', steps: ['Chrome kholo'],
+      schedule: { enabled: true, time: '09:00', timezone: 'Asia/Kuala_Lumpur' },
+    });
+    expect(saved.status).toBe(200);
+    expect(saved.data.schedule).toEqual({
+      enabled: true, time: '09:00', timezone: 'Asia/Kuala_Lumpur',
+    });
+    const id = saved.data.id;
+    const count = () => (h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands WHERE automation_run_id IS NOT NULL AND input_text = ?').get('Chrome kholo') as any).n as number;
+    const before = count();
+    h.relay.runDueSchedules(new Date('2026-11-20T00:59:00.000Z'));
+    expect(count()).toBe(before);
+    h.relay.runDueSchedules(new Date('2026-11-20T01:00:00.000Z'));
+    const first = count();
+    expect(first).toBe(before + 1);
+    h.relay.runDueSchedules(new Date('2026-11-20T01:00:25.000Z'));
+    expect(count()).toBe(first);
+    const claimed = h.relay.db.prepare('SELECT last_scheduled_day FROM automations WHERE id = ?').get(id) as any;
+    expect(claimed.last_scheduled_day).toBe('2026-11-20');
+  });
+});
+
 describe('unpairing', () => {
   it('revokes the device and its token', async () => {
     await api('DELETE', `/api/devices/${deviceId}`);
