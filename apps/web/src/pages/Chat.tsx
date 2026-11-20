@@ -102,7 +102,7 @@ export default function Chat() {
       <div className="sticky bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 -mx-1 pb-3 pt-2 lg:bottom-0 lg:pb-6">
         <div className="pointer-events-none absolute inset-x-0 -top-6 bottom-0 bg-gradient-to-t from-bg via-bg/95 to-transparent" aria-hidden />
         <div className="relative rounded-3xl p-1"><CommandComposer placeholder="HUKM AI ko message likhein…" /></div>
-        <p className="relative mt-1 px-3 text-center text-[10px] text-ink2">Gemini replies ke liye aapka message aur recent AI conversation Google ko bheji jaati hai. Laptop files ya WhatsApp chats automatically share nahi hote.</p>
+        <p className="relative mt-1 px-3 text-center text-[10px] text-ink2">Gemini ko aapka current request bheja jata hai. Project select ho to uski saved instructions/notes bhi planner ke liye bheji ja sakti hain. Laptop files, screenshots aur WhatsApp message bodies automatically share nahi hote.</p>
       </div>
     </div>
   );
