@@ -170,12 +170,16 @@ let lastUtterance: {
 let cloudRequest: AbortController | null = null;
 let cloudAudio: HTMLAudioElement | null = null;
 let cloudObjectUrl: string | null = null;
+let cloudTimeout: ReturnType<typeof setTimeout> | null = null;
 let speechSerial = 0;
 
 function clearCloud() {
+  if (cloudTimeout) { clearTimeout(cloudTimeout); cloudTimeout = null; }
   cloudRequest?.abort();
   cloudRequest = null;
   if (cloudAudio) {
+    cloudAudio.onended = null;
+    cloudAudio.onerror = null;
     cloudAudio.pause();
     cloudAudio.removeAttribute('src');
     cloudAudio.load();
@@ -220,6 +224,16 @@ export function speak(
   const serial = speechSerial;
   const request = new AbortController();
   cloudRequest = request;
+  let fallbackActivated = false;
+  const fallbackToDevice = () => {
+    if (serial !== speechSerial || fallbackActivated) return;
+    fallbackActivated = true;
+    clearCloud();
+    onCloudFailure?.();
+    localSpeech(text, voice, rate, volume, onState);
+  };
+  // Free unofficial voice service can stall; never leave HUKM silent.
+  cloudTimeout = setTimeout(fallbackToDevice, 8000);
   void (async () => {
     try {
       const res = await fetch('/api/voice/tts', {
@@ -246,19 +260,14 @@ export function speak(
           clearCloud();
         }
       };
-      player.onerror = () => {
-        if (serial === speechSerial) {
-          onState?.(false);
-          clearCloud();
-        }
-      };
+      player.onerror = fallbackToDevice;
       await player.play();
-      if (serial === speechSerial) onState?.(true);
-    } catch (error) {
-      if (serial !== speechSerial || request.signal.aborted) return;
-      clearCloud();
-      onCloudFailure?.();
-      localSpeech(text, voice, rate, volume, onState);
+      if (serial === speechSerial && !fallbackActivated) {
+        if (cloudTimeout) { clearTimeout(cloudTimeout); cloudTimeout = null; }
+        onState?.(true);
+      }
+    } catch {
+      fallbackToDevice();
     }
   })();
 }
