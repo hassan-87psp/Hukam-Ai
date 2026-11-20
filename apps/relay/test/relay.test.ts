@@ -240,6 +240,63 @@ describe('commands', () => {
     expect(r2.data.command.args).toMatchObject({ contact: 'Ali', phone: '923001234567' });
     await api('POST', `/api/commands/${r2.data.command.id}/reject`);
   });
+  it('holds a multi-step YouTube conversation without opening random pages', async () => {
+    device.auto = () => ({ ok: true, result: { mode: 'search' } });
+    const ask = await api('POST', '/api/commands', { text: 'YouTube kholo', source: 'voice' });
+    expect(ask.data).toMatchObject({ kind: 'clarify', topic: 'youtube-choice' });
+    const next = await api('POST', '/api/commands', { text: 'Video search', source: 'voice' });
+    expect(next.data).toMatchObject({ kind: 'clarify', topic: 'youtube-query' });
+    const actual = await api('POST', '/api/commands', { text: 'Gold analysis', source: 'voice' });
+    expect(actual.data).toMatchObject({ kind: 'command', command: {
+      action: 'youtube.search', args: { query: 'Gold analysis' },
+    } });
+    await waitStatus(actual.data.command.id, ['completed']);
+  });
+
+  it('resolves missing file, folder, app, website and search slots', async () => {
+    device.auto = () => ({ ok: true, result: { windowDetected: true } });
+    for (const [asked, topic, answer, action] of [
+      ['File kholo', 'which-file', 'Invoice PDF', 'file.open'],
+      ['Folder kholo', 'which-folder', 'Downloads', 'folder.open'],
+      ['App kholo', 'which-app', 'Chrome', 'app.open'],
+      ['Website kholo', 'which-website', 'Google', 'web.open'],
+      ['Search karo', 'search-what', 'Gold weekly forecast', 'web.search'],
+    ] as const) {
+      const prompt = await api('POST', '/api/commands', { text: asked });
+      expect(prompt.data).toMatchObject({ kind: 'clarify', topic });
+      const reply = await api('POST', '/api/commands', { text: answer });
+      expect(reply.data).toMatchObject({ kind: 'command', command: { action } });
+      await waitStatus(reply.data.command.id, ['completed']);
+    }
+  });
+
+  it('never sends a WhatsApp message: asks recipient, body, then approval', async () => {
+    device.auto = () => ({ ok: true, result: { sent: false } });
+    const first = await api('POST', '/api/commands', { text: 'Message bhejo' });
+    expect(first.data).toMatchObject({ kind: 'clarify', topic: 'message-contact' });
+    const recipient = await api('POST', '/api/commands', { text: 'Ali' });
+    expect(recipient.data).toMatchObject({ kind: 'clarify', topic: 'message-body' });
+    const body = await api('POST', '/api/commands', { text: 'Main kal 10 baje call karunga' });
+    expect(body.data).toMatchObject({ kind: 'command', command: {
+      action: 'whatsapp.compose', status: 'awaiting_approval',
+      args: { contact: 'Ali', message: 'Main kal 10 baje call karunga' },
+    } });
+    await api('POST', `/api/commands/${body.data.command.id}/reject`);
+    expect((await api('GET', `/api/commands/${body.data.command.id}`)).data.status).toBe('cancelled');
+    expect(device.inbox.some((m) => m.type === 'command' && m.command.id === body.data.command.id)).toBe(false);
+  });
+
+  it('new incomplete requests supersede old questions and cancellation never dispatches', async () => {
+    const initial = await api('POST', '/api/commands', { text: 'Search karo' });
+    expect(initial.data).toMatchObject({ kind: 'clarify', topic: 'search-what' });
+    const changed = await api('POST', '/api/commands', { text: 'Message bhejo' });
+    expect(changed.data).toMatchObject({ kind: 'clarify', topic: 'message-contact' });
+    const before = device.inbox.filter((m) => m.type === 'command').length;
+    const cancelled = await api('POST', '/api/commands', { text: 'Rehne do' });
+    expect(cancelled.data).toMatchObject({ kind: 'reply', topic: 'conversation-cancelled' });
+    expect(device.inbox.filter((m) => m.type === 'command')).toHaveLength(before);
+  });
+
   it('times out commands the device never answers', async () => {
     device.auto = (cmd) => null; // swallow
     const r = await api('POST', '/api/commands', { action: 'window.active', args: {} });
