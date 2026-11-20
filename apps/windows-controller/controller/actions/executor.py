@@ -202,6 +202,24 @@ class Executor:
         return {"path": str(p), "folder": str(p.parent)}
 
     # -- browser --------------------------------------------------------
+    def do_notepad_type(self, a, _c):
+        if launcher.SIMULATE:
+            launcher._record("notepad.type", "text (redacted)")
+            return {"inputDelivered": True, "verified": False, "simulated": True}
+        from ..system import windows
+        active = windows.active_window()
+        if not active or active.process.casefold() != "notepad.exe" or "notepad" not in active.title.casefold():
+            raise ActionError("NOT_ALLOWED", "Open Notepad and bring its editing window to the foreground")
+        try:
+            import win32gui
+            if not win32gui.IsWindowVisible(active.hwnd) or win32gui.IsIconic(active.hwnd):
+                raise ActionError("NOT_ALLOWED", "Notepad window is not visible")
+            browser_operator._send_unicode(a["text"])
+        except RuntimeError as exc:
+            raise ActionError("INPUT_FAILED", str(exc)) from exc
+        return {"app": "notepad", "inputDelivered": True, "verified": False,
+                "note": "Text delivered to Notepad. Document content is not independently verified."}
+
     def do_browser_control(self, a, _c):
         try:
             return browser_operator.control(a)
