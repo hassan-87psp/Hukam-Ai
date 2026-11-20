@@ -91,6 +91,11 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   const db = openDb(config.dataDir, config.migrationsDir);
   const backup = startCloudBackup(db, config.dataDir);
   setWriteHook(db, backup.markDirty);
+  // Persist startup migrations, including the one-time Roman Urdu voice settings.
+  if (backup.enabled) {
+    backup.markDirty();
+    await backup.flush();
+  }
   const relay = new Relay(db, config);
   relay.start();
 
