@@ -27,7 +27,7 @@ function Editor({ open, onClose, initial }: { open: boolean; onClose: () => void
   const parsed = useMemo(() => lines.map((l) => ({ l, p: parseCommand(l) })), [steps]); // eslint-disable-line react-hooks/exhaustive-deps
   const valid = name.trim() && lines.length > 0 && lines.length <= 15 &&
     parsed.every((x) => x.p.kind === 'command' && x.p.action !== 'whatsapp.compose' && x.p.action !== 'system.lock') &&
-    (!scheduleOn || /^([01]\\d|2[0-3]):[0-5]\\d$/.test(scheduleTime));
+    (!scheduleOn || /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(scheduleTime));
   return (
     <Modal open={open} onClose={onClose} title={initial?.id ? 'Edit automation' : 'New automation'} wide
       footer={<><button className="btn-ghost" onClick={onClose}>Cancel</button>
