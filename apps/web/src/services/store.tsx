@@ -383,7 +383,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const local = parseCommand(t);
       const maybeAi = !pendingDialogueTopic && (local.kind === 'unsupported' || local.kind === 'reply');
       const history = chat
-        .flatMap((m) => m.kind === 'user' && m.aiChat
+        .flatMap<{ role: 'user' | 'assistant'; text: string }>((m) => m.kind === 'user' && m.aiChat
           ? [{ role: 'user' as const, text: m.text.slice(0, 700) }]
           : m.kind === 'agent' && m.provider === 'gemini'
             ? [{ role: 'assistant' as const, text: pick(m.msg, 'roman').slice(0, 700) }]
