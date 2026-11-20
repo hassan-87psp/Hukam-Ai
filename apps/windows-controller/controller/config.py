@@ -43,7 +43,7 @@ class Config:
     capabilities: list[str] = field(default_factory=lambda: [c for c in ALL_CAPABILITIES])
     screen_capture: bool = True
     browser: str = "default"  # default | chrome | edge
-    whatsapp_mode: str = "web"  # web | desktop
+    whatsapp_mode: str = "desktop"  # desktop | web; installed Windows app by default
     search_max_depth: int = 6
     search_max_entries: int = 150_000
     search_time_budget_s: float = 25.0
