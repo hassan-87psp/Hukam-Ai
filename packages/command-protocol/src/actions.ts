@@ -276,8 +276,10 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     name: 'notepad.type', capability: 'input', label: 'Type into active Notepad',
     timeoutMs: 20000, alwaysApprove: true,
     validate(a) {
-      const text = str(a.text, 'text', 1200);
-      return isErr(text) ? text : ok({ text });
+      // Notepad supports multi-line text; unlike URLs, typing permits CR/LF/TAB.
+      if(typeof a.text!=='string'||!a.text.trim()||a.text.length>1200||
+         /[\u0000-\u0008\u000b-\u001f]/.test(a.text)) return fail('invalid Notepad text');
+      return ok({ text: a.text });
     },
   },
   'system.lock': {
