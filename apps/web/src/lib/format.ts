@@ -66,6 +66,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'screen.capture': 'Screenshot',
   'browser.control': 'Browser input (approval)',
   'notepad.type': 'Type into Notepad (approval)',
+  'browser.profile_open': 'Open saved Chrome profile',
   'system.lock': 'Lock laptop',
   'whatsapp.open': 'Open WhatsApp',
   'whatsapp.check': 'Check WhatsApp',
@@ -92,6 +93,7 @@ export function describeArgs(action: ActionName, args: Record<string, unknown>):
     case 'youtube.play': return `“${a.query}”`;
     case 'whatsapp.compose': return `to ${a.contact}`;
     case 'window.focus': return String(a.title ?? '');
+    case 'browser.profile_open': return String(a.profile)+' · '+String(a.url);
     case 'notepad.type': return 'text (' + String(a.text ?? '').length + ' characters)';
     case 'browser.control': return a.kind === 'click' ? `click (${a.x}, ${a.y})` : a.kind === 'scroll' ? `scroll ${a.steps}` : a.kind === 'key' ? `press ${a.key}` : 'type into browser';
     default: return '';
