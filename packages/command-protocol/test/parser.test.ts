@@ -53,7 +53,7 @@ describe('app intents — same intent for different phrasing', () => {
 describe('real-user screenshot regressions', () => {
   it('YouTube open mro is a homepage, not a search for mro', () => {
     expect(c('YouTube open mro')).toMatchObject({action:'web.open',args:{url:'https://www.youtube.com/'}});
-    expect(c('YouTube kholo')).toMatchObject({action:'web.open',args:{url:'https://www.youtube.com/'}});
+    expect(parseCommand('YouTube kholo')).toMatchObject({kind:'clarify',topic:'youtube-choice'});
   });
   it('allows multiline Notepad typing but rejects control characters', () => {
     expect(validateCommand('notepad.type',{text:'1'+String.fromCharCode(10)+'2'}).ok).toBe(true);
