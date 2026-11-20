@@ -65,6 +65,7 @@ interface Store {
   speaking: boolean;
   audioLevel: number;
   submitting: boolean;
+  pendingWhatsAppChoice: boolean;
   activeDevice: Device | null;
   // actions
   setup(email: string, name: string, password: string, setupCode: string): Promise<void>;
@@ -119,6 +120,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [speaking, setSpeaking] = useState(false);
   const [audioLevel, setAudioLevel] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [pendingWhatsAppChoice, setPendingWhatsAppChoice] = useState(false);
   const [flash, setFlash] = useState<{ state: 'success' | 'error'; until: number } | null>(null);
   const rt = useRef<Realtime | null>(null);
   const announced = useRef<Set<string>>(new Set());
@@ -339,6 +341,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const handleCreated = useCallback(
     (out: any, opts: { silentAck?: boolean } = {}): Command | null => {
       if (out.kind === 'command') {
+        setPendingWhatsAppChoice(false);
         ownCommands.current.add(out.command.id);
         const c: Command = upsertCommand(out.command);
         if (!out.duplicate) addChat({ id: uid(), kind: 'command', commandId: c.id, at: new Date().toISOString() });
@@ -350,9 +353,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         announce(c);
         return c;
       }
-      if (out.kind === 'reply') agent(replyMessage(out.topic));
-      else if (out.kind === 'clarify') agent(clarifyMessage(out.topic), 'warn');
-      else if (out.kind === 'unsupported') agent(unsupportedMessage(out.reason), 'warn');
+      if (out.kind === 'reply') {
+        setPendingWhatsAppChoice(false);
+        agent(replyMessage(out.topic));
+      } else if (out.kind === 'clarify') {
+        setPendingWhatsAppChoice(out.topic === 'whatsapp-choice');
+        agent(clarifyMessage(out.topic), 'info');
+      } else if (out.kind === 'unsupported') {
+        setPendingWhatsAppChoice(false);
+        agent(unsupportedMessage(out.reason), 'warn');
+      }
       return null;
     },
     [addChat, agent, announce, devices, upsertCommand],
@@ -374,6 +384,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSubmitting(true);
       try {
         const out = await post('/api/commands', { text: t, source, clientRequestId: uid(), deviceId: activeDevice?.id });
+        // A one-word follow-up ("Desktop wala") is resolved on the relay,
+        // so it has no optimistic local parser acknowledgement.
+        if (out.kind === 'command' && local.kind !== 'command')
+          agent(ackMessage(out.command.action, out.command.args), 'info');
         handleCreated(out, { silentAck: true });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -454,6 +468,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       /* ignore */
     }
     setUser(null);
+    setPendingWhatsAppChoice(false);
     setDevices([]);
     latest.current = new Map();
     setCommandMap(new Map());
@@ -471,9 +486,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const value: Store = {
     auth, user, settings, devices, commands, commandMap, approvals, automations, chat, toasts, realtime, brain, listening, speaking,
-    audioLevel, submitting, activeDevice,
+    audioLevel, submitting, pendingWhatsAppChoice, activeDevice,
     setup, login, logout, refresh, runText, runAction, approve, reject, cancel, saveSettings, setDevices, setAutomations, toast,
-    dismissToast, clearChat: () => setChat([]), setListening, setAudioLevel, say, loadMoreCommands, setUser,
+    dismissToast, clearChat: () => { setChat([]); setPendingWhatsAppChoice(false); }, setListening, setAudioLevel, say, loadMoreCommands, setUser,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
