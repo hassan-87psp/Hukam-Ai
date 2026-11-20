@@ -6,6 +6,7 @@ import { WebSocketServer } from 'ws';
 import { PROVIDER_STATUS } from '../../../packages/command-protocol/src/index';
 import { loadConfig, type RelayConfig } from './config';
 import { restoreCloudSnapshot, startCloudBackup } from './backup';
+import { femaleUrduAudio, reportFemaleVoiceError } from './female-tts';
 import { HttpError, Relay } from './core';
 import { all, one, openDb, run, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
@@ -102,6 +103,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   const loginLimit = new RateLimiter(10, 5 * 60_000);
   const pairLimit = new RateLimiter(10, 10 * 60_000);
   const cmdLimit = new RateLimiter(60, 60_000);
+  const ttsLimit = new RateLimiter(10, 60_000);
   const apiLimit = new RateLimiter(600, 60_000);
 
   const hasUser = () => !!one(db, 'SELECT 1 AS x FROM users LIMIT 1');
@@ -290,6 +292,30 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   add('PATCH', '/api/automations/:id', true, (c) => relay.saveAutomation(c.user!.id, c.params.id, c.body ?? {}));
   add('DELETE', '/api/automations/:id', true, (c) => (relay.deleteAutomation(c.user!.id, c.params.id), { ok: true }));
   add('POST', '/api/automations/:id/run', true, (c) => relay.runAutomation(c.user!.id, c.params.id, typeof c.body?.deviceId === 'string' ? c.body.deviceId : undefined));
+
+  // Authenticated experimental free Urdu female voice, shared across desktop/mobile.
+  // The fixed voice prevents arbitrary third-party API usage and the small limits
+  // keep a stolen web session from abusing the upstream consumer service.
+  add('POST', '/api/voice/tts', true, async (c) => {
+    if (!ttsLimit.take('voice:' + c.user!.id)) throw new HttpError(429, 'VOICE_RATE_LIMITED', 'too many voice requests');
+    const text = typeof c.body?.text === 'string' ? c.body.text.trim() : '';
+    if (!text || text.length > 450 || !/[\u0600-\u06FF]/u.test(text))
+      throw new HttpError(400, 'INVALID_VOICE_TEXT', 'Urdu text up to 450 characters is required');
+    try {
+      const audio = await femaleUrduAudio(text);
+      c.res.writeHead(200, {
+        'content-type': 'audio/mpeg',
+        'content-length': audio.byteLength,
+        'cache-control': 'no-store, private',
+        'x-content-type-options': 'nosniff',
+      });
+      c.res.end(audio);
+      return undefined;
+    } catch (e) {
+      reportFemaleVoiceError(e);
+      throw new HttpError(503, 'VOICE_UNAVAILABLE', 'Free Pakistani female voice is temporarily unavailable');
+    }
+  });
 
   // settings, audit, screenshots
   add('GET', '/api/settings', true, (c) => relay.getSettings(c.user!.id));
