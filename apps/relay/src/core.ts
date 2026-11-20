@@ -485,8 +485,11 @@ export class Relay {
           return { kind: 'reply', topic: 'whatsapp-cancelled', normalized: parsed.normalized };
         }
         // An unrelated, clearly parsed action overrides the pending question.
-        if (choice && !(parsed.kind === 'command' && parsed.action !== 'whatsapp.open'
-            && parsed.action !== 'web.open')) {
+        const newIndependentAction = parsed.kind === 'command' && parsed.action !== 'whatsapp.open'
+          && parsed.action !== 'web.open';
+        const shortAnswer = /\b(wala|wali|wale)\b/.test(parsed.normalized)
+          || /^(desktop|web|browser|chrome|installed|app|application|1|2|first|second)$/i.test(parsed.normalized);
+        if (choice && (shortAnswer || !newIndependentAction)) {
           this.pendingWhatsApp.delete(userId);
           if (choice === 'web') {
             action = 'web.open';
