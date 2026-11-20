@@ -5,8 +5,9 @@ import { pathToFileURL } from 'node:url';
 import { WebSocketServer } from 'ws';
 import { PROVIDER_STATUS } from '../../../packages/command-protocol/src/index';
 import { loadConfig, type RelayConfig } from './config';
+import { restoreCloudSnapshot, startCloudBackup } from './backup';
 import { HttpError, Relay } from './core';
-import { all, one, openDb, run, type Row } from './db';
+import { all, one, openDb, run, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
 export const VERSION = '1.0.0';
@@ -86,7 +87,10 @@ export interface RelayHandle {
 
 export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<RelayHandle> {
   const config = loadConfig(overrides);
+  await restoreCloudSnapshot(config.dataDir);
   const db = openDb(config.dataDir, config.migrationsDir);
+  const backup = startCloudBackup(db, config.dataDir);
+  setWriteHook(db, backup.markDirty);
   const relay = new Relay(db, config);
   relay.start();
 
@@ -345,6 +349,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
         ctx.session = s.session;
       }
       const out = await route.h(ctx);
+      // Only acknowledge mutation after it has a durable private cloud snapshot.
+      if (req.method !== 'GET' && backup.enabled) await backup.flush();
       if (out !== undefined && !res.headersSent) json(res, 200, out);
     } catch (e) {
       if (e instanceof HttpError) json(res, e.status, { error: { code: e.code, message: e.message } });
@@ -402,6 +408,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
       wssClient.close();
       await new Promise<void>((r) => server.close(() => r()));
       server.closeAllConnections?.();
+      await backup.close();
       db.close();
     },
   };
