@@ -1,5 +1,5 @@
 import { AlertTriangle, CheckCircle2, Mic, MicOff, Repeat, Square, Volume2, VolumeX } from 'lucide-react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { pick } from '../../../../packages/command-protocol/src/index';
 import { Badge, Card, CardHeader, cx, PageHeader } from '../components/ui';
 import Waveform from '../features/command/Waveform';
@@ -11,7 +11,7 @@ import { hasLastUtterance, listVoices, RECOGNITION_LANGS, replayLast, stopSpeaki
 const BrainOrb = lazy(() => import('../features/brain/BrainOrb'));
 
 export default function Voice() {
-  const { settings, saveSettings, brain, audioLevel, chat, speaking, say } = useStore();
+  const { settings, saveSettings, brain, audioLevel, chat, speaking, say, pendingWhatsAppChoice, runText } = useStore();
   const voice = useVoiceInput();
   const reduced = useReducedMotion();
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -29,6 +29,31 @@ export default function Voice() {
   const uzma = urduVoices.find((v) => /uzma|female/i.test(v.name));
   const lastAgent = [...chat].reverse().find((m) => m.kind === 'agent');
   const lastUser = [...chat].reverse().find((m) => m.kind === 'user' && m.source === 'voice');
+  const autoPrompt = useRef<string | null>(null);
+  const heardPrompt = useRef(false);
+  const didAutoListen = useRef(false);
+
+  // After HUKM asks a spoken follow-up, listen once more when speech ENDS.
+  // No permanent microphone monitoring; browser permission and availability apply.
+  useEffect(() => {
+    if (!pendingWhatsAppChoice || !lastAgent || !lastUser || lastAgent.at < lastUser.at) {
+      autoPrompt.current = null;
+      heardPrompt.current = false;
+      didAutoListen.current = false;
+      return;
+    }
+    if (autoPrompt.current !== lastAgent.id) {
+      autoPrompt.current = lastAgent.id;
+      heardPrompt.current = false;
+      didAutoListen.current = false;
+    }
+    if (speaking) {
+      heardPrompt.current = true;
+    } else if (heardPrompt.current && !didAutoListen.current && !voice.listening && voice.supported) {
+      didAutoListen.current = true;
+      void voice.start();
+    }
+  }, [pendingWhatsAppChoice, lastAgent?.id, lastAgent?.at, lastUser?.at, speaking, voice.listening, voice.supported, voice.start]);
 
   return (
     <PageFrame>
@@ -65,6 +90,15 @@ export default function Voice() {
               <div className="mt-2 flex gap-2">
                 <button className="btn-ghost px-3 py-1.5 text-xs" onClick={() => (hasLastUtterance() ? replayLast() : say(lastAgent.msg, true))}><Repeat className="h-3.5 w-3.5" /> Replay</button>
                 {speaking && <button className="btn-ghost px-3 py-1.5 text-xs" onClick={stopSpeaking}><Square className="h-3.5 w-3.5" /> Stop speaking</button>}
+              </div>
+            </div>
+          )}
+          {pendingWhatsAppChoice && (
+            <div className="mt-3 w-full max-w-lg rounded-2xl border border-ice/25 bg-blue/10 p-3 text-left">
+              <p className="mb-2 text-sm font-medium">{voice.listening ? 'Boliye: Desktop ya Web' : 'WhatsApp Desktop ya Web? Boliye ya select karein.'}</p>
+              <div className="flex gap-2">
+                <button className="btn-primary flex-1" onClick={() => void runText('Desktop wala')}>Desktop App</button>
+                <button className="btn-ghost flex-1" onClick={() => void runText('Web wala')}>WhatsApp Web</button>
               </div>
             </div>
           )}
