@@ -12,7 +12,8 @@ from controller.config import ALL_CAPABILITIES, Config
 from controller.files.search import score_name, search
 from controller.security import validation as v
 from controller.system import launcher
-from controller.whatsapp.adapter import unread_from_titles
+from controller.whatsapp import adapter as whatsapp_adapter
+from controller.whatsapp.adapter import unread_from_titles, count_from_accessibility_items
 
 
 def make_exec(**over):
@@ -187,8 +188,38 @@ def test_youtube_extraction():
 
 def test_whatsapp_title_count():
     assert unread_from_titles(["(3) WhatsApp - Google Chrome", "Notepad"]) == 3
-    assert unread_from_titles(["WhatsApp - Google Chrome"]) == 0
+    assert unread_from_titles(["WhatsApp - Google Chrome"]) is None
     assert unread_from_titles(["Notepad"]) is None
+
+def test_whatsapp_unread_filter_badge_and_split_accessibility_controls():
+    assert count_from_accessibility_items([("Chats", 53, 90), ("Unread 4", 95, 125)]) == 4
+    assert count_from_accessibility_items([("Unread", 94, 125), ("4", 158, 125)]) == 4
+    assert count_from_accessibility_items([("Unread", 94, 125), ("5", 158, 200)]) is None
+    assert count_from_accessibility_items([("Chats", 53, 90), ("Unread", 94, 125)]) is None
+
+
+def test_whatsapp_check_unknown_is_not_falsely_zero(monkeypatch):
+    from controller.system.windows import WindowInfo
+    monkeypatch.setattr(whatsapp_adapter.windows, "list_windows",
+                        lambda: [WindowInfo(18, "WhatsApp", "WhatsApp.exe", 101)])
+    monkeypatch.setattr(whatsapp_adapter, "unread_from_desktop_accessibility", lambda _w: None)
+    result = whatsapp_adapter.check("desktop", "default")
+    assert result["unreadChats"] is None
+    assert result["source"] == "unavailable"
+    assert result["messagesRead"] is False
+    assert "unknown" in result["note"].lower()
+
+
+def test_whatsapp_check_uses_accessibility_badge_when_title_omits_count(monkeypatch):
+    from controller.system.windows import WindowInfo
+    monkeypatch.setattr(whatsapp_adapter.windows, "list_windows",
+                        lambda: [WindowInfo(18, "WhatsApp", "WhatsApp.exe", 101)])
+    monkeypatch.setattr(whatsapp_adapter, "unread_from_desktop_accessibility", lambda _w: 4)
+    result = whatsapp_adapter.check("desktop", "default")
+    assert result["unreadChats"] == 4
+    assert result["source"] == "WhatsApp Desktop Unread filter"
+    assert result["messagesRead"] is False
+
 
 
 # ---- dedupe -----------------------------------------------------------------

@@ -165,7 +165,7 @@ export function CommandResult({ c }: { c: Command }) {
     case 'whatsapp.check':
       return (
         <div className="text-sm">
-          {typeof r.unreadChats === 'number' ? <p><span className="font-display text-2xl font-bold text-[#25D366]">{r.unreadChats}</span> unread chat{r.unreadChats === 1 ? '' : 's'} (from window title)</p> : null}
+          {typeof r.unreadChats === 'number' ? <p><span className="font-display text-2xl font-bold text-[#25D366]">{r.unreadChats}</span> unread chat{r.unreadChats === 1 ? '' : 's'}{r.source ? ` (${r.source})` : ''}</p> : <p className="text-sm font-medium text-warn">Unread count could not be verified</p>}
           {r.note && <p className="mt-1 text-xs text-ink2">{r.note}</p>}
         </div>
       );
