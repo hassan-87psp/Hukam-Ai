@@ -53,6 +53,33 @@ def test_check_openable_blocks_outside_and_executables(sandbox, tmp_path):
         v.check_openable(sandbox["downloads"] / ".." / "Private" / "invoice-secret.pdf", roots)
 
 
+
+def test_notepad_multiline_typing_validation_and_simulation(sandbox):
+    data = v.validate("notepad.type", {"text": chr(10).join(str(i) for i in range(1, 10))})
+    assert data["text"].splitlines() == [str(i) for i in range(1, 10)]
+    result = run(make_exec(), "notepad.type", data)
+    assert result.ok
+    assert result.result["inputDelivered"] is True
+    assert result.result["verified"] is False
+    with pytest.raises(v.ValidationError):
+        v.validate("notepad.type", {"text": "cmd" + chr(0)})
+    with pytest.raises(v.ValidationError):
+        v.validate("notepad.type", {"text": ""})
+
+def test_chrome_profile_launch_rejects_wrong_profile_and_site(sandbox):
+    from controller.browser import profiles
+    with pytest.raises(v.ValidationError):
+        v.validate("browser.profile_open", {"profile": "../Default", "url": "https://chatgpt.com/"})
+    with pytest.raises(v.ValidationError):
+        v.validate("browser.profile_open", {"profile": "Profile 1", "url": "https://evil.com/"})
+    with pytest.raises(profiles.ProfileError):
+        profiles.open_in_profile("https://example.org", "Default")
+    data = v.validate("browser.profile_open", {"profile": "Profile 1", "url": "https://chatgpt.com/"})
+    result = run(make_exec(), "browser.profile_open", data)
+    assert result.ok and result.result["profile"] == "Profile 1"
+    assert result.result["verified"] is False
+
+
 # ---- file search ------------------------------------------------------------
 
 def test_search_finds_only_inside_allowed_roots(sandbox):

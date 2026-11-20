@@ -32,10 +32,13 @@ export interface User {
   createdAt: string;
 }
 
+export type OperatorPlan = {id:string;summary:string;request:string;steps:{action:ActionName;args:Record<string,unknown>}[];expiresAt:string};
+
 export type ChatMessage =
   | { id: string; kind: 'user'; text: string; source: CommandSource; at: string; aiChat?: boolean }
   | { id: string; kind: 'agent'; msg: Localized; at: string; tone?: 'info' | 'ok' | 'warn' | 'bad'; provider?: 'gemini' }
-  | { id: string; kind: 'command'; commandId: string; at: string };
+  | { id: string; kind: 'command'; commandId: string; at: string }
+  | { id: string; kind: 'plan'; plan: OperatorPlan; at: string };
 
 export interface Toast {
   id: string;
@@ -381,6 +384,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Gemini is chat-only. A normal message does not require the laptop to
       // be connected, and no command/device data is automatically sent to Google.
       const local = parseCommand(t);
+      const taskWords = /\b(?:karo|krdo|kerdo|khol|open|add|schedule|likh|type|scroll|check|bhejo|send|create|download|whatsapp|calendar|notepad|note\s+pad|chrome|browser|youtube|file)\b/i.test(t);
+      const compound = /\b(?:aur|phir|then|after that|usme|us\s+me|likho.*notepad|notepad.*likho|meeting.*add|schedule.*meeting)\b|(?:notepad|note\s*pad).*?(?:likho|type)/i.test(t);
+      const shouldPlan = !pendingDialogueTopic && taskWords && ((local.kind === 'unsupported' || local.kind === 'reply') || compound);
       const maybeAi = !pendingDialogueTopic && (local.kind === 'unsupported' || local.kind === 'reply');
       const history = chat
         .flatMap<{ role: 'user' | 'assistant'; text: string }>((m) => m.kind === 'user' && m.aiChat
@@ -395,14 +401,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // For a conversational follow-up the server may select a different
       // action than the local parser, so speak only the server's actual action.
       const inDialogue = !!pendingDialogueTopic;
-      if (local.kind === 'command' && local.action !== 'command.cancel' && hasDevice && !inDialogue)
+      if (local.kind === 'command' && local.action !== 'command.cancel' && hasDevice && !inDialogue && !shouldPlan)
         agent(ackMessage(local.action, local.args), 'info');
-      if (local.kind === 'command' && !hasDevice && local.action !== 'command.cancel' && !inDialogue) {
+      if (local.kind === 'command' && !hasDevice && local.action !== 'command.cancel' && !inDialogue && !shouldPlan) {
         agent(STATUS_MESSAGES.noDevice, 'warn');
         return;
       }
       setSubmitting(true);
       try {
+        // Model proposals are never executed without a separate user review.
+        if (shouldPlan) {
+          if (!hasDevice) { agent(STATUS_MESSAGES.noDevice,'warn'); return; }
+          try {
+            const projectId = new URLSearchParams(window.location.search).get('projectId');
+            const plan = await post<OperatorPlan>('/api/operator/plan', {
+              text:t, projectId:projectId||undefined,
+            });
+            addChat({id:uid(),kind:'plan',plan,at:new Date().toISOString()});
+            agent({roman:'Task plan ready hai. Actions review karke Run karein.',
+              ur:'ٹاسک پلان تیار ہے۔ جائزہ لے کر شروع کریں.',
+              en:'Task plan ready. Review each action before starting.'},'info',false);
+          } catch (ex) {
+            const reason = ex instanceof Error ? ex.message : 'This task is not supported safely.';
+            agent({roman:reason,ur:reason,en:reason},'warn',false);
+          }
+          return;
+        }
         const out = await post('/api/commands', { text: t, source, clientRequestId: uid(), deviceId: activeDevice?.id });
         // A one-word follow-up ("Desktop wala") is resolved on the relay,
         // so it has no optimistic local parser acknowledgement.

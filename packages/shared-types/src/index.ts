@@ -53,6 +53,8 @@ export type ActionName =
   | 'window.focus'
   | 'screen.capture'
   | 'browser.control'
+  | 'browser.profile_open'
+  | 'notepad.type'
   | 'system.lock'
   | 'whatsapp.open'
   | 'whatsapp.check'

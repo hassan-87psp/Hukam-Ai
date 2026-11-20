@@ -112,6 +112,47 @@ describe('authentication', () => {
   });
 });
 
+describe('Projects, instructions, memory and private conversations', () => {
+  it('requires authentication and CSRF header', async () => {
+    expect((await api('GET','/api/projects',undefined,{cookie:null})).status).toBe(401);
+    expect((await api('POST','/api/projects',{name:'Test'},{noClientHeader:true})).status).toBe(403);
+  });
+  it('creates a saved project and persists preferences across requests', async () => {
+    const r=await api('POST','/api/projects',{name:'PipSePaisa Creative',instructions:'Brand palette orange',
+      chromeProfile:'Profile 1',chatgptProjectUrl:'https://chatgpt.com/',assetFolder:'PipSePaisa / Designs'});
+    expect(r.status).toBe(200);
+    expect(r.data.name).toBe('PipSePaisa Creative');
+    expect((await api('GET','/api/projects')).data.some((p:any)=>p.id===r.data.id)).toBe(true);
+    const fresh=await api('GET','/api/projects/'+r.data.id);
+    expect(fresh.data.instructions).toBe('Brand palette orange');
+    expect(fresh.data.chromeProfile).toBe('Profile 1');
+    expect((await api('PATCH','/api/projects/'+r.data.id,{instructions:'Always use #F39522'})).data.instructions)
+      .toBe('Always use #F39522');
+    expect((await api('POST','/api/projects',{name:'Bad',chatgptProjectUrl:'https://evil.com/' })).status).toBe(400);
+    expect((await api('POST','/api/projects',{name:'Bad',chatgptProjectUrl:'javascript:alert(1)' })).status).toBe(400);
+    expect((await api('POST','/api/projects',{name:'Wrong profile',chromeProfile:'PipSePaisa Chrome'})).status).toBe(400);
+    (globalThis as any).__projectTestId=r.data.id;
+  });
+  it('saves reference notes, enforces project ownership and can remove a note', async () => {
+    const id=(globalThis as any).__projectTestId;
+    const r=await api('POST','/api/projects/'+id+'/notes',{title:'Palette',content:'#F39522 orange'});
+    expect(r.status).toBe(200);
+    expect((await api('GET','/api/projects/'+id+'/notes')).data[0].content).toBe('#F39522 orange');
+    expect((await api('GET','/api/projects/prj_missing/notes')).status).toBe(404);
+    expect((await api('DELETE','/api/projects/'+id+'/notes/'+r.data.id)).status).toBe(200);
+  });
+  it('rejects invalid chat messages before invoking AI', async () => {
+    const id=(globalThis as any).__projectTestId;
+    expect((await api('POST','/api/projects/'+id+'/chat',{message:''})).status).toBe(400);
+    expect((await api('GET','/api/projects/'+id+'/messages')).data).toEqual([]);
+  });
+  it('deletes project along with its history without touching devices', async () => {
+    const id=(globalThis as any).__projectTestId;
+    expect((await api('DELETE','/api/projects/'+id)).status).toBe(200);
+    expect((await api('GET','/api/projects/'+id)).status).toBe(404);
+  });
+});
+
 describe('Gemini authenticated chat', () => {
   it('never exposes the API key and never allows anonymous or CSRF calls', async () => {
     const status = await api('GET', '/api/ai/status');
@@ -194,6 +235,61 @@ describe('device pairing', () => {
     expect(devs).toHaveLength(1);
     expect(devs[0]).toMatchObject({ name: 'HUKM-Laptop', online: true, hostname: 'TEST-PC' });
     expect(devs[0].capabilitiesEnabled).toContain('folders');
+  });
+});
+
+describe('supervised AI computer operator', () => {
+  it('prevents untrusted model proposals from being executed as commands', async () => {
+    const {validatePlanShape}=await import('../src/operator');
+    expect(()=>validatePlanShape({summary:'shell',steps:[{action:'shell.exec',args:{cmd:'whoami'}}]})).toThrow();
+    expect(()=>validatePlanShape({summary:'click',steps:[{action:'browser.control',args:{kind:'click',x:100,y:200}}]})).toThrow();
+    expect(()=>validatePlanShape({summary:'delete',steps:[{action:'file.delete',args:{path:'C:/x'}}]})).toThrow();
+  });
+  it('generates an owner-reviewed multi-step task, then executes with audited status', async () => {
+    const originalFetch=globalThis.fetch;
+    const oldKey=process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY='FAKE_OPERATOR_TEST_KEY';
+    let sentToGoogle=0;
+    try {
+      globalThis.fetch=((input:any,init?:any)=>{
+        if(String(input).startsWith('https://generativelanguage.googleapis.com/')){
+          sentToGoogle++;
+          return Promise.resolve(new Response(JSON.stringify({
+            candidates:[{content:{parts:[{text:JSON.stringify({
+              summary:'Open Notepad and check the active window',
+              steps:[{action:'app.open',args:{app:'notepad'}},{action:'window.active',args:{}}]
+            })}]}}]
+          }),{status:200}));
+        }
+        return originalFetch(input,init);
+      }) as typeof fetch;
+      const before=(h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands').get() as any).n;
+      const plan=await api('POST','/api/operator/plan',{text:'Notepad kholo aur active window check karo'});
+      expect(plan.status).toBe(200);
+      expect(plan.data.steps).toHaveLength(2);
+      expect(sentToGoogle).toBe(1);
+      expect((h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands').get() as any).n).toBe(before);
+      device.auto=()=>({ok:true,result:{opened:true}});
+      const started=await api('POST','/api/operator/plans/'+plan.data.id+'/run',{});
+      expect(started.status).toBe(200);
+      let status='';
+      let detail:any;
+      for(let i=0;i<80;i++){
+        const r=await api('GET','/api/operator/runs/'+started.data.id);
+        detail=r.data;status=detail.status;
+        if(['unverified','completed','failed'].includes(status))break;
+        await new Promise(resolve=>setTimeout(resolve,80));
+      }
+      expect(status).toBe('unverified');
+      expect(detail.commandIds).toHaveLength(2);
+      expect((await api('POST','/api/operator/plans/'+plan.data.id+'/run',{})).status).toBe(409);
+      expect((await api('GET','/api/operator/runs/'+started.data.id,undefined,{cookie:null})).status).toBe(401);
+    }finally{
+      globalThis.fetch=originalFetch;
+      if(oldKey===undefined)delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY=oldKey;
+      device.auto=null;
+    }
   });
 });
 

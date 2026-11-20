@@ -1,0 +1,24 @@
+HUKM AI Windows Controller - Consolidated Install/Update (v1.3.0)
+
+1. Extract the ENTIRE ZIP to one temporary folder.
+2. Close any previous HUKM Controller black window. Do not delete old folders yet.
+3. Run INSTALL_OR_UPDATE.cmd. It installs to LOCALAPPDATA/HUKM AI/Controller, safely backs up any previous EXE.
+4. Run VERIFY_HUKM.cmd and check the installed version and existing pairing.
+5. Run START_HUKM.cmd. Confirm "ONLINE" with your Render relay.
+6. Test your real laptop and Windows applications from https://hukm-ai-relay.onrender.com.
+7. Only when satisfied, run ENABLE_AUTOSTART.cmd once; thereafter sign-in to Windows starts Controller.
+
+Important: User settings/device token remain in APPDATA/HUKM AI. This ZIP does not contain or replace the database, keys, Chrome profiles or WhatsApp data.
+
+Do NOT delete old HUKM folders, especially any /data or .env, until your accounts, prior data, local and remote website and autostart are separately verified and backed up.
+
+CURRENT CAPABILITIES:
+- Owner-approved multi-step HUKM task planning from natural language (bounded validated actions).
+- Notepad typing, Chrome profile launch to configured ChatGPT/Calendar sites, Projects, notes and saved instructions.
+- Existing device pairing, safe app/browser actions and WhatsApp best-effort unread checking.
+
+NOT YET COMPLETE:
+- Autonomous visual screen loop, reliable full WhatsApp message/reply/file sending, full Calendar event-creation, ChatGPT image generation/download workflows and real-PC regression testing.
+- "Success" for an input event means sent, not independently verified.
+
+Protect your account credentials. Never type passwords or OTP codes in HUKM prompts.

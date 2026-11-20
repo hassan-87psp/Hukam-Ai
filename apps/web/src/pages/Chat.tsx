@@ -1,9 +1,12 @@
 import { Bot, Mic, Trash2, Volume2 } from 'lucide-react';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { dialogueChoices, pick } from '../../../../packages/command-protocol/src/index';
 import { BrainMark } from '../components/Logo';
 import { cx, EmptyState } from '../components/ui';
 import CommandCard from '../features/command/CommandCard';
+import OperatorPlanCard from '../features/agent/OperatorPlanCard';
+import { get } from '../services/api';
 import CommandComposer from '../features/command/CommandComposer';
 import { clock } from '../lib/format';
 import { useStore, type ChatMessage } from '../services/store';
@@ -41,6 +44,10 @@ function UserBubble({ m }: { m: Extract<ChatMessage, { kind: 'user' }> }) {
 export default function Chat() {
   const { chat, commandMap, devices, clearChat, pendingDialogueTopic, runText } = useStore();
   const end = useRef<HTMLDivElement>(null);
+  const [searchParams,setSearchParams] = useSearchParams();
+  const [projects,setProjects] = useState<{id:string;name:string}[]>([]);
+  const activeProject = searchParams.get('projectId') ?? '';
+  useEffect(()=>{void get<{id:string;name:string}[]>('/api/projects').then(setProjects).catch(()=>{});},[]);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [chat.length]);
@@ -51,11 +58,20 @@ export default function Chat() {
       <div className="flex items-center justify-between py-3">
         <div>
           <h1 className="font-display text-xl font-bold">AI Chat</h1>
-          <p className="text-xs text-ink2">Chat naturally with Gemini. Laptop commands still use HUKM's permission-controlled controller.</p>
+          <p className="text-xs text-ink2">Chat naturally. Compound computer requests generate a reviewed action plan; HUKM's Windows controller performs approved steps.</p>
         </div>
         {chat.length > 0 && (
           <button className="btn-ghost px-3 py-2 text-xs" onClick={clearChat}><Trash2 className="h-4 w-4" /> Clear</button>
         )}
+      </div>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+        <label htmlFor="project-select" className="text-ink2">Task project</label>
+        <select id="project-select" className="rounded-xl bg-field px-2 py-2 text-ink ring-1 ring-line/20"
+          value={activeProject} onChange={e=>setSearchParams(e.target.value?{projectId:e.target.value}:{})}>
+          <option value="">General (no project)</option>
+          {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <Link to="/projects" className="text-ice hover:underline">Manage instructions &amp; memory</Link>
       </div>
       <div className="flex-1 space-y-3 pb-4">
         {chat.length === 0 && (
@@ -64,6 +80,7 @@ export default function Chat() {
         {chat.map((m) => {
           if (m.kind === 'user') return <UserBubble key={m.id} m={m} />;
           if (m.kind === 'agent') return <AgentBubble key={m.id} m={m} />;
+          if (m.kind === 'plan') return <div key={m.id} className="pl-2 sm:pl-10"><OperatorPlanCard plan={m.plan}/></div>;
           const c = commandMap.get(m.commandId);
           return c ? <div key={m.id} className="pl-10"><CommandCard c={c} deviceName={name(c.deviceId)} /></div> : null;
         })}
@@ -85,7 +102,7 @@ export default function Chat() {
       <div className="sticky bottom-[calc(76px+env(safe-area-inset-bottom))] z-20 -mx-1 pb-3 pt-2 lg:bottom-0 lg:pb-6">
         <div className="pointer-events-none absolute inset-x-0 -top-6 bottom-0 bg-gradient-to-t from-bg via-bg/95 to-transparent" aria-hidden />
         <div className="relative rounded-3xl p-1"><CommandComposer placeholder="HUKM AI ko message likhein…" /></div>
-        <p className="relative mt-1 px-3 text-center text-[10px] text-ink2">Gemini replies ke liye aapka message aur recent AI conversation Google ko bheji jaati hai. Laptop files ya WhatsApp chats automatically share nahi hote.</p>
+        <p className="relative mt-1 px-3 text-center text-[10px] text-ink2">Gemini ko aapka current request bheja jata hai. Project select ho to uski saved instructions/notes bhi planner ke liye bheji ja sakti hain. Laptop files, screenshots aur WhatsApp message bodies automatically share nahi hote.</p>
       </div>
     </div>
   );

@@ -1,3 +1,6 @@
+<!-- Historical v1 status. Updated v1.3.0 audit: docs/audit-20261121.md -->
+> This file describes the original V1 and is not the current feature checklist. Read [Current operator audit](audit-20261121.md) for new Projects, Gemini planning, v1.3.0 and remaining limitations.
+
 # Integration status & feature checklist
 
 Legend: ✅ implemented and covered by automated tests · 🟢 implemented, verified in the browser E2E run (Linux, launches simulated) · 🪟 implemented, **needs manual verification on real Windows** · 🟡 partial by design · ⛔ not connected / not built.

@@ -69,16 +69,31 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Frozen EXE --help failed" }
           & .\dist\hukm-controller.exe status | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "Frozen EXE status failed" }
-      - name: Publish versioned Windows Controller ZIP
+      - name: Publish ONE consolidated Windows installer ZIP
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release | Out-Null
           Copy-Item apps/windows-controller/dist/hukm-controller.exe release/hukm-controller.exe
           Copy-Item apps/windows-controller/README.md release/README.txt
-          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.2.2.zip -Force
+          Copy-Item apps/windows-controller/packaging/*.cmd release/
+          Copy-Item apps/windows-controller/packaging/ONE_ZIP_SETUP.txt release/
+          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.3.0.zip -Force
+      - name: Smoke test consolidated installer in isolated sandbox
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:LOCALAPPDATA = Join-Path $env:RUNNER_TEMP 'hukm-isolated-appdata'
+          New-Item -ItemType Directory -Force -Path $env:LOCALAPPDATA | Out-Null
+          # CI=true skips prompts in installer, while user launches remain interactive.
+          $p = Start-Process -FilePath cmd.exe -ArgumentList '/c', 'release\\INSTALL_OR_UPDATE.cmd' -NoNewWindow -Wait -PassThru -RedirectStandardOutput "$env:RUNNER_TEMP\\hukm-installer-out.txt"
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\\hukm-installer-out.txt"; throw "Installer failed" }
+          $exe = Join-Path $env:LOCALAPPDATA 'HUKM AI\\Controller\\hukm-controller.exe'
+          if (!(Test-Path $exe)) { throw "Installed EXE missing" }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { throw "Installed EXE failed" }
       - uses: actions/upload-artifact@v4
         with:
-          name: HUKM-Windows-Controller-v1.2.2
-          path: HUKM-Windows-Controller-v1.2.2.zip
+          name: HUKM-Windows-Controller-v1.3.0
+          path: HUKM-Windows-Controller-v1.3.0.zip
           retention-days: 14
           if-no-files-found: error

@@ -24,14 +24,14 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "browser.control", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
+    "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
 
 CAPABILITY_OF = {
     "app.open": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
-    "screen.capture": "screen", "browser.control": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
+    "screen.capture": "screen", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
     "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp", "whatsapp.unread_senders": "whatsapp",
 }
 
@@ -147,6 +147,20 @@ def validate(action: str, args: dict) -> dict:
         return {"url": safe_url(a.get("url"))}
     if action in ("web.search", "youtube.search", "youtube.play"):
         return {"query": _str(a.get("query"), "query", 200)}
+    if action == "browser.profile_open":
+        profile = _str(a.get("profile"), "profile", 80)
+        if not re.fullmatch(r"(?:Default|Profile [1-9][0-9]?)", profile):
+            raise ValidationError("invalid Chrome profile")
+        url = safe_url(a.get("url"))
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or parsed.hostname not in ("chatgpt.com", "calendar.google.com", "outlook.office.com"):
+            raise ValidationError("unsupported Chrome profile destination")
+        return {"profile": profile, "url": url}
+    if action == "notepad.type":
+        text = a.get("text")
+        if not isinstance(text, str) or not text.strip() or len(text) > 1200 or re.search(r"[\x00-\x08\x0b-\x1f]", text):
+            raise ValidationError("invalid Notepad text")
+        return {"text": text}
     if action == "browser.control":
         kind = a.get("kind")
         if kind == "click":
