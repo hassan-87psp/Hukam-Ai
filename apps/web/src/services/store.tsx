@@ -128,7 +128,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const voices = useRef<SpeechSynthesisVoice[]>([]);
 
   useEffect(() => {
-    listVoices().then((v) => (voices.current = v));
+    let active = true;
+    const sync = () => { if (active && 'speechSynthesis' in window) voices.current = speechSynthesis.getVoices(); };
+    void listVoices().then((v) => { if (active) voices.current = v; });
+    if ('speechSynthesis' in window) speechSynthesis.addEventListener('voiceschanged', sync);
+    return () => {
+      active = false;
+      if ('speechSynthesis' in window) speechSynthesis.removeEventListener('voiceschanged', sync);
+    };
   }, []);
 
   useEffect(() => {
@@ -157,26 +164,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
   const dismissToast = useCallback((id: string) => setToasts((x) => x.filter((y) => y.id !== id)), []);
 
-  const lastVoiceWarning = useRef(0);
   const say = useCallback((m: Localized, force = false) => {
     const s = settingsRef.current;
     if (s.speechMuted && !force) return;
     const voice = pickVoice(voices.current, s.voiceURI, s.responseLang);
-    // The default for Roman Urdu is Pakistani female (Uzma); selecting a
-    // device voice from the dropdown deliberately opts out of online audio.
-    const cloudUrdu = !s.voiceURI && s.responseLang !== 'en' ? m.ur : undefined;
-    speak(textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume, setSpeaking,
-      cloudUrdu, () => {
-        if (Date.now() - lastVoiceWarning.current > 60_000) {
-          lastVoiceWarning.current = Date.now();
-          toast({
-            title: 'Pakistani female voice filhal available nahi',
-            body: 'Free voice service se audio nahi aayi. Device voice use ho rahi hai.',
-            tone: 'warn',
-          });
-        }
-      });
-  }, [toast]);
+    // Speak immediately using the browser. The free server TTS is rate-limited
+    // (HTTP 429 from Render), so don't leave the user waiting in silence.
+    // In Microsoft Edge, the device's Urdu (Pakistan) female voice is preferred.
+    speak(textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume, setSpeaking);
+  }, []);
 
   const addChat = useCallback((m: ChatMessage) => setChat((c) => [...c, m]), []);
   const agent = useCallback(
