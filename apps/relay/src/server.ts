@@ -446,6 +446,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   const port = typeof addr === 'object' && addr ? addr.port : config.port;
   const url = `http://localhost:${port}`;
   log('info', 'HUKM AI relay listening', { url, dataDir: config.dataDir, publicDir: config.publicDir });
+  // Logs a boolean only; never reveal API keys or provider response bodies.
+  log('info', 'Gemini conversational AI configured', { enabled: geminiConfigured() });
 
   // Test the public free TTS transport once per startup without user content.
   // No audio is stored. Production requests still require authentication.
