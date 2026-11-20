@@ -119,17 +119,18 @@ describe('Projects, instructions, memory and private conversations', () => {
   });
   it('creates a saved project and persists preferences across requests', async () => {
     const r=await api('POST','/api/projects',{name:'PipSePaisa Creative',instructions:'Brand palette orange',
-      chromeProfile:'PipSePaisa Chrome',chatgptProjectUrl:'https://chatgpt.com/',assetFolder:'PipSePaisa / Designs'});
+      chromeProfile:'Profile 1',chatgptProjectUrl:'https://chatgpt.com/',assetFolder:'PipSePaisa / Designs'});
     expect(r.status).toBe(200);
     expect(r.data.name).toBe('PipSePaisa Creative');
     expect((await api('GET','/api/projects')).data.some((p:any)=>p.id===r.data.id)).toBe(true);
     const fresh=await api('GET','/api/projects/'+r.data.id);
     expect(fresh.data.instructions).toBe('Brand palette orange');
-    expect(fresh.data.chromeProfile).toBe('PipSePaisa Chrome');
+    expect(fresh.data.chromeProfile).toBe('Profile 1');
     expect((await api('PATCH','/api/projects/'+r.data.id,{instructions:'Always use #F39522'})).data.instructions)
       .toBe('Always use #F39522');
     expect((await api('POST','/api/projects',{name:'Bad',chatgptProjectUrl:'https://evil.com/' })).status).toBe(400);
     expect((await api('POST','/api/projects',{name:'Bad',chatgptProjectUrl:'javascript:alert(1)' })).status).toBe(400);
+    expect((await api('POST','/api/projects',{name:'Wrong profile',chromeProfile:'PipSePaisa Chrome'})).status).toBe(400);
     (globalThis as any).__projectTestId=r.data.id;
   });
   it('saves reference notes, enforces project ownership and can remove a note', async () => {
