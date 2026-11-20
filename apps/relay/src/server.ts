@@ -74,7 +74,7 @@ const SECURITY_HEADERS = {
   'x-frame-options': 'DENY',
   'permissions-policy': 'microphone=(self), camera=(), geolocation=()',
   'content-security-policy':
-    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: wss:; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",
+    "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; media-src 'self' blob:; connect-src 'self' ws: wss:; script-src 'self'; base-uri 'none'; frame-ancestors 'none'",
 };
 
 export interface RelayHandle {
