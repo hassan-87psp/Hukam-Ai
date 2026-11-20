@@ -88,6 +88,12 @@ export function resolveDialogue(
     result: { kind: 'reply', topic: 'conversation-cancelled', normalized: t },
   };
   const parsed = parseCommand(text);
+  // A fresh incomplete question also supersedes the older conversation.
+  // Example: after "search karo", "message bhejo" must ask who, not
+  // accidentally search the phrase "message bhejo".
+  if (parsed.kind === 'clarify' && parsed.topic !== state.topic &&
+      parsed.topic !== 'empty' && parsed.topic !== 'contact-unknown')
+    return { handled: false };
   const fullNewAction = parsed.kind === 'command'
     && /\b(kholo|khol|open|launch|search|dhoondo|find|play|chalao|lock|check|band|send|bhejo|likho)\b/.test(t);
 
