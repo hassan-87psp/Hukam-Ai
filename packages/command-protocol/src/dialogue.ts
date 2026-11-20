@@ -119,6 +119,10 @@ export function resolveDialogue(
     if (/^(?:play|video play|play video|video chalao|gaana chalao|song play|3|teesra|third)$/.test(t))
       return { handled: true, result: question('youtube-query', t),
         next: { topic: 'youtube-query', intent: 'youtube.play' } };
+    // A fresh recognised command must supersede this old YouTube question.
+    // Otherwise phrases such as 'WhatsApp per msg dakho' repeat the YouTube prompt.
+    if (parsed.kind === 'command' && parsed.action !== 'youtube.play' && parsed.action !== 'youtube.search')
+      return { handled: false };
     if (fullNewAction) return { handled: false };
     return { handled: true, result: question('youtube-choice', t), next: state };
   }
