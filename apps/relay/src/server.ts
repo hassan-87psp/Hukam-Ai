@@ -432,6 +432,14 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   const url = `http://localhost:${port}`;
   log('info', 'HUKM AI relay listening', { url, dataDir: config.dataDir, publicDir: config.publicDir });
 
+  // Test the public free TTS transport once per startup without user content.
+  // No audio is stored. Production requests still require authentication.
+  setTimeout(() => {
+    void femaleUrduAudio('السلام علیکم، میں حکم ہوں۔')
+      .then((audio) => log('info', 'Pakistani female voice service checked', { available: true, audioBytes: audio.length }))
+      .catch(reportFemaleVoiceError);
+  }, 1500).unref();
+
   return {
     server, relay, config, url,
     get setupCode() { return setupCode; },
