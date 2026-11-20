@@ -385,7 +385,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // be connected, and no command/device data is automatically sent to Google.
       const local = parseCommand(t);
       const taskWords = /\b(?:karo|krdo|kerdo|khol|open|add|schedule|likh|type|scroll|check|bhejo|send|create|download|whatsapp|calendar|notepad|note\s+pad|chrome|browser|youtube|file)\b/i.test(t);
-      const compound = /\b(?:aur|phir|then|after that|usme|likho.*notepad|notepad.*likho|meeting.*add|schedule.*meeting)\b/i.test(t);
+      const compound = /\b(?:aur|phir|then|after that|usme|us\s+me|likho.*notepad|notepad.*likho|meeting.*add|schedule.*meeting)\b|(?:notepad|note\s*pad).*?(?:likho|type)/i.test(t);
       const shouldPlan = !pendingDialogueTopic && taskWords && ((local.kind === 'unsupported' || local.kind === 'reply') || compound);
       const maybeAi = !pendingDialogueTopic && (local.kind === 'unsupported' || local.kind === 'reply');
       const history = chat
