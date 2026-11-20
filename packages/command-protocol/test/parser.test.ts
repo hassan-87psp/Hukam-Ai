@@ -50,6 +50,23 @@ describe('app intents — same intent for different phrasing', () => {
   it('excel app (not a file)', () => expect(c('Excel kholo').args).toEqual({ app: 'excel' }));
 });
 
+describe('real-user screenshot regressions', () => {
+  it('YouTube open mro is a homepage, not a search for mro', () => {
+    expect(c('YouTube open mro')).toMatchObject({action:'web.open',args:{url:'https://www.youtube.com/'}});
+    expect(c('YouTube kholo')).toMatchObject({action:'web.open',args:{url:'https://www.youtube.com/'}});
+  });
+  it('allows multiline Notepad typing but rejects control characters', () => {
+    expect(validateCommand('notepad.type',{text:'1'+String.fromCharCode(10)+'2'}).ok).toBe(true);
+    expect(validateCommand('notepad.type',{text:'bad'+String.fromCharCode(0)}).ok).toBe(false);
+  });
+  it('refuses Chrome profile traversal, allows only supported destinations', () => {
+    expect(validateCommand('browser.profile_open',{profile:'Default',url:'https://chatgpt.com/'}).ok).toBe(true);
+    expect(validateCommand('browser.profile_open',{profile:'../Default',url:'https://chatgpt.com/'}).ok).toBe(false);
+    expect(validateCommand('browser.profile_open',{profile:'Default',url:'https://evil.example/'}).ok).toBe(false);
+    expect(requiresApproval('browser.profile_open')).toBe(true);
+  });
+});
+
 describe('operator website shortcuts', () => {
   it('opens Google Calendar in the browser', () => {
     expect(c('Google Calendar kholo')).toMatchObject({ action: 'web.open', args: { url: 'https://calendar.google.com/calendar/u/0/r' } });
