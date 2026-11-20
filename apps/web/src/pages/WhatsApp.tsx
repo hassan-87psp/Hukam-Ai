@@ -42,7 +42,7 @@ export default function WhatsApp() {
             </p>
             <div className="grid grid-cols-2 gap-2">
               <button className="btn-primary" disabled={!activeDevice?.online} onClick={() => runAction('whatsapp.open', { mode: 'desktop' }, { label: 'WhatsApp Desktop kholo' })}>Open Desktop App</button>
-              <button className="btn-ghost" disabled={!activeDevice?.online} onClick={() => runAction('whatsapp.open', { mode: 'web' }, { label: 'WhatsApp Web kholo' })}>Open Web</button>
+              <button className="btn-ghost" disabled={!activeDevice?.online} onClick={() => runAction('web.open', { url: 'https://web.whatsapp.com/' }, { label: 'WhatsApp Web kholo' })}>Open Web</button>
             </div>
             <button className="btn-ghost w-full" disabled={!activeDevice?.online || !!checking} onClick={() => runAction('whatsapp.check', { mode: 'desktop' }, { label: 'WhatsApp unread count check karo' })}>
               {checking ? <Spinner /> : <RefreshCw className="h-4 w-4" />} Check unread count
