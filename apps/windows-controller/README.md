@@ -1,4 +1,4 @@
-HUKM AI Windows Controller v1.1 — Local Install & Safety
+HUKM AI Windows Controller v1.1.1 — Local Install & Safety
 ======================================================
 
 This is a Windows controller that lets your own authorised HUKM AI account
@@ -23,6 +23,9 @@ AUTOSTART (opt-in, only on your laptop):
   hidden system service is installed.
 
 WHATSAPP (EXPERIMENTAL):
+- The unread check attempts to read the visible WhatsApp Desktop Unread filter via UI Automation and falls back to a numbered window title.
+- Plain WhatsApp window titles do not prove zero unread chats: when UIA is unsupported the result is UNKNOWN.
+- The controller never uploads chat text, snippets or screenshots as part of checking the unread badge.
 - "WhatsApp kholo" tries the installed WhatsApp Desktop app.
 - "WhatsApp Web kholo" opens the browser only when requested.
 - "WhatsApp messages parho" first asks for HUKM approval, then attempts to
