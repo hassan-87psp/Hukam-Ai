@@ -5,8 +5,8 @@ import type { Lang, Localized } from '../../../../packages/shared-types/src/inde
 // browser vendor's speech service (Google/Microsoft); Safari uses Apple's service.
 
 export const RECOGNITION_LANGS = [
-  { code: 'ur-PK', label: 'Urdu (Pakistan)' },
-  { code: 'en-PK', label: 'English (Pakistan)' },
+  { code: 'en-PK', label: 'Roman Urdu / English (Pakistan)' },
+  { code: 'ur-PK', label: 'Urdu script (alternative)' },
   { code: 'en-US', label: 'English (US)' },
   { code: 'en-IN', label: 'English (India)' },
   { code: 'hi-IN', label: 'Hindi (for Roman/Hindustani speech)' },
@@ -129,26 +129,33 @@ export function voiceGender(v: SpeechSynthesisVoice): 'female' | 'male' | null {
   return null;
 }
 
-export function pickVoice(voices: SpeechSynthesisVoice[], uri: string | null): SpeechSynthesisVoice | null {
+export function pickVoice(voices: SpeechSynthesisVoice[], uri: string | null, lang: Lang = 'roman'): SpeechSynthesisVoice | null {
   if (uri) {
     const v = voices.find((x) => x.voiceURI === uri);
     if (v) return v;
   }
+  const english = () => (
+    voices.find((v) => v.lang.toLowerCase() === 'en-pk') ??
+    voices.find((v) => v.lang.toLowerCase() === 'en-in') ??
+    voices.find((v) => v.lang.toLowerCase().startsWith('en') && v.default) ??
+    voices.find((v) => v.lang.toLowerCase().startsWith('en')) ??
+    voices.find((v) => v.lang.toLowerCase().startsWith('hi')) ??
+    null
+  );
+  if (lang === 'roman' || lang === 'en') return english() ?? voices[0] ?? null;
   return (
-    voices.find((v) => v.lang === 'ur-PK' && /natural|online/i.test(v.name)) ??
-    voices.find((v) => v.lang === 'ur-PK') ??
-    voices.find((v) => v.lang.startsWith('ur')) ??
-    voices.find((v) => v.lang === 'en-PK') ??
-    voices.find((v) => v.lang.startsWith('en') && v.default) ??
-    voices.find((v) => v.lang.startsWith('en')) ??
+    voices.find((v) => v.lang.toLowerCase() === 'ur-pk' && /natural|online/i.test(v.name)) ??
+    voices.find((v) => v.lang.toLowerCase().startsWith('ur')) ??
+    english() ??
     null
   );
 }
 
 /** Choose which text variant a voice can actually pronounce. */
 export function textForVoice(m: Localized, voice: SpeechSynthesisVoice | null, lang: Lang): string {
-  if (voice?.lang.toLowerCase().startsWith('ur')) return m.ur;
-  if (lang === 'ur') return m.en; // non-Urdu voice cannot read Urdu script
+  // Roman Urdu is Latin-script Urdu: speak it as written, not an English translation.
+  if (lang === 'roman') return m.roman;
+  if (lang === 'ur') return voice?.lang.toLowerCase().startsWith('ur') ? m.ur : m.roman;
   return m.en;
 }
 
