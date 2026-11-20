@@ -48,7 +48,7 @@ function recipientFromInitial(text: string): string | null {
 }
 
 export function beginDialogue(topic: string, input: string, contacts: readonly WhatsAppContact[], now = Date.now()):
-  { state: DialogueState | null; clarification?: ParseResult } {
+  { state: DialogueState | null; clarification?: Extract<ParseResult, { kind: 'clarify' }> } {
   const expiry = now + 2 * 60_000;
   const allowed: DialogueTopic[] = [
     'whatsapp-choice', 'youtube-choice', 'youtube-query', 'which-file', 'which-folder',
