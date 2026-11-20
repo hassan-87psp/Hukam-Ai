@@ -272,6 +272,20 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({ kind, key: a.key });
     },
   },
+  'browser.profile_open': {
+    name:'browser.profile_open',capability:'browser',label:'Open saved Chrome profile',
+    timeoutMs:20000,alwaysApprove:true,
+    validate(a) {
+      if(typeof a.profile!=='string'||! /^(?:Default|Profile [1-9][0-9]?)$/.test(a.profile))
+        return fail('profile must be Default or Profile 1–99');
+      if(typeof a.url!=='string'||a.url.length>500) return fail('invalid project URL');
+      let url:URL;
+      try {url=new URL(a.url);} catch {return fail('invalid project URL');}
+      if(url.protocol!=='https:' || !['chatgpt.com','calendar.google.com','outlook.office.com'].includes(url.hostname)
+        ||url.username||url.password)return fail('unsupported Chrome profile destination');
+      return ok({profile:a.profile,url:url.toString()});
+    },
+  },
   'notepad.type': {
     name: 'notepad.type', capability: 'input', label: 'Type into active Notepad',
     timeoutMs: 20000, alwaysApprove: true,
