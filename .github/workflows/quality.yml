@@ -32,7 +32,7 @@ jobs:
   windows-controller-tests:
     name: Windows controller (simulated, no laptop commands)
     runs-on: windows-latest
-    timeout-minutes: 15
+    timeout-minutes: 22
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -52,3 +52,19 @@ jobs:
         env:
           HUKM_SIMULATE: "1"
         run: python -m pytest -q apps/windows-controller/tests
+      - name: Build portable Windows Controller (no installer/auto-run)
+        working-directory: apps/windows-controller
+        run: python -m PyInstaller --noconfirm --clean --distpath dist --workpath build packaging/hukm-controller.spec
+      - name: Publish versioned Windows Controller ZIP
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Copy-Item apps/windows-controller/dist/hukm-controller.exe release/hukm-controller.exe
+          Copy-Item apps/windows-controller/README.md release/README.txt
+          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.1.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HUKM-Windows-Controller-v1.1
+          path: HUKM-Windows-Controller-v1.1.zip
+          retention-days: 14
+          if-no-files-found: error
