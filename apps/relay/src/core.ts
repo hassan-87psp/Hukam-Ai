@@ -80,6 +80,29 @@ function toAutomation(r: Row): Automation {
   };
 }
 
+type DailySchedule = { enabled: boolean; time: string | null; timezone: string };
+
+function parseDailySchedule(value: unknown, current?: DailySchedule): DailySchedule {
+  const fallback: DailySchedule = current ?? { enabled: false, time: null, timezone: 'Asia/Kuala_Lumpur' };
+  if (value === undefined) return fallback;
+  if (value === null) return { enabled: false, time: null, timezone: fallback.timezone };
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new HttpError(400, 'BAD_SCHEDULE', 'schedule must be an object');
+  const v = value as Record<string, unknown>;
+  const enabled = v.enabled === undefined ? fallback.enabled : v.enabled === true;
+  const time = v.time === undefined ? fallback.time : v.time;
+  const timezone = v.timezone === undefined ? fallback.timezone : v.timezone;
+  if (time !== null && (typeof time !== 'string' || !/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time)))
+    throw new HttpError(400, 'BAD_SCHEDULE', 'schedule time must be HH:mm (24-hour)');
+  if (enabled && time === null)
+    throw new HttpError(400, 'BAD_SCHEDULE', 'time required when schedule is enabled');
+  if (typeof timezone !== 'string' || timezone.length > 64)
+    throw new HttpError(400, 'BAD_SCHEDULE', 'invalid timezone');
+  try { new Intl.DateTimeFormat('en-US', { timeZone: timezone }); }
+  catch { throw new HttpError(400, 'BAD_SCHEDULE', 'unknown IANA timezone'); }
+  return { enabled, time: time as string | null, timezone };
+}
+
 interface DeviceConn {
   ws: WebSocket;
   deviceId: string;
