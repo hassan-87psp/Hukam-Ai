@@ -81,7 +81,7 @@ describe('whatsapp', () => {
   it('open desktop by default', () => expect(c('WhatsApp khol do.')).toMatchObject({ action: 'whatsapp.open', args: { mode: 'desktop' } }));
   it('explicit web browser command', () => expect(c('WhatsApp Web kholo')).toMatchObject({ action: 'web.open', args: { url: 'https://web.whatsapp.com/' } }));
   it('explicit desktop command', () => expect(c('WhatsApp Desktop kholo')).toMatchObject({ action: 'whatsapp.open', args: { mode: 'desktop' } }));
-  it('do not pretend to read WhatsApp message bodies', () => expect(parseCommand('WhatsApp messages read karo')).toMatchObject({ kind: 'unsupported', reason: 'whatsapp-message-read' }));
+  it('WhatsApp message reading is explicitly scoped to visible chat', () => expect(c('WhatsApp messages read karo').action).toBe('whatsapp.read_visible'));
   it('compose roman', () =>
     expect(c('Ali ko message likho ke main 10 minute mein call karunga.')).toMatchObject({
       action: 'whatsapp.compose',
