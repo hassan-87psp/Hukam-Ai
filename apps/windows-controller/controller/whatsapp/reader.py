@@ -125,7 +125,8 @@ def read_visible_aloud() -> dict:
         }
 
     # Offline SAPI: no personal WhatsApp text crosses the network.
-    message = " . ".join(texts[-12:])[:1400]
+    # Keep offline speech inside the command timeout; never read a whole inbox.
+    message = " . ".join(texts[-8:])[:300]
     try:
         import win32com.client
         speaker = win32com.client.Dispatch("SAPI.SpVoice")
