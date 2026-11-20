@@ -53,6 +53,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('Window samne la raha hoon.', 'ونڈو سامنے لا رہا ہوں۔', 'Bringing the window to the front.');
     case 'screen.capture':
       return L('Screenshot le raha hoon.', 'اسکرین شاٹ لے رہا ہوں۔', 'Capturing a screenshot.');
+    case 'browser.control':
+      return L('Browser input ke liye aapki approval chahiye.', 'براؤزر ان پٹ کے لیے آپ کی منظوری چاہیے۔', 'Your approval is required before browser input.');
     case 'system.lock':
       return L('Laptop lock kar raha hoon.', 'لیپ ٹاپ لاک کر رہا ہوں۔', 'Locking the laptop.');
     case 'whatsapp.open':
@@ -114,6 +116,8 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Window samne aa gayi.', 'ونڈو سامنے آ گئی۔', 'Window brought to the front.');
     case 'screen.capture':
       return L('Screenshot aa gaya.', 'اسکرین شاٹ آ گیا۔', 'Screenshot received.');
+    case 'browser.control':
+      return L('Browser ko input bhej diya. Website par natija abhi verify nahi hua.', 'براؤزر کو ان پٹ بھیج دیا گیا، نتیجہ تصدیق شدہ نہیں۔', 'Input delivered to the browser; the website result is not verified.');
     case 'system.lock':
       return L('Laptop lock ho gaya.', 'لیپ ٹاپ لاک ہو گیا۔', 'The laptop is locked.');
     case 'whatsapp.open':
