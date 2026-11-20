@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCommand, validateCommand, requiresApproval, normalize, ackMessage, successMessage } from '../src/index';
+import { parseCommand, parseWhatsAppChoice, validateCommand, requiresApproval, normalize, ackMessage, successMessage, clarifyMessage } from '../src/index';
 
 function c(text: string) {
   const r = parseCommand(text);
@@ -78,7 +78,24 @@ describe('whatsapp', () => {
   it('check', () => expect(c('WhatsApp check karo.').action).toBe('whatsapp.check'));
   it('unread', () => expect(c('WhatsApp par unread messages batao.').action).toBe('whatsapp.check'));
   it('contact unread → check', () => expect(c('Ali ke naye messages batao.').action).toBe('whatsapp.check'));
-  it('open desktop by default', () => expect(c('WhatsApp khol do.')).toMatchObject({ action: 'whatsapp.open', args: { mode: 'desktop' } }));
+  for (const t of ['WhatsApp kholo', 'WhatsApp khol do.', 'Open WhatsApp', 'whatsapp']) {
+    it('clarifies ambiguous ' + t, () => expect(parseCommand(t)).toMatchObject({ kind: 'clarify', topic: 'whatsapp-choice' }));
+  }
+  it('asks a natural bilingual question', () => expect(clarifyMessage('whatsapp-choice').roman).toContain('Desktop app kholoon ya WhatsApp Web'));
+  for (const t of ['desktop', 'desktop wala', 'installed app', 'pehla wala', '1']) {
+    it('understands desktop reply ' + t, () => expect(parseWhatsAppChoice(t)).toBe('desktop'));
+  }
+  for (const t of ['web', 'web wala', 'browser wala', 'Chrome', 'doosra wala', '2']) {
+    it('understands web reply ' + t, () => expect(parseWhatsAppChoice(t)).toBe('web'));
+  }
+  for (const t of ['rehne do', 'cancel', 'nahi']) {
+    it('can cancel the prompt ' + t, () => expect(parseWhatsAppChoice(t)).toBe('cancel'));
+  }
+  it('never guesses from vague words', () => {
+    expect(parseWhatsAppChoice('haan')).toBeNull();
+    expect(parseWhatsAppChoice('dono')).toBeNull();
+    expect(parseWhatsAppChoice('desktop ya web')).toBeNull();
+  });
   it('explicit web browser command', () => expect(c('WhatsApp Web kholo')).toMatchObject({ action: 'web.open', args: { url: 'https://web.whatsapp.com/' } }));
   it('explicit desktop command', () => expect(c('WhatsApp Desktop kholo')).toMatchObject({ action: 'whatsapp.open', args: { mode: 'desktop' } }));
   it('WhatsApp message reading is explicitly scoped to visible chat', () => expect(c('WhatsApp messages read karo').action).toBe('whatsapp.read_visible'));
