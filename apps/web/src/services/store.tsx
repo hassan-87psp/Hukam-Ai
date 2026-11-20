@@ -157,12 +157,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, []);
   const dismissToast = useCallback((id: string) => setToasts((x) => x.filter((y) => y.id !== id)), []);
 
+  const lastVoiceWarning = useRef(0);
   const say = useCallback((m: Localized, force = false) => {
     const s = settingsRef.current;
     if (s.speechMuted && !force) return;
     const voice = pickVoice(voices.current, s.voiceURI, s.responseLang);
-    speak(textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume, setSpeaking);
-  }, []);
+    // The default for Roman Urdu is Pakistani female (Uzma); selecting a
+    // device voice from the dropdown deliberately opts out of online audio.
+    const cloudUrdu = !s.voiceURI && s.responseLang !== 'en' ? m.ur : undefined;
+    speak(textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume, setSpeaking,
+      cloudUrdu, () => {
+        if (Date.now() - lastVoiceWarning.current > 60_000) {
+          lastVoiceWarning.current = Date.now();
+          toast({
+            title: 'Pakistani female voice filhal available nahi',
+            body: 'Free voice service se audio nahi aayi. Device voice use ho rahi hai.',
+            tone: 'warn',
+          });
+        }
+      });
+  }, [toast]);
 
   const addChat = useCallback((m: ChatMessage) => setChat((c) => [...c, m]), []);
   const agent = useCallback(
