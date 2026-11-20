@@ -1,0 +1,27 @@
+{
+  "name": "hukm-ai",
+  "version": "1.0.0",
+  "private": true,
+  "description": "HUKM AI \u2014 Your Personal AI Operator",
+  "workspaces": [
+    "packages/*",
+    "apps/web",
+    "apps/relay"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build -w apps/web && npm run build -w apps/relay",
+    "start": "node --env-file-if-exists=.env --disable-warning=ExperimentalWarning apps/relay/dist/server.js",
+    "test": "vitest run",
+    "test:controller": "python -m pytest -q apps/windows-controller/tests",
+    "test:all": "npm run build && npm test && npm run test:controller",
+    "typecheck": "tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/relay/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,293 @@
+import type { ActionName } from '../../shared-types/src/index';
+import { KNOWN_APPS, type KnownApp, type KnownFolder } from './actions';
+import { cleanText, normalize } from './normalize';
+
+export type ParseResult =
+  | { kind: 'command'; action: ActionName; args: Record<string, unknown>; normalized: string; matchedRule: string }
+  | { kind: 'reply'; topic: 'greeting' | 'help'; normalized: string }
+  | { kind: 'clarify'; topic: string; normalized: string }
+  | { kind: 'unsupported'; reason: string; normalized: string };
+
+// ---- vocabulary ---------------------------------------------------------
+
+const OPEN = /\b(khol(o|do)?|khol do|open|launch|start|chalao|chala do|chala)\b/;
+const PLAY = /\b(play|chalao|chala do|chala|lagao|laga do|sunao|suna do|bajao|baja do)\b/;
+const SEARCH = /\b(search|dhoondo|dhoond|talash|find|look up|lookup|google karo|khoj)\b/;
+const SHOW = /\b(dikhao|dikha do|show|batao|bata do|tell|list|display)\b/;
+const CHECK = /\b(check|dekho|dekh lo|dekh)\b/;
+const CANCEL = /\b(cancel|roko|rok do|ruk jao|abort|khatam karo)\b/;
+const CLOSE = /\b(band karo|band kar do|close|quit|exit|kill)\b/;
+const LATEST = /\b(latest|newest|recent|naya|nayi|naye|akhri|aakhri|last|tazaa|taza)\b/;
+
+const FILE_WORD = /\b(file|files)\b/;
+
+const EXT_STRONG: [RegExp, string[]][] = [
+  [/\bpdfs?\b/, ['pdf']],
+  [/\bxlsx?\b|\bcsv\b|\bspreadsheets?\b/, ['xlsx', 'xls', 'csv']],
+  [/\bdocx?\b/, ['docx', 'doc']],
+  [/\bpptx?\b|\bpresentations?\b/, ['pptx', 'ppt']],
+  [/\bjpe?g\b|\bpng\b|\bimages?\b|\bphotos?\b|\btasveer(ein|en)?\b/, ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp']],
+  [/\bmp4\b|\bvideo\b/, ['mp4', 'mkv', 'mov', 'avi']],
+  [/\bmp3\b|\baudio\b|\bsongs?\b|\bgaana\b/, ['mp3', 'wav', 'm4a']],
+  [/\bzip\b|\brar\b/, ['zip', 'rar', '7z']],
+  [/\btxt\b|\btext file\b/, ['txt', 'md']],
+  [/\bmq5\b|\bmq4\b/, ['mq5', 'mq4']],
+];
+// Only treated as a file type when "file"/"sheet"/"document" is also present (else "excel kholo" = app).
+const EXT_WEAK: [RegExp, string[]][] = [
+  [/\bexcel\b/, ['xlsx', 'xls', 'csv']],
+  [/\bword\b/, ['docx', 'doc']],
+  [/\bpowerpoint\b|\bpower point\b/, ['pptx', 'ppt']],
+];
+
+const LOCATIONS: [RegExp, KnownFolder][] = [
+  [/\bdownloads?\b/, 'downloads'],
+  [/\b(my )?documents\b|\bdocs\b/, 'documents'],
+  [/\bdesktop\b/, 'desktop'],
+  [/\bpictures\b|\bphotos folder\b/, 'pictures'],
+  [/\bmusic\b/, 'music'],
+  [/\bvideos\b/, 'videos'],
+  [/\bhome folder\b|\buser folder\b/, 'home'],
+];
+
+const APP_ALIASES: [RegExp, KnownApp][] = [
+  [/\bgoogle chrome\b|\bchrome\b/, 'chrome'],
+  [/\bmicrosoft edge\b|\bedge\b/, 'edge'],
+  [/\bnotepad\b/, 'notepad'],
+  [/\bcalculator\b|\bcalc\b|\bcalculater\b/, 'calculator'],
+  [/\bfile explorer\b|\bexplorer\b|\bthis pc\b|\bmy computer\b/, 'explorer'],
+  [/\bvs ?code\b|\bvisual studio code\b/, 'vscode'],
+  [/\bms word\b|\bmicrosoft word\b|\bword\b/, 'word'],
+  [/\bms excel\b|\bmicrosoft excel\b|\bexcel\b/, 'excel'],
+  [/\bpower ?point\b/, 'powerpoint'],
+  [/\bms paint\b|\bpaint\b/, 'paint'],
+  [/\bwindows settings\b|\bsettings\b|\bsetting\b/, 'settings'],
+  [/\btask manager\b/, 'taskmgr'],
+];
+
+const SITES: [RegExp, string][] = [
+  [/\bgmail\b/, 'https://mail.google.com/'],
+  [/\bgoogle\b/, 'https://www.google.com/'],
+  [/\bfacebook\b|\bfb\b/, 'https://www.facebook.com/'],
+  [/\binstagram\b|\binsta\b/, 'https://www.instagram.com/'],
+  [/\blinkedin\b/, 'https://www.linkedin.com/'],
+  [/\btrading ?view\b/, 'https://www.tradingview.com/'],
+  [/\bforex ?factory\b/, 'https://www.forexfactory.com/'],
+  [/\binvesting(\.com)?\b/, 'https://www.investing.com/'],
+  [/\bmyfxbook\b/, 'https://www.myfxbook.com/'],
+  [/\bchat ?gpt\b/, 'https://chatgpt.com/'],
+  [/\bgithub\b/, 'https://github.com/'],
+  [/\bclaude\b/, 'https://claude.ai/'],
+];
+
+const URL_RE = /\b((https?:\/\/)?([a-z0-9-]+\.)+(com|pk|net|org|io|ai|dev|app|co|uk|me|tv|info|edu|gov)(\/[^\s]*)?)\b/i;
+
+const FILLERS = new Set([
+  'please', 'zara', 'jaldi', 'jaldi se', 'mera', 'meri', 'mere', 'mujhe', 'hamein', 'humein', 'aap', 'ap', 'tum',
+  'karo', 'kar', 'do', 'de', 'dein', 'dena', 'karna', 'karein', 'karen', 'kardo', 'krdo', 'ke', 'liye', 'wali', 'wala', 'wale',
+  'ka', 'ki', 'par', 'pe', 'mein', 'me', 'on', 'in', 'the', 'a', 'an', 'for', 'about', 'my', 'of', 'ko', 'se', 'hai', 'hain', 'he',
+  'jo', 'woh', 'wo', 'ye', 'yeh', 'is', 'us', 'koi', 'ek', 'can', 'you', 'could', 'would', 'i', 'want', 'to', 'some', 'now', 'abhi',
+  'kya', 'and', 'or', 'naam', 'name', 'called', 'named', 'wali', 'saari', 'sari', 'sab', 'all', 'please', 'bhai', 'yaar', 'sir',
+]);
+const VERB_WORDS = new Set([
+  'kholo', 'khol', 'open', 'launch', 'start', 'chalao', 'chala', 'play', 'lagao', 'laga', 'sunao', 'suna', 'bajao', 'baja',
+  'search', 'dhoondo', 'dhoond', 'talash', 'find', 'look', 'up', 'lookup', 'khoj', 'dikhao', 'dikha', 'show', 'batao', 'bata',
+  'tell', 'list', 'display', 'check', 'dekho', 'dekh', 'lo', 'karo', 'kar',
+]);
+
+function stripWords(text: string, extra: RegExp[] = [], keep: Set<string> = new Set()): string {
+  let t = ` ${text} `;
+  for (const re of extra) t = t.replace(new RegExp(re.source, 'g'), ' ');
+  return t
+    .split(/\s+/)
+    .filter((w) => w && (keep.has(w) || (!FILLERS.has(w) && !VERB_WORDS.has(w))))
+    .join(' ')
+    .trim();
+}
+
+/** Recover original-case words for a normalised query where possible (roman input only). */
+function restoreCase(original: string, query: string): string {
+  if (!query) return query;
+  const words = cleanText(original).split(' ');
+  const map = new Map(words.map((w) => [w.toLowerCase(), w]));
+  return query
+    .split(' ')
+    .map((w) => map.get(w) ?? w)
+    .join(' ');
+}
+
+function detectExt(t: string): string[] {
+  for (const [re, e] of EXT_STRONG) if (re.test(t)) return e;
+  if (/\b(file|files|sheet|sheets|document|doc)\b/.test(t)) for (const [re, e] of EXT_WEAK) if (re.test(t)) return e;
+  return [];
+}
+function detectLocation(t: string): KnownFolder | null {
+  for (const [re, f] of LOCATIONS) if (re.test(t)) return f;
+  return null;
+}
+
+// ---- WhatsApp compose (runs on the original text to keep the message verbatim) ----
+
+const COMPOSE_WORDS = /\b(message|reply|likho|likh do|bhejo|bhej do|jawab|send|text|bol do|keh do|kaho)\b/;
+
+function parseCompose(original: string, norm: string): { contact: string; message: string } | null {
+  if (!COMPOSE_WORDS.test(norm)) return null;
+  const text = cleanText(original);
+  // English: "message Ali that ...", "send a message to Ali saying ...", "reply to Ali: ..."
+  const en = text.match(
+    /^(?:please\s+)?(?:send|write)?\s*(?:a\s+)?(?:whatsapp\s+)?(?:message|msg|text|reply)\s+(?:to\s+)?([\p{L}][\p{L}\p{M}'.-]{0,30}(?:\s[\p{L}][\p{L}\p{M}'.-]{0,30})?)\s*(?:on\s+whatsapp\s*)?(?:that|saying|:|-)\s+(.+)$/iu,
+  );
+  if (en) return { contact: en[1].trim(), message: en[2].trim() };
+  // Roman Urdu / Urdu: "<name> ko [whatsapp par] message likho ke <msg>"
+  const koMatch = text.match(/^(.*?)\s(?:ko|کو)\s(.*)$/iu);
+  if (!koMatch) return null;
+  let contact = koMatch[1]
+    .replace(/^(whatsapp|واٹس ایپ)\s+(par|pe|mein|پر|میں)\s+/iu, '')
+    .replace(/^(please|zara|plz)\s+/i, '')
+    .trim();
+  const rest = koMatch[2];
+  const sep = rest.match(/(?:^|\s)(?:ke|keh|k|ki|that|کہ|کے|:)\s+(.+)$/iu);
+  if (!sep) return null;
+  const message = sep[1].trim();
+  if (!contact || contact.split(/\s+/).length > 3 || !message) return null;
+  contact = contact.replace(/^[\p{Ll}]/u, (c) => c.toUpperCase());
+  return { contact, message: message.replace(/^[\p{Ll}]/u, (c) => c.toUpperCase()) };
+}
+
+// ---- main ---------------------------------------------------------------
+
+export function parseCommand(input: string): ParseResult {
+  const t = normalize(input);
+  const cmd = (action: ActionName, args: Record<string, unknown>, rule: string): ParseResult => ({
+    kind: 'command', action, args, normalized: t, matchedRule: rule,
+  });
+  if (!t) return { kind: 'clarify', topic: 'empty', normalized: t };
+
+  // greetings / help
+  if (/^(hi|hello|hey|salam|assalam ?o? ?alaikum|aoa|salaam)( hukm)?$/.test(t)) return { kind: 'reply', topic: 'greeting', normalized: t };
+  if (/^(help|madad|commands|kya kar sakte ho|what can you do|tum kya kar sakte ho|aap kya kar sakte hain)$/.test(t))
+    return { kind: 'reply', topic: 'help', normalized: t };
+
+  // cancel current command
+  if (CANCEL.test(t) && (/\b(command|kaam|task|current|yeh|ye|this|it|isay|ise)\b/.test(t) || t.split(' ').length <= 2))
+    return cmd('command.cancel', {}, 'cancel');
+  if (/\b(command|kaam|task)\b/.test(t) && /\b(band karo|band kar do|stop)\b/.test(t)) return cmd('command.cancel', {}, 'cancel-band');
+
+  // whatsapp compose
+  const compose = parseCompose(input, t);
+  if (compose) return cmd('whatsapp.compose', compose, 'whatsapp-compose');
+
+  // "<name> ke naye messages batao" — we can only check WhatsApp as a whole
+  if (/\b(unread|naye|nayi|new) (messages|message|chats)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-unread');
+
+  // whatsapp
+  if (/\bwhatsapp\b/.test(t)) {
+    if (/\b(unread|naye|nayi|messages|message|check|dekho|dekh|batao|dikhao|kitne|koi)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-check');
+    if (OPEN.test(t) || t === 'whatsapp') return cmd('whatsapp.open', {}, 'whatsapp-open');
+    return cmd('whatsapp.check', {}, 'whatsapp-default');
+  }
+
+  // youtube
+  if (/\b(youtube|yt)\b/.test(t)) {
+    const q = stripWords(t, [/\b(youtube|yt)\b/, /\bvideos?\b/, /\b(per|pe|par|mein|on)\b/, /\b(gaana|chrome|browser|edge)\b/]);
+    const query = restoreCase(input, q);
+    if (!query) return cmd('web.open', { url: 'https://www.youtube.com/' }, 'youtube-home');
+    if (PLAY.test(t)) return cmd('youtube.play', { query }, 'youtube-play');
+    return cmd('youtube.search', { query }, 'youtube-search');
+  }
+
+  // screen
+  if (/\b(screen|screenshot)\b/.test(t) && (SHOW.test(t) || /\b(capture|lo|le|take|grab|bhejo|send)\b/.test(t) || /^screenshot$/.test(t)))
+    return cmd('screen.capture', {}, 'screen');
+
+  // lock
+  if (/\block\b/.test(t) && /\b(laptop|computer|pc|screen|system|windows)\b/.test(t)) return cmd('system.lock', {}, 'lock');
+
+  // list applications
+  if (/\b(applications|apps|programs|softwares?|windows)\b/.test(t) && /\b(open|khuli|khule|chal|chal rahi|chal rahe|running|kaunsi|which|what|list|batao|dikhao)\b/.test(t))
+    return cmd('apps.list', {}, 'apps-list');
+
+  // active window
+  if (/\b(active window|current window|konsi window|kaunsi window|front window)\b/.test(t) || /\bpage (ka )?title\b/.test(t))
+    return cmd('window.active', {}, 'window-active');
+
+  // device status
+  if (/\b(battery|charging|charge)\b/.test(t) && !/\b(file|files)\b/.test(t)) return cmd('device.status', {}, 'battery');
+  if (/\b(laptop|computer|device|pc|system)\b/.test(t) && /\b(status|haal|online|battery|info|information|kaisa|kesa|connected|details)\b/.test(t))
+    return cmd('device.status', {}, 'device-status');
+
+  // closing apps is not supported in V1
+  if (CLOSE.test(t)) return { kind: 'unsupported', reason: 'close', normalized: t };
+
+  // files
+  const ext = detectExt(t);
+  const loc = detectLocation(t);
+  const latest = LATEST.test(t);
+  const where = /\bkahan\b|\bwhere\b/.test(t);
+  const fileCtx = FILE_WORD.test(t) || ext.length > 0 || where;
+  if (fileCtx) {
+    const q = stripWords(t, [
+      /\b(file|files|document|sheet|sheets)\b/,
+      ...EXT_STRONG.map((e) => e[0]),
+      ...EXT_WEAK.map((e) => e[0]),
+      ...LOCATIONS.map((l) => l[0]),
+      /\bfolder\b/,
+      LATEST,
+      /\b(kahan|where|save|saved|pari|padi|rakhi|located|located at)\b/,
+      /\b(per|pe|par|mein|on|in|se|from)\b/,
+    ]);
+    const query = restoreCase(input, q);
+    const base: Record<string, unknown> = { query, ext, location: loc, sort: latest ? 'latest' : 'relevance' };
+    if (where || SEARCH.test(t) || SHOW.test(t)) {
+      if (!query && ext.length === 0 && !latest) return { kind: 'clarify', topic: 'which-file', normalized: t };
+      return cmd('file.search', base, 'file-search');
+    }
+    if (OPEN.test(t)) {
+      if (!query && ext.length === 0 && !latest) return { kind: 'clarify', topic: 'which-file', normalized: t };
+      return cmd('file.open', base, 'file-open');
+    }
+    if (!query && ext.length === 0 && !latest) return { kind: 'clarify', topic: 'which-file', normalized: t };
+    return cmd('file.search', base, 'file-default');
+  }
+
+  // folders
+  if (loc) {
+    if (/\b(kya hai|kya kya|what is in|what's in|contents|list|dikhao|show)\b/.test(t)) return cmd('folder.list', { folder: loc }, 'folder-list');
+    return cmd('folder.open', { folder: loc }, 'folder-open');
+  }
+
+  // web search
+  if (SEARCH.test(t) || /^google\s+\S/.test(t)) {
+    const q = stripWords(t, [/\b(browser|google|web|internet|net|online|chrome)\b/, /\b(per|pe|par|mein|on|in)\b/]);
+    const query = restoreCase(input, q);
+    if (!query) return { kind: 'clarify', topic: 'search-what', normalized: t };
+    return cmd('web.search', { query }, 'web-search');
+  }
+
+  // apps (checked before sites so "google chrome" wins over "google")
+  for (const [re, app] of APP_ALIASES) {
+    if (re.test(t)) {
+      const rest = stripWords(t.replace(re, ' '), [/\b(app|application|program)\b/]);
+      if (OPEN.test(t) || rest === '') {
+        if (!(KNOWN_APPS as readonly string[]).includes(app)) break;
+        return cmd('app.open', { app }, 'app-open');
+      }
+    }
+  }
+
+  // explicit URL
+  const url = t.match(URL_RE);
+  if (url) return cmd('web.open', { url: url[1].startsWith('http') ? url[1] : `https://${url[1]}` }, 'url');
+
+  // known sites
+  for (const [re, site] of SITES) {
+    if (re.test(t)) {
+      const rest = stripWords(t.replace(re, ' '), [/\b(website|site|page|browser|mein)\b/]);
+      if (OPEN.test(t) || rest === '') return cmd('web.open', { url: site }, 'site');
+    }
+  }
+
+  if (/\bbrowser\b/.test(t) && OPEN.test(t)) return cmd('app.open', { app: 'chrome' }, 'browser-open');
+
+  return { kind: 'unsupported', reason: 'unknown', normalized: t };
+}
