@@ -101,30 +101,34 @@ export default function Voice() {
               </button>
             } />
             <div className="space-y-3 px-5 pb-5 pt-3 text-sm">
-              {!ttsSupported() && <p className="text-warn">This browser does not support spoken replies.</p>}
-              <Row label="Pakistani female voice (Uzma)">
-                {uzma ? <Badge tone="ok" dot>Available</Badge> : <Badge tone="warn" dot>Not available in this browser</Badge>}
+              {!ttsSupported() && <p className="text-warn">Browser mein device voice available nahi. Online preview try kar sakte hain.</p>}
+              <Row label="Pakistani female voice — Uzma">
+                <Badge tone="muted" dot>Free online preview</Badge>
+              </Row>
+              <Row label="Pakistani Urdu voice on this device">
+                {uzma ? <Badge tone="ok" dot>Available</Badge> : <Badge tone="warn" dot>Not installed</Badge>}
               </Row>
               <p className="rounded-xl bg-blue/10 px-3 py-2 text-xs text-ink2 ring-1 ring-ice/20">
-                {uzma
-                  ? 'Uzma Urdu Pakistan voice available hai. Automatic option se HUKM female Pakistani accent mein bol sakta hai.'
-                  : 'Free Urdu female voice ke liye Microsoft Edge browser mein HUKM open karein. Edge agar Uzma voice provide kare to Automatic se select ho jayegi. Chrome mein abhi English voice fallback hogi.'}
+                Automatic mode server se Pakistani female Uzma ki awaaz try karega, Chrome par bhi.
+                Agar free service busy ho ya audio fail ho to HUKM aapki device ki female voice mein bolay ga.
+                Speech banane ke liye Urdu text online Microsoft service ko jata hai. Ye unofficial free preview hai, guaranteed nahi.
               </p>
               <div>
                 <label className="label" htmlFor="voice">Voice</label>
                 <select id="voice" className="input" value={settings.voiceURI ?? ''} onChange={(e) => saveSettings({ voiceURI: e.target.value || null })}>
-                  <option value="">Automatic {uzma ? '— Pakistani Female Uzma' : '— Device Voice'}</option>
+                  <option value="">Pakistani Female — Uzma (Free Online)</option>
+                  <option value="device:auto">Automatic Device Voice (Offline)</option>
                   {[...urduVoices, ...voices.filter((v) => !v.lang.toLowerCase().startsWith('ur') && /^(en|hi)/i.test(v.lang))].map((v) => {
                     const g = voiceGender(v);
                     return <option key={v.voiceURI} value={v.voiceURI}>{v.name} — {v.lang}{g ? ` · ${g}` : ''}</option>;
                   })}
                 </select>
-                <p className="mt-1.5 text-xs text-ink2">Automatic Urdu female ko prefer karta hai jab browser provide kare. Ye free aur device-dependent hai.</p>
+                <p className="mt-1.5 text-xs text-ink2">Uzma Online by default. Agar online service na chale to device voice use hogi. Kisi bhi device voice ko manually select kar sakte hain.</p>
               </div>
               <Slider label="Speech speed" min={0.5} max={2} step={0.1} value={settings.speechRate} fmt={(v) => `${v.toFixed(1)}×`} onChange={(v) => saveSettings({ speechRate: v })} />
               <Slider label="Volume" min={0} max={1} step={0.05} value={settings.speechVolume} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => saveSettings({ speechVolume: v })} />
               <div className="flex flex-wrap gap-2">
-                <button className="btn-ghost px-3 py-2 text-xs" onClick={() => say({ roman: 'Assalam o Alaikum, main HUKM hoon.', ur: 'السلام علیکم، میں حکم ہوں۔', en: 'Hello, I am HUKM.' }, true)}><CheckCircle2 className="h-4 w-4" /> {uzma ? 'Test Uzma voice' : 'Test voice'}</button>
+                <button className="btn-ghost px-3 py-2 text-xs" onClick={() => say({ roman: 'Assalam o Alaikum, main HUKM hoon.', ur: 'السلام علیکم، میں حکم ہوں۔', en: 'Hello, I am HUKM.' }, true)}><CheckCircle2 className="h-4 w-4" /> Test selected voice</button>
                 <button className="btn-ghost px-3 py-2 text-xs" onClick={stopSpeaking}><Square className="h-4 w-4" /> Stop</button>
               </div>
             </div>
