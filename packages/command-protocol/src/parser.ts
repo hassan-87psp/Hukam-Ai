@@ -177,14 +177,23 @@ export function parseCommand(input: string): ParseResult {
   const compose = parseCompose(input, t);
   if (compose) return cmd('whatsapp.compose', compose, 'whatsapp-compose');
 
-  // "<name> ke naye messages batao" — we can only check WhatsApp as a whole
+  // Reading personal WhatsApp message bodies is not implemented.
+  // Never misrepresent unread-chat counts as reading actual message content.
+  if (/\b(whatsapp|messages?|chats?)\b/.test(t) &&
+      /\b(read|parho|parh|parhke|parhkar|padho|pad|sunao|sunana)\b/.test(t) &&
+      /\b(messages?|msgs?|chats?)\b/.test(t))
+    return { kind: 'unsupported', reason: 'whatsapp-message-read', normalized: t };
+
+  // "<name> ke naye messages batao" — reads unread-chat counts only.
   if (/\b(unread|naye|nayi|new) (messages|message|chats)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-unread');
 
-  // whatsapp
+  // whatsapp: Desktop is preferred; explicitly saying Web/Chrome selects browser.
   if (/\bwhatsapp\b/.test(t)) {
-    if (/\b(unread|naye|nayi|messages|message|check|dekho|dekh|batao|dikhao|kitne|koi)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-check');
-    if (OPEN.test(t) || t === 'whatsapp') return cmd('whatsapp.open', {}, 'whatsapp-open');
-    return cmd('whatsapp.check', {}, 'whatsapp-default');
+    const mode = /\b(web|browser|chrome)\b/.test(t) ? 'web' : 'desktop';
+    if (/\b(unread|naye|nayi|messages|message|check|dekho|dekh|batao|dikhao|kitne|koi)\b/.test(t)) return cmd('whatsapp.check', { mode }, 'whatsapp-check');
+    if (OPEN.test(t) || t === 'whatsapp' || t === 'whatsapp desktop' || t === 'whatsapp web')
+      return cmd('whatsapp.open', { mode }, 'whatsapp-open');
+    return cmd('whatsapp.check', { mode }, 'whatsapp-default');
   }
 
   // youtube
