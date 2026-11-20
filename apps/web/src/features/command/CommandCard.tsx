@@ -12,7 +12,7 @@ export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'app.open': AppWindow, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
   'file.reveal': FolderOpen, 'web.open': Globe, 'web.search': Search, 'youtube.search': Youtube, 'youtube.play': Youtube,
   'device.status': Laptop, 'apps.list': AppWindow, 'window.active': Monitor, 'window.focus': Monitor, 'screen.capture': Monitor,
-  'browser.control': Monitor, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.unread_senders': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
+  'browser.control': Monitor, 'notepad.type': Pencil, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.unread_senders': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
 };
 
 export function ActionIcon({ action, className }: { action: ActionName; className?: string }) {
@@ -169,6 +169,8 @@ export function CommandResult({ c }: { c: Command }) {
           {r.note && <p className="mt-1 text-xs text-ink2">{r.note}</p>}
         </div>
       );
+    case 'notepad.type':
+      return <p className="text-xs text-ink2">{r.note ?? 'Notepad input sent; result not verified.'}</p>;
     case 'browser.control':
       return <p className="text-xs text-ink2">{r.note ?? 'Browser input attempted. Verify the website result before continuing.'}</p>;
     case 'whatsapp.unread_senders':
@@ -216,6 +218,10 @@ function ApprovalBox({ c }: { c: Command }) {
         {c.action === 'whatsapp.unread_senders' && (<>
           <dt className="text-ink2">Data</dt><dd>Only sender names in the visible Unread chat list, not message bodies</dd>
           <dt className="text-ink2">Privacy</dt><dd>Visible names will be transmitted to your authenticated HUKM web account and saved in command history.</dd>
+        </>)}
+        {c.action === 'notepad.type' && (<>
+          <dt className="text-ink2">Target</dt><dd>Currently focused Notepad window only</dd>
+          <dt className="text-ink2">Exact text</dt><dd className="whitespace-pre-wrap break-words">{String(a.text ?? '')}</dd>
         </>)}
         {c.action === 'browser.control' && (<>
           <dt className="text-ink2">Browser</dt><dd>Foreground Chrome / Edge / Firefox only</dd>
