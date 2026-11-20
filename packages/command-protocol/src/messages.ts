@@ -176,7 +176,9 @@ export const STATUS_MESSAGES = {
   noDevice: L('Koi laptop connected nahi hai. Devices page se pair karein.', 'کوئی لیپ ٹاپ منسلک نہیں۔ ڈیوائسز صفحے سے جوڑیں۔', 'No laptop is paired. Pair one from Devices.'),
 };
 
-export function replyMessage(topic: 'greeting' | 'help'): Localized {
+export function replyMessage(topic: 'greeting' | 'help' | 'whatsapp-cancelled'): Localized {
+  if (topic === 'whatsapp-cancelled')
+    return L('Theek hai, WhatsApp abhi nahi kholunga. Aur kuch karna hai?', 'ٹھیک ہے، ابھی واٹس ایپ نہیں کھولوں گا۔ اور کچھ کرنا ہے؟', "Okay, I won't open WhatsApp. Anything else?");
   if (topic === 'greeting')
     return L('Assalam o Alaikum! Bataiye, laptop par kya karna hai?', 'السلام علیکم! بتائیے، لیپ ٹاپ پر کیا کرنا ہے؟', 'Hello! What should I do on your laptop?');
   return L(
@@ -188,6 +190,12 @@ export function replyMessage(topic: 'greeting' | 'help'): Localized {
 
 export function clarifyMessage(topic: string): Localized {
   switch (topic) {
+    case 'whatsapp-choice':
+      return L(
+        'Ji, WhatsApp Desktop app kholoon ya WhatsApp Web browser mein? Bas Desktop ya Web bol dein.',
+        'جی، واٹس ایپ ڈیسک ٹاپ ایپ کھولوں یا واٹس ایپ ویب براؤزر میں؟ ڈیسک ٹاپ یا ویب بتا دیں۔',
+        'Would you like WhatsApp Desktop or WhatsApp Web? Say Desktop or Web.',
+      );
     case 'which-file':
       return L('Kaunsi file? File ka naam ya type batayein, jaise "invoice PDF dhoondo".', 'کون سی فائل؟ فائل کا نام یا قسم بتائیں۔', 'Which file? Give a name or type, e.g. "find invoice PDF".');
     case 'search-what':
