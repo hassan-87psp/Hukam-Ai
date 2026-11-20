@@ -168,11 +168,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const s = settingsRef.current;
     if (s.speechMuted && !force) return;
     const voice = pickVoice(voices.current, s.voiceURI, s.responseLang);
-    // Speak immediately using the browser. The free server TTS is rate-limited
-    // (HTTP 429 from Render), so don't leave the user waiting in silence.
-    // In Microsoft Edge, the device's Urdu (Pakistan) female voice is preferred.
-    speak(textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume, setSpeaking);
-  }, []);
+    // Default (Automatic) uses Pakistani Urdu female Uzma via our private relay.
+    // The cloud service is free/unofficial and can be rate-limited. If it fails
+    // or takes too long, the browser immediately uses an available local voice.
+    // Selecting a device voice opts out of the experimental cloud synthesis.
+    const cloudUrdu = !s.voiceURI && s.responseLang !== 'en' ? m.ur : undefined;
+    speak(
+      textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume,
+      setSpeaking, cloudUrdu,
+      () => toast({
+        title: 'Uzma online voice unavailable',
+        body: 'Device ki female voice par switch kar diya hai.',
+        tone: 'warn',
+      }),
+    );
+  }, [toast]);
 
   const addChat = useCallback((m: ChatMessage) => setChat((c) => [...c, m]), []);
   const agent = useCallback(
