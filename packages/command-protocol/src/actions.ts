@@ -263,7 +263,7 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
   },
   'whatsapp.read_visible': {
     name: 'whatsapp.read_visible', capability: 'whatsapp', label: 'Read visible WhatsApp chat aloud (locally only)',
-    timeoutMs: 25000, alwaysApprove: true,
+    timeoutMs: 60000, alwaysApprove: true,
     validate: () => ok({}),
   },
   'whatsapp.compose': {
