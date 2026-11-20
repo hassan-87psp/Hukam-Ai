@@ -4,6 +4,7 @@ import type { WebSocket } from 'ws';
 import {
   ACTIONS,
   parseCommand,
+  parseWhatsAppChoice,
   requiresApproval,
   validateCommand,
   ackMessage,
@@ -117,6 +118,9 @@ export class Relay {
   private timer: NodeJS.Timeout | null = null;
   private lastMaintenance = 0;
   private lastScheduleTick = 0;
+  // An account-scoped, short-lived clarification; never dispatch anything
+  // until the user expressly chooses Desktop or Web.
+  private pendingWhatsApp = new Map<string, number>();
   private screenshotDir: string;
 
   constructor(public db: DB, public config: RelayConfig) {
@@ -473,9 +477,46 @@ export class Relay {
     if (typeof input.text === 'string') {
       text = input.text.trim().slice(0, 500);
       const parsed = parseCommand(text);
-      if (parsed.kind !== 'command') return parsed;
-      action = parsed.action;
-      args = parsed.args;
+      const pendingUntil = this.pendingWhatsApp.get(userId) ?? 0;
+      if (source !== 'automation' && pendingUntil > Date.now()) {
+        const choice = parseWhatsAppChoice(text);
+        if (choice === 'cancel') {
+          this.pendingWhatsApp.delete(userId);
+          return { kind: 'reply', topic: 'whatsapp-cancelled', normalized: parsed.normalized };
+        }
+        // An unrelated, clearly parsed action overrides the pending question.
+        if (choice && !(parsed.kind === 'command' && parsed.action !== 'whatsapp.open'
+            && parsed.action !== 'web.open')) {
+          this.pendingWhatsApp.delete(userId);
+          if (choice === 'web') {
+            action = 'web.open';
+            args = { url: 'https://web.whatsapp.com/' };
+          } else {
+            action = 'whatsapp.open';
+            args = { mode: 'desktop' };
+          }
+        } else if (parsed.kind === 'command') {
+          this.pendingWhatsApp.delete(userId);
+          action = parsed.action;
+          args = parsed.args;
+        } else if (parsed.kind === 'reply' && parsed.topic !== 'help') {
+          this.pendingWhatsApp.delete(userId);
+          return parsed;
+        } else {
+          // "haan", "dono", or vague words cannot trigger a desktop action.
+          this.pendingWhatsApp.set(userId, Date.now() + 120_000);
+          return { kind: 'clarify', topic: 'whatsapp-choice', normalized: parsed.normalized };
+        }
+      } else {
+        this.pendingWhatsApp.delete(userId);
+        if (parsed.kind !== 'command') {
+          if (source !== 'automation' && parsed.kind === 'clarify' && parsed.topic === 'whatsapp-choice')
+            this.pendingWhatsApp.set(userId, Date.now() + 120_000);
+          return parsed;
+        }
+        action = parsed.action;
+        args = parsed.args;
+      }
     } else if (typeof input.action === 'string') {
       action = input.action as ActionName;
       args = (input.args as Record<string, unknown>) ?? {};
