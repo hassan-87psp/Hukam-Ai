@@ -249,7 +249,10 @@ class Executor:
     def do_whatsapp_check(self, a, _c):
         if not launcher.IS_WINDOWS and not launcher.SIMULATE:
             raise ActionError("NOT_SUPPORTED", "WhatsApp check reads window titles and needs Windows")
-        return wa.check(a.get("mode", self.cfg.whatsapp_mode), self.cfg.browser)
+        result = wa.check(a.get("mode", self.cfg.whatsapp_mode), self.cfg.browser)
+        if result.get("unreadChats") is None and not result.get("opened"):
+            raise ActionError("UNVERIFIABLE", result.get("note", "WhatsApp unread count could not be verified"))
+        return result
 
     def do_whatsapp_unread_senders(self, _a, _c):
         try:
