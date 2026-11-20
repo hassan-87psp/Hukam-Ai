@@ -16,9 +16,17 @@ export default function Voice() {
   const reduced = useReducedMotion();
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   useEffect(() => {
-    listVoices().then(setVoices);
+    let active = true;
+    const sync = () => { if (active && ttsSupported()) setVoices(speechSynthesis.getVoices()); };
+    void listVoices().then((v) => { if (active) setVoices(v); });
+    if (ttsSupported()) speechSynthesis.addEventListener('voiceschanged', sync);
+    return () => {
+      active = false;
+      if (ttsSupported()) speechSynthesis.removeEventListener('voiceschanged', sync);
+    };
   }, []);
   const urduVoices = voices.filter((v) => v.lang.toLowerCase().startsWith('ur'));
+  const uzma = urduVoices.find((v) => /uzma|female/i.test(v.name));
   const lastAgent = [...chat].reverse().find((m) => m.kind === 'agent');
   const lastUser = [...chat].reverse().find((m) => m.kind === 'user' && m.source === 'voice');
 
@@ -93,30 +101,30 @@ export default function Voice() {
               </button>
             } />
             <div className="space-y-3 px-5 pb-5 pt-3 text-sm">
-              {!ttsSupported() && <p className="text-warn">Browser ki local voice available nahi, lekin online Pakistani female voice try ho sakti hai.</p>}
-              <Row label="Pakistani female voice">
-                <Badge tone="muted" dot>Uzma · Free test</Badge>
+              {!ttsSupported() && <p className="text-warn">This browser does not support spoken replies.</p>}
+              <Row label="Pakistani female voice (Uzma)">
+                {uzma ? <Badge tone="ok" dot>Available</Badge> : <Badge tone="warn" dot>Not available in this browser</Badge>}
               </Row>
               <p className="rounded-xl bg-blue/10 px-3 py-2 text-xs text-ink2 ring-1 ring-ice/20">
-                Default: Pakistani Urdu female voice Uzma. HUKM screen par Roman Urdu likhega aur Pakistani Urdu mein bolega.
-                Ye free, unofficial online Microsoft Edge voice hai; kabhi service unavailable ho sakti hai.
-                Reply ka Urdu text voice banane ke liye Microsoft service ko bheja jata hai.
+                {uzma
+                  ? 'Uzma Urdu Pakistan voice available hai. Automatic option se HUKM female Pakistani accent mein bol sakta hai.'
+                  : 'Free Urdu female voice ke liye Microsoft Edge browser mein HUKM open karein. Edge agar Uzma voice provide kare to Automatic se select ho jayegi. Chrome mein abhi English voice fallback hogi.'}
               </p>
               <div>
                 <label className="label" htmlFor="voice">Voice</label>
                 <select id="voice" className="input" value={settings.voiceURI ?? ''} onChange={(e) => saveSettings({ voiceURI: e.target.value || null })}>
-                  <option value="">Pakistani Female — Uzma (Free Online)</option>
+                  <option value="">Automatic {uzma ? '— Pakistani Female Uzma' : '— Device Voice'}</option>
                   {[...urduVoices, ...voices.filter((v) => !v.lang.toLowerCase().startsWith('ur') && /^(en|hi)/i.test(v.lang))].map((v) => {
                     const g = voiceGender(v);
                     return <option key={v.voiceURI} value={v.voiceURI}>{v.name} — {v.lang}{g ? ` · ${g}` : ''}</option>;
                   })}
                 </select>
-                <p className="mt-1.5 text-xs text-ink2">Device voice select karne se Uzma online voice band ho jayegi. Automatic default Pakistani female hai.</p>
+                <p className="mt-1.5 text-xs text-ink2">Automatic Urdu female ko prefer karta hai jab browser provide kare. Ye free aur device-dependent hai.</p>
               </div>
               <Slider label="Speech speed" min={0.5} max={2} step={0.1} value={settings.speechRate} fmt={(v) => `${v.toFixed(1)}×`} onChange={(v) => saveSettings({ speechRate: v })} />
               <Slider label="Volume" min={0} max={1} step={0.05} value={settings.speechVolume} fmt={(v) => `${Math.round(v * 100)}%`} onChange={(v) => saveSettings({ speechVolume: v })} />
               <div className="flex flex-wrap gap-2">
-                <button className="btn-ghost px-3 py-2 text-xs" onClick={() => say({ roman: 'Assalam o Alaikum, main HUKM hoon.', ur: 'السلام علیکم، میں حکم ہوں۔', en: 'Hello, I am HUKM.' }, true)}><CheckCircle2 className="h-4 w-4" /> Test Pakistani female</button>
+                <button className="btn-ghost px-3 py-2 text-xs" onClick={() => say({ roman: 'Assalam o Alaikum, main HUKM hoon.', ur: 'السلام علیکم، میں حکم ہوں۔', en: 'Hello, I am HUKM.' }, true)}><CheckCircle2 className="h-4 w-4" /> {uzma ? 'Test Uzma voice' : 'Test voice'}</button>
                 <button className="btn-ghost px-3 py-2 text-xs" onClick={stopSpeaking}><Square className="h-4 w-4" /> Stop</button>
               </div>
             </div>
