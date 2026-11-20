@@ -71,7 +71,17 @@ def read_unread_senders() -> dict:
         raise UnreadSendersUnavailable("WhatsApp Desktop sender reading requires Windows")
     active = windows.active_window()
     if not active or active.process.casefold() not in DESKTOP_PROCESSES or "whatsapp" not in active.title.casefold():
-        raise UnreadSendersUnavailable("Bring the installed WhatsApp Desktop window to the foreground first")
+        # The owner approved this action; focus only the installed WhatsApp app.
+        procs = ["WhatsApp.exe", "WhatsAppDesktop.exe", "ApplicationFrameHost.exe", "msedgewebview2.exe"]
+        active = windows.focus_by_process(procs, title_contains="WhatsApp")
+        if active is None:
+            # This command includes opening WhatsApp if it was not already open.
+            from .adapter import open_whatsapp
+            opened = open_whatsapp("desktop", "default")
+            if opened.get("opened") == "desktop":
+                active = windows.focus_by_process(procs, title_contains="WhatsApp")
+        if active is None:
+            raise UnreadSendersUnavailable("WhatsApp Desktop could not be brought to the foreground")
 
     try:
         import uiautomation as auto
