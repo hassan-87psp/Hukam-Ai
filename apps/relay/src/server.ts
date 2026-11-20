@@ -10,6 +10,7 @@ import { femaleUrduAudio, reportFemaleVoiceError } from './female-tts';
 import { chatWithGemini, geminiConfigured, GeminiError } from './gemini';
 import { HttpError, Relay } from './core';
 import { Projects } from './projects';
+import { Operator } from './operator';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
@@ -101,6 +102,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   }
   const relay = new Relay(db, config);
   const projects = new Projects(db);
+  const operator = new Operator(db, relay, projects);
   relay.start();
 
   const loginLimit = new RateLimiter(10, 5 * 60_000);
@@ -209,6 +211,18 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     projects.appendMessage(c.user!.id,project.id,'assistant',ai.reply);
     return ai;
   });
+
+  // Owner reviewed AI plans and sequential audited tasks. No direct model execution.
+  add('POST', '/api/operator/plan', true, async (c) => {
+    if (!aiLimit.take('agent:' + c.user!.id) || !aiDailyLimit.take('agent:' + c.user!.id))
+      throw new HttpError(429,'AI_RATE_LIMIT','AI planner limit reached');
+    return operator.plan(c.user!.id, c.body?.text, c.body?.projectId);
+  });
+  add('GET', '/api/operator/plans/:id', true, (c) => operator.getPlan(c.user!.id, c.params.id));
+  add('POST', '/api/operator/plans/:id/run', true, (c) => operator.start(c.user!.id,c.params.id,c.body?.deviceId));
+  add('GET', '/api/operator/runs', true, (c) => operator.listRuns(c.user!.id));
+  add('GET', '/api/operator/runs/:id', true, (c) => operator.getRun(c.user!.id,c.params.id));
+  add('POST', '/api/operator/runs/:id/cancel', true, (c) => operator.cancel(c.user!.id,c.params.id));
 
   // auth
   add('GET', '/api/auth/status', false, (c) => {
