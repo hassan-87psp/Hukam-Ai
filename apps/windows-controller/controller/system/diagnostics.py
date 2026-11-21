@@ -10,7 +10,7 @@ from pathlib import Path
 from ..system import launcher, windows
 from .. import VERSION
 from ..config import Config
-from ..whatsapp import locator as wa_locator
+from ..whatsapp import locator as wa_locator, unread_filter as wa_filter
 
 
 def probe(cfg: Config | None = None) -> dict:
@@ -34,6 +34,7 @@ def probe(cfg: Config | None = None) -> dict:
             "whatsappAccessibilityTreeReadable": True,
             "whatsappUnreadBadgeReadable": False,
             "whatsappUnreadFilterAccessible": True,
+            "whatsappUnreadFilterStatus": "unique",
             "whatsappSearchControlAccessible": True,
             "whatsappDiagnosis": "Desktop window available; focus WhatsApp to inspect unread indicators",
             "chromeProfileDirectories": ["Default", "Profile 1"],
@@ -51,6 +52,7 @@ def probe(cfg: Config | None = None) -> dict:
         "whatsappAccessibilityTreeReadable": False,
         "whatsappUnreadBadgeReadable": False,
         "whatsappUnreadFilterAccessible": False,
+        "whatsappUnreadFilterStatus": "unknown",
         "whatsappSearchControlAccessible": False,
         "whatsappDiagnosis": "unknown",
         "chromeProfileDirectories": [],
@@ -113,6 +115,16 @@ def probe(cfg: Config | None = None) -> dict:
                         break
                 result["whatsappAccessibilityTreeReadable"] = count >= 3
                 if result["whatsappAccessibilityTreeReadable"]:
+                    try:
+                        b = root.BoundingRectangle
+                        rect=(float(b.left),float(b.top),float(b.right),float(b.bottom))
+                        filter_match, filter_status = wa_filter.choose_unique(
+                            wa_filter.candidates(root,rect))
+                        result["whatsappUnreadFilterAccessible"] = filter_match is not None
+                        result["whatsappUnreadFilterStatus"] = filter_status
+                    except Exception:
+                        result["whatsappUnreadFilterStatus"] = "unavailable"
+                if result["whatsappAccessibilityTreeReadable"]:
                     from ..whatsapp.adapter import unread_from_desktop_accessibility
                     result["whatsappUnreadBadgeReadable"] = (
                         unread_from_desktop_accessibility(native) is not None
@@ -127,8 +139,11 @@ def probe(cfg: Config | None = None) -> dict:
                 and not result["whatsappAccessibilityTreeReadable"]
             else "Windows UI Automation is not installed in the Controller; update the Controller."
             if result["whatsappDesktopWindow"] and not result["uiautomationInstalled"]
-            else "WhatsApp Desktop is foreground. Unread indicator is not exposed; "
-                 "open its Unread filter or request an approved visible-sender scan."
+            else "WhatsApp Desktop Unread filter is accessible; an approved sender scan can use the local mouse."
+            if result["whatsappForeground"] and result["whatsappUnreadFilterAccessible"]
+            else "WhatsApp Desktop foreground, but the Unread filter is not exposed to Windows accessibility. "
+                 "A local diagnostic screenshot of the WhatsApp app layout may be needed; "
+                 "do not click guessed coordinates."
             if result["whatsappForeground"] and not result["whatsappUnreadBadgeReadable"]
             else "WhatsApp Desktop is foreground and a readable Unread indicator is available."
             if result["whatsappForeground"] and result["whatsappUnreadBadgeReadable"]
