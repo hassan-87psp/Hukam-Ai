@@ -26,7 +26,7 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'web.open','web.search','youtube.search','youtube.play',
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
-  'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply',
+  'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed',
   'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft',
   'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
