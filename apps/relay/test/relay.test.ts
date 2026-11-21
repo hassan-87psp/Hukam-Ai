@@ -461,7 +461,7 @@ describe('commands', () => {
     expect(c.status).toBe('cancelled');
     expect(device.inbox.some((m) => m.type === 'command' && m.command.id === r.data.command.id)).toBe(false);
   });
-  it('opens owner's Personal WhatsApp Desktop by default with no unnecessary question', async () => {
+  it("opens Personal WhatsApp Desktop by default with no unnecessary question", async () => {
     device.auto=()=>({ok:true,result:{opened:'desktop',verified:true}});
     const opened=await api('POST','/api/commands',{text:'WhatsApp kholo',source:'voice'});
     expect(opened.data).toMatchObject({kind:'command',command:{action:'whatsapp.open',args:{mode:'desktop'}}});
