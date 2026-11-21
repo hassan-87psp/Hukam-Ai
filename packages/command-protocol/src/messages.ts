@@ -246,10 +246,15 @@ export function failureMessage(error: CommandError | null): Localized {
             'واٹس ایپ ڈیسک ٹاپ کی ان ریڈ تعداد کی تصدیق نہیں ہوئی۔ یہ صفر نہیں ہے۔',
             'Personal WhatsApp Desktop unread count is unknown, not zero. Try an approved visible unread sender scan.');
     case 'WHATSAPP_DESKTOP_UNAVAILABLE':
-    case 'LAUNCH_FAILED':
       return L('Sir, installed WhatsApp Desktop open/focus nahi ho saka. Windows Start se WhatsApp kholein, phir HUKM diagnostics chalayein. Main WhatsApp Web automatically nahi kholunga.',
         'واٹس ایپ ڈیسک ٹاپ کھل نہیں سکا۔ ونڈوز اسٹارٹ سے کھول کر ڈائگناسٹکس چلائیں۔',
         'Native WhatsApp Desktop could not be opened. Open it from Windows Start and run diagnostics; no automatic Web fallback.');
+    case 'LAUNCH_FAILED':
+      return /whatsapp/i.test(msg)
+        ? L('Sir, Personal WhatsApp Desktop ka native launcher kaam nahi kar saka. Windows Start se app kholein; Web automatically nahi khulega.',
+            'واٹس ایپ ڈیسک ٹاپ کھل نہیں سکا، ونڈوز اسٹارٹ سے کھولیں۔',
+            'WhatsApp Desktop native launch failed. Open it from Start; no Web fallback.')
+        : L(`App launch nahi ho saka: ${msg}`, `ایپ کھل نہیں سکی: ${msg}`, `Application launch failed: ${msg}`);
     case 'WHATSAPP_UI_UNAVAILABLE':
       return L('Sir, WhatsApp Desktop screen ke required controls accessible nahi hain. Window ko foreground mein la kar HUKM diagnostics chalayein. Main guess karke wrong chat nahi kholunga.',
         'واٹس ایپ کے کنٹرولز دستیاب نہیں۔ ایپ سامنے لا کر ڈائگناسٹکس چلائیں۔',
