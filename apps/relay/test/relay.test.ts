@@ -492,13 +492,19 @@ describe('commands', () => {
     expect(cancelled.data).toMatchObject({kind:'reply',topic:'conversation-cancelled'});
   });
 
-  it('whatsapp compose needs a saved contact and always needs approval', async () => {
+  it('whatsapp compose uses exact native chat name without needing a saved phone, and always needs approval', async () => {
     const r1 = await api('POST', '/api/commands', { text: 'Ali ko message likho ke main 10 minute mein call karunga' });
-    expect(r1.data).toMatchObject({ kind: 'clarify', topic: 'contact-unknown' });
+    expect(r1.data).toMatchObject({ kind: 'command', command: {
+      action: 'whatsapp.compose', status: 'awaiting_approval',
+      args: {contact: 'Ali', message: 'main 10 minute mein call karunga'}
+    }});
+    expect(r1.data.command.args.phone).toBeUndefined();
+    await api('POST', `/api/commands/${r1.data.command.id}/reject`);
     await api('PUT', '/api/settings', { whatsappContacts: [{ name: 'Ali', phone: '+92 300 1234567' }], approvalRequired: { 'whatsapp.compose': false } });
     const r2 = await api('POST', '/api/commands', { text: 'Ali ko message likho ke main 10 minute mein call karunga' });
     expect(r2.data.command.status).toBe('awaiting_approval');
-    expect(r2.data.command.args).toMatchObject({ contact: 'Ali', phone: '923001234567' });
+    expect(r2.data.command.args).toMatchObject({ contact: 'Ali' });
+    expect(r2.data.command.args.phone).toBeUndefined();
     await api('POST', `/api/commands/${r2.data.command.id}/reject`);
   });
   it('holds a multi-step YouTube conversation without opening random pages', async () => {
