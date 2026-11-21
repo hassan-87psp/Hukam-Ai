@@ -45,7 +45,7 @@ export function findSavedContact(value: string, contacts: readonly WhatsAppConta
     as a recipient. The Windows Controller verifies the exact chat header.
 */
 function plausibleContactName(value: string): string | null {
-  const candidate=value.trim().replace(/\s+(?:ko|wala|wali)$/i,'').trim();
+  const candidate=value.trim().replace(/\s+(?:ko|ka|ki|ke|wala|wali)$/i,'').trim();
   if(!candidate || candidate.length>60 ||
     !/^[\p{L}\p{M}\p{N} .'+()-]+$/u.test(candidate) ||
     /^(?:haan|yes|ok|okay|nahi|no|message|msg|text|reply|karo|kholo|send)$/i.test(candidate))
