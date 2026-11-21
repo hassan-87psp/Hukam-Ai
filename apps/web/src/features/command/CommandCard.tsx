@@ -248,6 +248,11 @@ export function CommandResult({ c }: { c: Command }) {
         {Array.isArray(r.visibleMessages) && r.visibleMessages.slice(0,8).map((message:string,i:number)=>
           <p key={i} className="whitespace-pre-wrap break-words rounded-lg bg-field/40 p-2">{message}</p>)}
       </div>;
+    case 'whatsapp.send_reviewed':
+      return <div className="space-y-1 text-xs text-warn">
+        <p>{r.note ?? 'Send was attempted, but delivery is not verified. Check the intended WhatsApp chat manually.'}</p>
+        <p>Send attempted: {r.sendAttempted ? 'Yes' : 'No'} · Delivery verified: No · Never retry automatically.</p>
+      </div>;
     case 'whatsapp.draft_reply':
     case 'whatsapp.attach_preview':
       return <p className="text-xs text-warn">{r.note ?? 'Draft/attachment prepared, not sent.'}</p>;
