@@ -80,7 +80,7 @@ jobs:
           Copy-Item apps/windows-controller/README.md release/README.txt
           Copy-Item apps/windows-controller/packaging/*.cmd release/
           Copy-Item apps/windows-controller/packaging/ONE_ZIP_SETUP.txt release/
-          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.6.9.zip -Force
+          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.7.0.zip -Force
       - name: Smoke test consolidated installer in isolated sandbox
         shell: pwsh
         run: |
@@ -128,17 +128,17 @@ jobs:
       - name: Generate installer SHA-256 integrity checksum
         shell: pwsh
         run: |
-          $zip = 'HUKM-Windows-Controller-v1.6.9.zip'
+          $zip = 'HUKM-Windows-Controller-v1.7.0.zip'
           if (!(Test-Path $zip)) { throw 'HUKM installer ZIP missing' }
           $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zip" | Set-Content -Path "$zip.sha256" -Encoding ascii
           if (!(Test-Path "$zip.sha256")) { throw 'HUKM installer checksum missing' }
       - uses: actions/upload-artifact@v4
         with:
-          name: HUKM-Windows-Controller-v1.6.9
+          name: HUKM-Windows-Controller-v1.7.0
           path: |
-            HUKM-Windows-Controller-v1.6.9.zip
-            HUKM-Windows-Controller-v1.6.9.zip.sha256
+            HUKM-Windows-Controller-v1.7.0.zip
+            HUKM-Windows-Controller-v1.7.0.zip.sha256
           retention-days: 14
           if-no-files-found: error
       - name: SHA-256 one-file setup checksum
