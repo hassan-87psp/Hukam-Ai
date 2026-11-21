@@ -6,6 +6,7 @@ import json
 import logging
 import random
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import websockets
@@ -39,6 +40,8 @@ class ControllerClient:
         # by Executor.run before it touches the desktop.
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hukm-act")
         self.cancels: dict[str, threading.Event] = {}
+        self.cancelled_early: dict[str, float] = {}
+        self.connection_epoch = 0
         self.active_commands: set[asyncio.Task] = set()
         self.outbox: dict[str, dict] = {}  # results not yet acknowledged by the relay
         self.ws = None
@@ -98,10 +101,18 @@ class ControllerClient:
         elif t == "command":
             await self.on_command(msg["command"])
         elif t == "cancel":
-            ev = self.cancels.get(msg.get("commandId", ""))
+            cid = str(msg.get("commandId", ""))
+            ev = self.cancels.get(cid)
             if ev:
                 ev.set()
-                log.info("cancel requested for %s", msg.get("commandId"))
+            elif cid:
+                # A cancel can arrive while the command ACK is still on the
+                # wire, before its cancellation flag exists. Remember it.
+                self.cancelled_early[cid] = time.monotonic()
+                if len(self.cancelled_early) > 256:
+                    oldest = min(self.cancelled_early, key=self.cancelled_early.get)
+                    self.cancelled_early.pop(oldest, None)
+            log.info("cancel requested for %s", cid[:16])
         elif t == "result_ack":
             self.outbox.pop(msg.get("commandId", ""), None)
         elif t == "pause":
@@ -123,6 +134,7 @@ class ControllerClient:
     async def on_command(self, cmd: dict) -> None:
         cid = str(cmd.get("id", ""))
         action = str(cmd.get("action", ""))
+        epoch = self.connection_epoch
         await self.send({"type": "ack", "commandId": cid})
         # Atomically claim the ID before any input. A previously claimed ID
         # is NEVER executed twice, even after a WebSocket reconnect.
@@ -137,6 +149,11 @@ class ControllerClient:
         # the command. Otherwise an emergency pause can arrive while "started"
         # is being sent and miss the action entirely.
         ev = threading.Event()
+        if cid in self.cancelled_early:
+            ev.set()
+            self.cancelled_early.pop(cid, None)
+        if epoch != self.connection_epoch:
+            ev.set()
         self.cancels[cid] = ev
         try:
             if self.paused:
@@ -151,7 +168,7 @@ class ControllerClient:
                 return
 
             await self.send({"type": "started", "commandId": cid})
-            if self.paused:
+            if self.paused or epoch != self.connection_epoch:
                 ev.set()
             if ev.is_set():
                 await self.finish(cid, Outcome(False, error={
@@ -211,6 +228,7 @@ class ControllerClient:
         except TypeError:  # websockets < 14
             conn = websockets.connect(url, extra_headers=headers, max_size=4 * 1024 * 1024, ping_interval=25, ping_timeout=20, open_timeout=15)
         async with conn as ws:
+            self.connection_epoch += 1
             self.ws = ws
             await ws.send(json.dumps(self.hello()))
             hb = asyncio.create_task(self.heartbeat(ws))
@@ -227,6 +245,9 @@ class ControllerClient:
                     else:
                         await self.handle(msg)
             finally:
+                # Any command that has not registered a cancellation Event yet
+                # also fails due to the epoch mismatch on its next await.
+                self.connection_epoch += 1
                 # The relay may already have timed out/cancelled these
                 # commands. Do not permit old queued actions to execute while
                 # this device is offline or after it reconnects.
@@ -267,6 +288,7 @@ class ControllerClient:
 
     def stop(self) -> None:
         if self.loop:
+            self.loop.call_soon_threadsafe(setattr, self, "connection_epoch", self.connection_epoch + 1)
             self.loop.call_soon_threadsafe(self.cancel_active, "controller stopping")
             self.loop.call_soon_threadsafe(self.stop_event.set)
             if self.ws is not None:
