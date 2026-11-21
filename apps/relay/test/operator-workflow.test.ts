@@ -29,6 +29,17 @@ describe('approved Personal WhatsApp + screen + Calendar + ChatGPT workflow cont
     expect(validatePlanShape({steps:[{action:'calendar.save_reviewed',args}]}).steps).toHaveLength(1);
     expect(validateCommand('calendar.save_reviewed',{...args,profile:'../Default'}).ok).toBe(false);
   });
+  it('named Personal WhatsApp chat selection is exact and separately approved',()=>{
+    expect(requiresApproval('whatsapp.select_chat')).toBe(true);
+    expect(validateCommand('whatsapp.select_chat',{contact:'Ali'}).ok).toBe(true);
+    expect(validateCommand('whatsapp.select_chat',{contact:''}).ok).toBe(false);
+    expect(validateCommand('whatsapp.read_selected',{contact:'Ali'}).ok).toBe(true);
+    expect(validateCommand('whatsapp.read_selected',{}).ok).toBe(true);
+    expect(validatePlanShape({steps:[
+      {action:'whatsapp.select_chat',args:{contact:'Ali'}},
+      {action:'whatsapp.read_selected',args:{contact:'Ali'}}
+    ]}).steps).toHaveLength(2);
+  });
   it('Personal WhatsApp send requires separate explicit owner approval and exact args',()=>{
     expect(validatePlanShape({steps:[{action:'whatsapp.draft_reply',args:{contact:'Ali',message:'Kal milte hain'}}]}).steps).toHaveLength(1);
     expect(validateCommand('whatsapp.attach_preview',{contact:'Ali',path:'C:\\Users\\Test\\Downloads\\file.pdf'}).ok).toBe(true);
