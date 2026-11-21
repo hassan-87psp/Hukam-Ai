@@ -208,7 +208,7 @@ def attach_preview(expected_contact: str, path: str) -> dict:
         raise DesktopWhatsAppError("WhatsApp attachment controls differ on this app version") from exc
 
 
-def send_reviewed(expected_contact: str, expected_message: str) -> dict:
+def send_reviewed(expected_contact: str, expected_message: str, cancel=None) -> dict:
     """One approved WhatsApp Send attempt, guarded by exact draft and chat.
 
     This action is deliberately separate from draft_reply. The relay must have
@@ -252,8 +252,15 @@ def send_reviewed(expected_contact: str, expected_message: str) -> dict:
         _check_selected_contact(root, rect, expected_contact)
         if str(editor.GetValuePattern().Value or "") != expected_message:
             raise DesktopWhatsAppError("WhatsApp draft changed; no Send attempted")
+        if cancel is not None and cancel.is_set():
+            raise DesktopWhatsAppError("WhatsApp Send cancelled before clicking")
         # Never auto-retry after this click: the message may have actually sent.
-        choices[0].Click(simulateMove=False)
+        try:
+            choices[0].Click(simulateMove=False)
+        except Exception:
+            return {"sendAttempted": "unknown", "sentUiConfirmed": False,
+                    "deliveryVerified": False, "verified": False, "contact": expected_contact,
+                    "note": "WhatsApp Send click raised an error. Message MAY have sent; check the chat manually and NEVER retry automatically."}
     except DesktopWhatsAppError:
         raise
     except Exception as exc:
