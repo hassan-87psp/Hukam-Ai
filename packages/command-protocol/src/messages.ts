@@ -19,6 +19,10 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       const n = APP_LABELS[args.app as KnownApp] ?? s(args.app);
       return L(`${n} open kar raha hoon.`, `${n} کھول رہا ہوں۔`, `Opening ${n}.`);
     }
+    case 'controller.update':
+      return L('Official HUKM update download aur install request ke liye approval chahiye. Windows par alag confirmation hogi. No silent install.',
+        'آفیشل اپ ڈیٹ کی منظوری چاہیے، ونڈوز پر بھی تصدیق ہوگی۔',
+        'Approval required to request the fixed-source HUKM update; a separate local Windows confirmation is mandatory.');
     case 'app.close':
       return L('Notepad ki selected window band karne ke liye approval chahiye. Unsaved text ko bina poochay discard nahi karunga.',
         'نوٹ پیڈ کی ونڈو بند کرنے کی اجازت چاہیے۔ غیر محفوظ متن ضائع نہیں کروں گا۔',
@@ -128,6 +132,12 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
         ? L(`${name} launch kar diya, lekin window abhi tak nazar nahi aayi.`, `${name} چلا دیا، لیکن ونڈو ابھی نظر نہیں آئی۔`, `${name} was launched, but no window was detected yet.`)
         : L(`${name} open ho gaya.`, `${name} کھل گیا۔`, `${name} is open.`);
     }
+    case 'controller.update':
+      return r.updateAvailable === false && r.verified === true
+        ? L('HUKM ka latest installed version already available hai.', 'آپ کا حکـم ورژن پہلے سے تازہ ہے۔', 'This Windows Controller is already up to date.')
+        : L('Update installer Windows par launch/cancel hua ho sakta hai. Version verify karne ke liye Devices par reconnect check karein; update ko abhi complete nahi kaha ja sakta.',
+          'انسٹالر چل سکتا ہے، نئی ورژن کنفرم ہونے تک اپ ڈیٹ مکمل نہیں۔',
+          'The updater was offered. Installation remains unverified until Windows reconnects with the new version.');
     case 'app.close':
       return r.windowClosed === true && r.verified === true
         ? L('Notepad ki selected window band ho gayi.', 'نوٹ پیڈ کی منتخب ونڈو بند ہو گئی۔', 'The selected Notepad window was closed.')
@@ -285,6 +295,9 @@ export function failureMessage(error: CommandError | null): Localized {
       return L('Sir, WhatsApp Desktop screen ke required controls accessible nahi hain. Window ko foreground mein la kar HUKM diagnostics chalayein. Main guess karke wrong chat nahi kholunga.',
         'واٹس ایپ کے کنٹرولز دستیاب نہیں۔ ایپ سامنے لا کر ڈائگناسٹکس چلائیں۔',
         'WhatsApp Desktop accessibility controls are unavailable. Focus the app and run diagnostics.');
+    case 'UPDATE_UNAVAILABLE':
+      return L(`HUKM website update unavailable: ${msg}`, `حکـم اپ ڈیٹ دستیاب نہیں۔`,
+        `HUKM official Windows update unavailable: ${msg}`);
     case 'CLOSE_NOT_SAFE':
       return L(`Notepad safely close nahi hua: ${msg}`, `نوٹ پیڈ محفوظ طریقے سے بند نہیں ہوا۔`, `Notepad was not safely closed: ${msg}`);
     case 'NOT_ALLOWED':
