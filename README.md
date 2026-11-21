@@ -1,7 +1,9 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
-## Current development release — v1.8.3 (21 Nov 2026)
+## Current development release — v1.8.4 (21 Nov 2026)
+
+**v1.8.4:** Fix opaque website update approval. The Devices page shows an inline command approval, running/download confirmation, final installer outcome and official manual recovery link. Controller logs every update stage without private data, brings owner confirmation to foreground, and gracefully exits the old Controller *after* reporting that the verified installer was launched to unlock its own EXE. The installed new version is not verified until the device reconnects. The existing v1.8.2/1.8.3 binary cannot receive fixes to its own updater without one successful installation; the official EXE provides a one-time recovery fallback if website updates are failing.
 
 **v1.8.3:** Fix actual user-observed Windows Controller timeout: WhatsApp opened, then Unread scan ran 30 seconds and returned INTERRUPTED_UNVERIFIED. The unread sender action now runs **local visual OCR first**, avoiding a potentially unbounded WhatsApp WinUI accessibility tree traversal. Two on-device OCR passes have separate 22-second bounds and privacy-safe stage logs; the relay grants 90 seconds including cold startup, and cancellation is checked immediately before any mouse action and before reporting names. No automatic retries/sends, screenshot upload or guessed coordinates. Real signed-in WhatsApp acceptance still needs verification.
 
