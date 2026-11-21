@@ -40,7 +40,6 @@ def _has_whatsapp_parent(pid: int) -> bool:
     except Exception:
         # AccessDenied / NoSuchProcess differ by psutil version; fail closed.
         return False
-        return False
 
 
 def matches_desktop_window(w: windows.WindowInfo) -> bool:
@@ -77,10 +76,32 @@ def running_native_processes() -> list[str]:
 
 
 def focus_whatsapp() -> windows.WindowInfo | None:
-    """Focus a known WhatsApp app window, never a browser tab or unrelated host."""
-    for candidate in desktop_windows():
+    """Prefer the already active verified app; otherwise focus its main window.
+
+    WhatsApp WinUI can expose several visible helper windows, so choose the
+    largest real desktop window first instead of blindly focusing a toast.
+    Never focus Chrome/Edge or an unrelated WebView2 process.
+    """
+    active = windows.active_window()
+    if active and matches_desktop_window(active):
+        return active
+    candidates = desktop_windows()
+    try:
+        if windows.IS_WINDOWS:
+            import win32gui
+
+            def area(w: windows.WindowInfo) -> int:
+                try:
+                    left, top, right, bottom = win32gui.GetWindowRect(w.hwnd)
+                    return max(0, right - left) * max(0, bottom - top)
+                except (OSError, RuntimeError):
+                    return 0
+            candidates.sort(key=area, reverse=True)
+    except ImportError:
+        pass
+    for candidate in candidates:
         if windows.bring_to_front(candidate):
-            active = windows.active_window()
-            if active and active.hwnd == candidate.hwnd:
-                return active
+            foreground = windows.active_window()
+            if foreground and foreground.hwnd == candidate.hwnd and matches_desktop_window(foreground):
+                return foreground
     return None
