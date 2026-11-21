@@ -149,7 +149,8 @@ describe('whatsapp', () => {
   it('unread', () => expect(c('WhatsApp par unread messages batao.').action).toBe('whatsapp.check'));
   it('contact unread → check', () => expect(c('Ali ke naye messages batao.').action).toBe('whatsapp.check'));
   for (const t of ['WhatsApp kholo', 'WhatsApp khol do.', 'Open WhatsApp', 'whatsapp']) {
-    it('clarifies ambiguous ' + t, () => expect(parseCommand(t)).toMatchObject({ kind: 'clarify', topic: 'whatsapp-choice' }));
+    it('defaults to owner's Personal WhatsApp Desktop: ' + t, () =>
+      expect(parseCommand(t)).toMatchObject({kind:'command',action:'whatsapp.open',args:{mode:'desktop'}}));
   }
   it('asks a natural bilingual question', () => expect(clarifyMessage('whatsapp-choice').roman).toContain('Desktop app kholoon ya WhatsApp Web'));
   for (const t of ['desktop', 'desktop wala', 'installed app', 'pehla wala', '1']) {
