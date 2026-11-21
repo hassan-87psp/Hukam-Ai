@@ -172,7 +172,7 @@ def check(mode: str, browser_pref: str) -> dict:
             }
         return {"unreadChats": None, "source": "unavailable", "messagesRead": False,
                 "windowDetected": True, "foreground": focused is not None,
-                "note": "WhatsApp Desktop is open, but its unread number is not available from Windows accessibility. "
+                "note": "WhatsApp Desktop is open, but the unread count is UNKNOWN (not zero): Windows accessibility did not expose it. "
                         "A taskbar notification badge is NOT proof of unread chats. "
                         "Please open the Unread filter and ask 'WhatsApp par kis kis ka unread msg aya' "
                         "(approved visible sender scan), or check the count inside WhatsApp."}
