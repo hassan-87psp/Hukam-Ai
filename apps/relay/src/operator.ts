@@ -239,7 +239,19 @@ export class Operator {
     // commands need model classification; no automatic fallback to web search.
     const parsed=parseCommand(request);
     const compound=/\b(?:aur|phir|then|after that|us\s*me|likho.*notepad|notepad.*likho|meeting.*add|schedule.*meeting)\b/i.test(request);
-    if(!compound && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
+    const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
+    const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/.test(url);
+    if(projectLaunch){
+      if(!/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile))
+        throw new HttpError(422,'PROJECT_PROFILE_REQUIRED','Set the exact Chrome profile directory in this HUKM Project.');
+      const destination=url.startsWith('https://chatgpt.com/')
+        ? project.chatgptProjectUrl : url;
+      if(!destination)
+        throw new HttpError(422,'PROJECT_URL_REQUIRED','Save the ChatGPT Project URL before opening it.');
+      result={summary:'Open selected HUKM Project in the configured Chrome profile',
+        steps:[validateStep({action:'browser.profile_open',
+          args:{profile:project.chromeProfile,url:destination}})]};
+    } else if(!compound && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
       result={summary:ACTIONS[parsed.action].label,steps:[validateStep({action:parsed.action,args:parsed.args})]};
     }else{
       if(!geminiConfigured())throw new HttpError(503,'AI_NOT_CONFIGURED','Natural-language planner requires Gemini');
