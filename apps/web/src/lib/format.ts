@@ -149,6 +149,8 @@ export function describeArgs(action: ActionName, args: Record<string, unknown>):
     case 'chatgpt.prompt_draft': return 'prompt (' + String(a.prompt ?? '').length + ' characters)';
     case 'chatgpt.submit_prompt': return 'reviewed prompt (' + String(a.prompt ?? '').length + ' characters)';
     case 'chatgpt.download_visible': return 'current ChatGPT Project';
+    case 'whatsapp.select_chat': return 'exact contact: ' + String(a.contact ?? '');
+    case 'whatsapp.read_selected': return a.contact ? 'verify contact: ' + String(a.contact) : 'currently selected chat';
     case 'whatsapp.draft_reply': return 'to ' + String(a.contact ?? '');
     case 'whatsapp.attach_preview': return 'file for ' + String(a.contact ?? '');
     case 'browser.control': return a.kind === 'click' ? `click (${a.x}, ${a.y})` : a.kind === 'scroll' ? `scroll ${a.steps}` : a.kind === 'key' ? `press ${a.key}` : 'type into browser';
