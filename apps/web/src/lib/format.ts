@@ -86,6 +86,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'ui.activate': 'Activate visible control',
   'ui.scroll': 'Scroll active app (approved)',
   'calendar.event_draft': 'Calendar event draft',
+  'calendar.save_reviewed': 'Save reviewed Calendar event',
   'chatgpt.prompt_draft': 'ChatGPT prompt draft',
   'chatgpt.submit_prompt': 'Submit ChatGPT prompt',
   'chatgpt.download_visible': 'Download visible ChatGPT file',
