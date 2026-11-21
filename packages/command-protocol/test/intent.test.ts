@@ -28,6 +28,8 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
     expect(routeIntent('Ali',parseCommand('Ali'),true)).toBe('plan');
     expect(routeIntent('Kal 3 PM',parseCommand('Kal 3 PM'),true)).toBe('plan');
     expect(routeIntent('Rehne do',parseCommand('Rehne do'),true)).toBe('plan');
+    expect(routeIntent('Hello HUKM',parseCommand('Hello HUKM'),true)).toBe('chat');
+    expect(routeIntent('What is a pip?',parseCommand('What is a pip?'),true)).toBe('chat');
   });
   it('default Personal WhatsApp, no accidental browser/profile selection',()=>{
     const a=parseCommand('WhatsApp kholo');

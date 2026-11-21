@@ -206,13 +206,17 @@ export class Operator {
   private clearPending(userId:string,key:string){
     run(this.db,'DELETE FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
   }
+  discardPending(userId:string,projectId:string|null){
+    if(projectId)this.projects.get(userId,projectId);
+    this.clearPending(userId,this.dialogueKey(projectId));
+  }
   private savePending(userId:string,key:string,request:string,question:string){
     const stamp=nowIso();
     run(this.db,`INSERT INTO operator_dialogues(user_id,project_key,request,question,topic,created_at,updated_at,expires_at)
       VALUES(?,?,?,?,'operator-followup',?,?,?)
       ON CONFLICT(user_id,project_key) DO UPDATE SET request=excluded.request,
         question=excluded.question,updated_at=excluded.updated_at,expires_at=excluded.expires_at`,
-      userId,key,request.slice(0,1800),question,stamp,stamp,addMs(10*60_000));
+      userId,key,request.slice(0,1800),question,stamp,stamp,addMs(12*60*60_000));
   }
   async plan(userId:string,text:unknown,projectId:unknown):Promise<Plan|Clarification|Cancelled> {
     if(typeof text!=='string'||text.trim().length<2||text.length>1200)
@@ -225,12 +229,20 @@ export class Operator {
     }
     const last=one(this.db,'SELECT * FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
     let request=answer;
+    let isFollowup=false;
     if(last){
-      this.clearPending(userId,key);
-      if(Date.parse(last.expires_at)>=Date.now()){
-        // A fresh explicit app command overrides an old unanswered question.
+      if(Date.parse(last.expires_at)<Date.now()) {
+        this.clearPending(userId,key);
+      } else {
+        // Keep the pending question until we successfully create a new question/plan.
+        // A model error or quota timeout MUST NOT discard the user's unfinished task.
         const fresh=/^(?:whatsapp|chrome|notepad|youtube|calendar|google|outlook|browser|open|khol|new task)\b.*\b(?:kholo|open|start|check|karo)$/i.test(answer);
-        if(!fresh)request=(String(last.request).slice(0,1200)+'\nUser follow-up answer: '+answer).slice(0,1800);
+        if(!fresh) {
+          isFollowup=true;
+          request=(String(last.request).slice(0,1300)+
+            '\nHUKM asked: '+String(last.question).slice(0,250)+
+            '\nUser replied: '+answer).slice(0,1800);
+        }
       }
     }
     // Draft and preview workflows are allowed; sending, invitations, and
@@ -263,7 +275,7 @@ export class Operator {
     const intent=routeIntent(request,parsed);
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/.test(url);
-    if(projectLaunch){
+    if(projectLaunch && !isFollowup){
       if(!/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile))
         throw new HttpError(422,'PROJECT_PROFILE_REQUIRED','Set the exact Chrome profile directory in this HUKM Project.');
       const destination=url.startsWith('https://chatgpt.com/')
@@ -273,7 +285,7 @@ export class Operator {
       result={summary:'Open selected HUKM Project in the configured Chrome profile',
         steps:[validateStep({action:'browser.profile_open',
           args:{profile:project.chromeProfile,url:destination}})]};
-    } else if(intent==='command' && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
+    } else if(!isFollowup && intent==='command' && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
       result={summary:ACTIONS[parsed.action].label,steps:[validateStep({action:parsed.action,args:parsed.args})]};
     }else{
       if(!geminiConfigured())throw new HttpError(503,'AI_NOT_CONFIGURED','Natural-language planner requires Gemini');

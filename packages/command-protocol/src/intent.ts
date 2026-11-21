@@ -12,10 +12,15 @@ const COMPOUND = /\b(?:aur|phir|then|after that|us\s*me|iske baad|afterwards|and
 const WORKFLOWS = /\b(?:calendar|calender|meeting)\b.*?\b(?:add|create|schedule|set|bana|invite|reschedule)|\b(?:add|create|schedule|set)\b.*?\b(?:calendar|meeting)\b|\b(?:whatsapp|chats?|messages?|msgs?)\b.*?\b(?:reply|attach|file|read|parho|padho|send|bhejo|likho|draft)|\b(?:chatgpt|banner|image|script|poster|pic)\b.*?\b(?:bana|create|generate|draft|download|save|design)|\b(?:screen|window)\b.*?\b(?:dekho|dakho|observe|inspect|button|samjho)/i;
 const QUESTION = /^(?:what|why|who|when|where|which|how|kya|kyun|kiun|kaise|kese|kis|kon|kaun|kab)\b/i;
 const GREETING = /^(?:hi|hello|hey|salam|assalam(?:\s*[ou]?\s*alaikum)?|aoa|good morning|good evening)(?:\s+hukm)?[!?.,\s]*$/i;
+const ASIDE_QUESTION = /^(?:what (?:is|are)|who (?:is|are)|why (?:is|are)|explain|tell me about|meaning of|kya matlab|kya hota hai)\b/i;
 
 export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorReply = false): IntentRoute {
   const t=text.trim();
-  if(awaitingOperatorReply)return 'plan';
+  if(awaitingOperatorReply) {
+    // A clear unrelated question/greeting does not erase an unfinished task.
+    if(GREETING.test(t) || ASIDE_QUESTION.test(t))return 'chat';
+    return 'plan';
+  }
   if(!t || GREETING.test(t))return 'chat';
   if(WORKFLOWS.test(t))return 'plan';
   // If this is an explicit, unambiguous single supported command, use the

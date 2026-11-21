@@ -4,6 +4,7 @@ import type { WebSocket } from 'ws';
 import {
   ACTIONS,
   parseCommand,
+  routeIntent,
   beginDialogue,
   resolveDialogue,
   type DialogueState,
@@ -120,10 +121,48 @@ export class Relay {
   private timer: NodeJS.Timeout | null = null;
   private lastMaintenance = 0;
   private lastScheduleTick = 0;
-  // Short-lived missing-slot state; scoped by authenticated user, never by
-  // browser tab. Text is not persisted separately and is deleted after 2 min.
-  private pendingDialogues = new Map<string, DialogueState>();
+  // Private SQLite state survives Relay/Render restarts and is scoped to the owner.
+  // A missing-slot answer is NOT an approval or authority to send a message.
   private screenshotDir: string;
+
+  private readPendingDialogue(userId: string): DialogueState | null {
+    const row = one(this.db, 'SELECT state_json, expires_at FROM command_dialogues WHERE user_id=?', userId);
+    if (!row) return null;
+    if (row.expires_at <= Date.now()) {
+      this.clearPendingDialogue(userId);
+      return null;
+    }
+    try {
+      const state = JSON.parse(row.state_json) as DialogueState;
+      if (!state || typeof state.topic !== 'string' || !Number.isFinite(state.expiresAt)
+          || state.expiresAt <= Date.now()) throw new Error('expired or invalid state');
+      return state;
+    } catch {
+      this.clearPendingDialogue(userId);
+      return null;
+    }
+  }
+
+  private writePendingDialogue(userId: string, state: DialogueState): void {
+    // Conversation slot lasts 12 hours; action approval still expires separately.
+    const saved = { ...state, expiresAt: Date.now() + 12 * 60 * 60_000 };
+    run(this.db, `INSERT INTO command_dialogues(user_id,state_json,expires_at) VALUES(?,?,?)
+      ON CONFLICT(user_id) DO UPDATE SET state_json=excluded.state_json,expires_at=excluded.expires_at`,
+      userId, JSON.stringify(saved), saved.expiresAt);
+  }
+
+  private clearPendingDialogue(userId: string): void {
+    run(this.db, 'DELETE FROM command_dialogues WHERE user_id=?', userId);
+  }
+
+  pendingCommandDialogue(userId: string): {topic: string} | null {
+    const state = this.readPendingDialogue(userId);
+    return state ? {topic:state.topic} : null;
+  }
+
+  discardCommandDialogue(userId: string): void {
+    this.clearPendingDialogue(userId);
+  }
 
   constructor(public db: DB, public config: RelayConfig) {
     this.screenshotDir = join(config.dataDir, 'screenshots');
@@ -499,23 +538,26 @@ export class Relay {
       let parsed = parseCommand(text);
       let wasFollowup = false;
       const now = Date.now();
-      const existing = this.pendingDialogues.get(userId);
-      if (existing && existing.expiresAt <= now) this.pendingDialogues.delete(userId);
+      const existing = this.readPendingDialogue(userId);
+      if (existing && existing.expiresAt <= now) this.clearPendingDialogue(userId);
       // A follow-up is permitted only for interactive users, not unattended
       // automations. Every fully specified command still passes validation.
-      if (source !== 'automation' && existing && existing.expiresAt > now) {
+      // Explicit unrelated questions/greetings do not consume a pending
+      // file/contact/folder answer; the assistant can respond and resume later.
+      const aside = routeIntent(text, parsed, true) === 'chat';
+      if (source !== 'automation' && existing && existing.expiresAt > now && !aside) {
         const contacts = this.getSettings(userId).whatsappContacts;
         const resolution = resolveDialogue(existing, text, contacts);
         if (resolution.handled) {
           wasFollowup = true;
           parsed = resolution.result;
-          if (resolution.next) this.pendingDialogues.set(userId, {
+          if (resolution.next) this.writePendingDialogue(userId, {
             ...resolution.next, expiresAt: now + 120_000,
           });
-          else this.pendingDialogues.delete(userId);
+          else this.clearPendingDialogue(userId);
         } else {
           // A complete new request overrides the unfinished conversation.
-          this.pendingDialogues.delete(userId);
+          this.clearPendingDialogue(userId);
         }
       }
       if (parsed.kind !== 'command') {
@@ -524,15 +566,15 @@ export class Relay {
             parsed.topic, text, this.getSettings(userId).whatsappContacts, now,
           );
           if (begun.clarification) return begun.clarification;
-          if (begun.state) this.pendingDialogues.set(userId, begun.state);
+          if (begun.state) this.writePendingDialogue(userId, begun.state);
         }
         return parsed;
       }
-      this.pendingDialogues.delete(userId);
+      this.clearPendingDialogue(userId);
       action = parsed.action;
       args = parsed.args;
     } else if (typeof input.action === 'string') {
-      if (source !== 'automation') this.pendingDialogues.delete(userId);
+      if (source !== 'automation') this.clearPendingDialogue(userId);
       action = input.action as ActionName;
       args = (input.args as Record<string, unknown>) ?? {};
     } else {

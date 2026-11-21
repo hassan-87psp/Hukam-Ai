@@ -36,6 +36,8 @@ export interface User {
 
 export type OperatorPlan = {id:string;summary:string;request:string;steps:{action:ActionName;args:Record<string,unknown>}[];expiresAt:string};
 
+export type SavedAiTurn = { id: string; role: 'user' | 'assistant'; text: string; at: string };
+
 export type ChatMessage = (
   | { id: string; kind: 'user'; text: string; source: CommandSource; at: string; aiChat?: boolean }
   | { id: string; kind: 'agent'; msg: Localized; at: string; tone?: 'info' | 'ok' | 'warn' | 'bad'; provider?: 'gemini' }
@@ -73,7 +75,8 @@ interface Store {
   submitting: boolean;
   pendingWhatsAppChoice: boolean;
   pendingDialogueTopic: string | null;
-  restoreOperatorPending(pending:boolean): void;
+  restoreOperatorPending(topic:string|null): void;
+  hydrateAiHistory(projectId:string|null, turns:SavedAiTurn[]): void;
   activeDevice: Device | null;
   // actions
   setup(email: string, name: string, password: string, setupCode: string): Promise<void>;
@@ -428,15 +431,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/i.test(String(local.args.url ?? ''));
       const shouldPlan = route === 'plan' || projectBrowserLaunch;
       const maybeAi = route === 'chat' && !pendingDialogueTopic;
-      // Never send Project A's conversation history into Project B's Gemini chat.
-      const history = chat
-        .filter(m => (m.projectId ?? null) === (selectedProjectId ?? null))
-        .flatMap<{ role: 'user' | 'assistant'; text: string }>((m) => m.kind === 'user' && m.aiChat
-          ? [{ role: 'user' as const, text: m.text.slice(0, 700) }]
-          : m.kind === 'agent' && m.provider === 'gemini'
-            ? [{ role: 'assistant' as const, text: pick(m.msg, 'roman').slice(0, 700) }]
-            : [])
-        .slice(-10);
+      // Server-owned conversation memory provides consistent context across devices and page reloads.
       addChat({ id: uid(), kind: 'user', text: t, source, at: new Date().toISOString(), aiChat: maybeAi });
       // Immediate acknowledgement only for a known laptop action.
       const hasDevice = devices.length > 0;
@@ -453,7 +448,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         // Model proposals are never executed without a separate user review.
         if (shouldPlan) {
-          if (!hasDevice) { agent(STATUS_MESSAGES.noDevice,'warn'); return; }
+          // Clarification/planning must work even when the laptop is offline.
+          // Actual Run still requires a paired, online Controller and owner approval.
           try {
             const projectId = new URLSearchParams(window.location.search).get('projectId');
             const planned = await post<OperatorPlan | {kind:'clarify'; question:string; questionUrdu?:string; topic:string} |
@@ -492,7 +488,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // No cloud AI connection is needed for laptop actions themselves.
           try {
             const ai = await post<{ kind: 'ai'; provider: 'gemini'; reply: string; spokenUrdu?: string }>(
-              '/api/ai/chat', { message: t, history, responseLang:settingsRef.current.responseLang },
+              '/api/ai/chat', { message: t, projectId:selectedProjectId, responseLang:settingsRef.current.responseLang },
             );
             const msg: Localized = { roman: ai.reply, ur: ai.spokenUrdu || ai.reply, en: ai.reply };
             agent(msg, 'info', source === 'voice', 'gemini');
@@ -516,7 +512,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSubmitting(false);
       }
     },
-    [activeDevice, addChat, agent, chat, devices.length, handleCreated, pendingDialogueTopic, submitting],
+    [activeDevice, addChat, agent, devices.length, handleCreated, pendingDialogueTopic, submitting],
   );
 
   const runAction = useCallback(
@@ -604,16 +600,43 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return 'idle';
   }, [listening, commands, submitting, flash, devices]);
 
-  const restoreOperatorPending = useCallback((pending:boolean)=>{
-    setPendingDialogueTopic((topic)=>pending?'operator-followup':topic==='operator-followup'?null:topic);
+  const restoreOperatorPending = useCallback((topic:string|null)=>{
+    setPendingDialogueTopic(topic);
+  },[]);
+
+  const hydrateAiHistory = useCallback((projectId:string|null, turns:SavedAiTurn[])=>{
+    setChat(prev=>{
+      const restored:ChatMessage[]=[];
+      for(const turn of turns){
+        if(!turn || typeof turn.id!=='string' || (turn.role!=='user' && turn.role!=='assistant')
+          || typeof turn.text!=='string' || typeof turn.at!=='string')continue;
+        // Avoid duplicating messages already present in localStorage after refresh.
+        const alike=(m:ChatMessage)=>{
+          if((m.projectId??null)!==projectId)return false;
+          const sameText=turn.role==='user' ? (m.kind==='user' && m.text===turn.text)
+            : (m.kind==='agent' && m.provider==='gemini' && pick(m.msg,'roman')===turn.text);
+          return sameText && Math.abs(Date.parse(m.at)-Date.parse(turn.at))<120000;
+        };
+        if(prev.some(alike) || restored.some(alike) || prev.some(m=>m.id==='saved:'+turn.id))continue;
+        const base={id:'saved:'+turn.id,at:turn.at,projectId};
+        restored.push(turn.role==='user'
+          ? {...base,kind:'user',text:turn.text,source:'text',aiChat:true}
+          : {...base,kind:'agent',msg:{roman:turn.text,en:turn.text,ur:turn.text},
+              tone:'info',provider:'gemini'});
+      }
+      if(!restored.length)return prev;
+      return [...prev,...restored].sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)).slice(-250);
+    });
   },[]);
 
   const value: Store = {
     auth, user, settings, devices, commands, commandMap, approvals, automations, chat, toasts, realtime, brain, listening, speaking,
     audioLevel, submitting, pendingWhatsAppChoice, pendingDialogueTopic, activeDevice,
     setup, login, logout, refresh, runText, runAction, approve, reject, cancel, saveSettings, setDevices, setAutomations, toast,
-    restoreOperatorPending,
+    restoreOperatorPending, hydrateAiHistory,
     dismissToast, clearChat: (projectId?:string|null) => {
+      const url='/api/ai/history'+(projectId?'?projectId='+encodeURIComponent(projectId):'');
+      void del(url).catch((e)=>toast({title:'AI memory clear nahi hui',body:e instanceof Error?e.message:'Try again',tone:'warn'}));
       setChat((items)=>projectId===undefined?[]:items.filter(m=>(m.projectId??null)!==projectId));
       setPendingWhatsAppChoice(false); setPendingDialogueTopic(null);
     }, setListening, setAudioLevel, say, loadMoreCommands, setUser,
