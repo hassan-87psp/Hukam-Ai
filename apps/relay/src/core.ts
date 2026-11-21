@@ -444,9 +444,13 @@ export class Relay {
         this.finish(c.id, success ? 'completed' : 'failed', safeResult, success ? null : {
           code: !resultVerified ? 'UNVERIFIABLE' : String(msg.error?.code ?? 'FAILED').slice(0, 40),
           message: !countVerified
-            ? 'WhatsApp unread count could not be verified on this Windows app. This is unknown, NOT zero. Open WhatsApp Desktop and try HUKM diagnostics.'
+            ? (typeof msg.error?.message==='string' && msg.error.message.trim()
+              ? msg.error.message.slice(0,500)
+              : 'Personal WhatsApp Desktop did not expose a verified unread count: unknown, NOT zero. Try an approved visible unread sender scan.')
             : !sendersVerified
-              ? 'WhatsApp did not expose readable unread sender names. No names were verified.'
+              ? (typeof msg.error?.message==='string' && msg.error.message.trim()
+                ? msg.error.message.slice(0,500)
+                : 'Personal WhatsApp Desktop did not expose verified unread sender names. Run HUKM diagnostics.')
               : String(msg.error?.message ?? 'failed').slice(0, 500),
         }, typeof msg.durationMs === 'number' ? Math.round(msg.durationMs) : null);
         this.audit(userId, 'device', success ? 'command.completed' : 'command.failed', { commandId: c.id, action: c.action }, deviceId);
@@ -587,11 +591,14 @@ export class Relay {
     const def = ACTIONS[action];
     const settings = this.getSettings(userId);
 
-    if (action === 'whatsapp.compose' && !args.phone) {
-      const wanted = String(args.contact).toLowerCase();
-      const contact = settings.whatsappContacts.find((c) => c.name.toLowerCase() === wanted);
-      if (!contact) return { kind: 'clarify', topic: 'contact-unknown', normalized: text ?? '' };
-      args = { ...args, contact: contact.name, phone: contact.phone };
+    if (action === 'whatsapp.compose') {
+      // Native Personal WhatsApp Desktop searches the contact by its exact
+      // displayed chat name; requiring a separately saved phone number here
+      // wrongly blocked ordinary conversations ("Ali ko reply likho").
+      // No browser or phone deep-link is used by the Windows Controller.
+      const wanted = String(args.contact).trim().toLowerCase();
+      const saved = settings.whatsappContacts.find((c) => c.name.toLowerCase() === wanted);
+      args = { contact: saved?.name ?? String(args.contact).trim(), message: args.message };
     }
 
     // relay-only action

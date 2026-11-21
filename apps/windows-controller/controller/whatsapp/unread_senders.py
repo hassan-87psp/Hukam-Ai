@@ -61,6 +61,23 @@ def _bounding(control):
     return float(box.left), float(box.top), float(box.right), float(box.bottom)
 
 
+def _unread_filter_selected(control) -> bool | None:
+    """Try Windows UIA's actual selected/toggled state; do not infer from Click."""
+    try:
+        pattern = control.GetSelectionItemPattern()
+        if pattern is not None:
+            return bool(pattern.IsSelected)
+    except Exception:
+        pass
+    try:
+        pattern = control.GetTogglePattern()
+        if pattern is not None:
+            return int(pattern.ToggleState) == 1
+    except Exception:
+        pass
+    return None
+
+
 def read_unread_senders() -> dict:
     if launcher.SIMULATE:
         return {"supported": True, "senders": ["Test Contact"],
@@ -110,6 +127,11 @@ def read_unread_senders() -> dict:
 
         unread_control.Click()
         time.sleep(0.35)
+        selected = _unread_filter_selected(unread_control)
+        if selected is False:
+            raise UnreadSendersUnavailable(
+                "WhatsApp Unread filter was clicked but is not selected. "
+                "No sender names will be labelled unread.")
 
         rows: list[tuple[float, str]] = []
         for index, (ctrl, _depth) in enumerate(auto.WalkControl(root, maxDepth=12)):
@@ -154,9 +176,14 @@ def read_unread_senders() -> dict:
             )
         return {
             "supported": True, "senders": unique[:12],
-            "visibleOnly": True, "messagesRead": False, "filterSelected": True,
-            "source": "WhatsApp Desktop Unread filter (Windows accessibility, best effort)",
-            "note": "Visible chat titles were read after clicking Unread. Results are best effort; confirm the filter selection in WhatsApp Desktop. Message bodies were not read.",
+            "visibleChatCount": len(unique[:12]), "totalUnreadChats": None,
+            "visibleOnly": True, "messagesRead": False,
+            "filterClickAttempted": True, "filterSelectedVerified": selected is True,
+            "source": "Personal WhatsApp Desktop visible chat titles",
+            "note": ("Unread filter selection was verified by Windows UIA. Only visible names were read."
+                     if selected is True else
+                     "Clicked Unread, but this WhatsApp version does not expose whether the filter is selected. "
+                     "These are visible chat titles, NOT verified unread senders. No message text was read."),
         }
     except UnreadSendersUnavailable:
         raise

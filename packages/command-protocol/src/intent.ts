@@ -7,6 +7,32 @@ import type { ParseResult } from './parser';
 
 export type IntentRoute = 'command' | 'plan' | 'chat';
 
+/** Strict Personal WhatsApp multi-step intent, independent of Gemini.
+
+    "WhatsApp Desktop on laptop and check msg" must not collapse into one
+    unread-count command; it means open the installed app and check the
+    visible Unread conversations with separate owner approval.
+    A numeric-count request is kept distinct from reading chat text.
+    Never silently target WhatsApp Web.
+*/
+export type DesktopWhatsAppWorkflow = 'count' | 'senders' | null;
+
+export function desktopWhatsAppWorkflow(text: string): DesktopWhatsAppWorkflow {
+  const t = text.trim().toLowerCase();
+  if (!/\b(?:whats\s?app|wa)\b/.test(t)) return null;
+  const explicitWeb = /\b(?:whatsapp\s+web|web\s+whatsapp)\b/.test(t);
+  if (explicitWeb && !/\b(?:personal|desktop|installed|windows\s+app)\b/.test(t)) return null;
+  const opening = /\b(?:open|kholo|khol|kholen|start|launch|chalao)\b/.test(t) ||
+    /\bdesktop\s+(?:on|in)\s+(?:my\s+)?laptop\b/.test(t) ||
+    (/\bdesktop\b/.test(t) && /\b(?:check|dekho|dekh|dakho)\b/.test(t));
+  const reviewing = /\b(?:check|dekho|dekh|dakho|parho|read|batao|dikhao)\b/.test(t);
+  const messages = /\b(?:msgs?|messages?|chats?|unread)\b/.test(t);
+  if (!opening || !reviewing || !messages) return null;
+  if (/\b(?:kitne|kitni|count|how\s+many|number|total)\b/.test(t)) return 'count';
+  return 'senders';
+}
+
+
 const TASK_VERBS = /\b(?:karo|kro|kar do|krdo|kerdo|kholen?|kholo|open|chalao|run|perform|type|likho|likh|bhejo|send|attach|download|save|create|generate|banao|bana|add|schedule|scroll|click|press|check|dakho|dekho|parho|padho|read|reply|draft|search|dhoondo|execute|handle)\b/i;
 const COMPOUND = /\b(?:aur|phir|then|after that|us\s*me|iske baad|afterwards|and then)\b|(?:notepad|note\s*pad).*?(?:likho|type)|(?:likho|type).*?(?:notepad|note\s*pad)/i;
 const WORKFLOWS = /\b(?:calendar|calender|meeting)\b.*?\b(?:add|create|schedule|set|bana|invite|reschedule)|\b(?:add|create|schedule|set)\b.*?\b(?:calendar|meeting)\b|\b(?:whatsapp|chats?|messages?|msgs?)\b.*?\b(?:reply|attach|file|read|parho|padho|send|bhejo|likho|draft)|\b(?:chatgpt|banner|image|script|poster|pic)\b.*?\b(?:bana|create|generate|draft|download|save|design)|\b(?:screen|window)\b.*?\b(?:dekho|dakho|observe|inspect|button|samjho)/i;
@@ -22,6 +48,7 @@ export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorR
     return 'plan';
   }
   if(!t || GREETING.test(t))return 'chat';
+  if(desktopWhatsAppWorkflow(t))return 'plan';
   if(WORKFLOWS.test(t))return 'plan';
   // A named WhatsApp chat requires verified selection BEFORE reading.
   // Generic "message" parsing must not downgrade this to unread-count check.

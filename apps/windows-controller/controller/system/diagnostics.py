@@ -8,24 +8,40 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from ..system import launcher, windows
+from .. import VERSION
+from ..config import Config
 from ..whatsapp import locator as wa_locator
 
 
-def probe() -> dict:
+def probe(cfg: Config | None = None) -> dict:
+    cfg = cfg or Config.load()
+    # Version and mode are operational metadata, not device credentials.
+    status = {
+        "controllerVersion": VERSION,
+        "configuredWhatsAppMode": cfg.whatsapp_mode,
+        "effectiveWhatsAppDefault": "desktop",
+        "automaticWhatsAppWebFallback": False,
+        "singleInstanceLockEnabled": True,
+        "whatsappCapabilityEnabled": "whatsapp" in cfg.capabilities,
+    }
     if launcher.SIMULATE:
         return {
+            **status,
             "windowsInteractive": True, "uiautomationInstalled": True,
             "whatsappDesktopWindow": True, "whatsappProcessRunning": True,
             "whatsappWindowCount": 1, "whatsappForeground": False,
             "whatsappChromeTabDetected": False,
             "whatsappAccessibilityTreeReadable": True,
             "whatsappUnreadBadgeReadable": False,
+            "whatsappUnreadFilterAccessible": True,
+            "whatsappSearchControlAccessible": True,
             "whatsappDiagnosis": "Desktop window available; focus WhatsApp to inspect unread indicators",
             "chromeProfileDirectories": ["Default", "Profile 1"],
             "activeApp": "chrome.exe", "monitorCount": 2,
             "privateDataCollected": False, "simulated": True, "verified": True,
         }
     result = {
+        **status,
         "windowsInteractive": windows.IS_WINDOWS,
         "uiautomationInstalled": False,
         "whatsappDesktopWindow": False,
@@ -34,6 +50,8 @@ def probe() -> dict:
         "whatsappForeground": False, "whatsappChromeTabDetected": False,
         "whatsappAccessibilityTreeReadable": False,
         "whatsappUnreadBadgeReadable": False,
+        "whatsappUnreadFilterAccessible": False,
+        "whatsappSearchControlAccessible": False,
         "whatsappDiagnosis": "unknown",
         "chromeProfileDirectories": [],
         "activeApp": None,
@@ -72,9 +90,26 @@ def probe() -> dict:
                 # Only check whether the UIA tree is usable: do NOT collect
                 # child Name/Value, contact labels or message contents.
                 count = 0
-                for _control, _depth in auto.WalkControl(root, maxDepth=8):
+                for ctrl, _depth in auto.WalkControl(root, maxDepth=10):
                     count += 1
-                    if count >= 12:
+                    try:
+                        # Compare only fixed UI labels; no contact, chat
+                        # preview or message text leaves the controller.
+                        if ctrl.IsOffscreen:
+                            continue
+                        name = str(ctrl.Name or "").casefold().strip()
+                        role = str(ctrl.ControlTypeName or "")
+                        if (name == "unread" or name.startswith("unread chats")
+                                or name.startswith("unread messages")):
+                            result["whatsappUnreadFilterAccessible"] = True
+                        if role == "EditControl" and (
+                            name in ("search", "search chats", "search or start new chat",
+                                     "search chats or messages")
+                            or name.startswith("search chats")):
+                            result["whatsappSearchControlAccessible"] = True
+                    except Exception:
+                        pass
+                    if count >= 350:
                         break
                 result["whatsappAccessibilityTreeReadable"] = count >= 3
                 if result["whatsappAccessibilityTreeReadable"]:

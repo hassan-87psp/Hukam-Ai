@@ -113,9 +113,15 @@ describe('contextual follow-up', () => {
     expect(beginDialogue('message-body', 'Ali ko message bhejo', contacts).state).toMatchObject({
       topic: 'message-body', contact: 'Ali',
     });
-    expect(beginDialogue('message-body', 'Unknown ko message bhejo', contacts).clarification).toMatchObject({
-      kind: 'clarify', topic: 'contact-unknown',
+    expect(beginDialogue('message-body', 'Unknown ko message bhejo', contacts).state).toMatchObject({
+      topic: 'message-body', contact: 'unknown',
     });
+    const withoutSaved = resolveDialogue(state('message-contact'), 'Shahid ka', []);
+    expect(withoutSaved).toMatchObject({result:{kind:'clarify',topic:'message-body'},
+      next:{topic:'message-body',contact:'Shahid'}});
+    expect(resolveDialogue(state('message-body',{contact:'Shahid'}),'Main kal aaunga',[]))
+      .toMatchObject({result:{kind:'command',action:'whatsapp.compose',
+        args:{contact:'Shahid',message:'Main kal aaunga'}}});
   });
 
   it('cancels a pending task and lets a fully new request override it', () => {

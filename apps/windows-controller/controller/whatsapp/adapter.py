@@ -37,7 +37,7 @@ def open_whatsapp(mode: str, browser_pref: str) -> dict:
                         "foreground": True, "verified": True,
                         "note": "Existing Personal WhatsApp Desktop window focused."}
         try:
-            launcher.open_uri("whatsapp:")
+            launcher.launch_personal_whatsapp()
             if launcher.SIMULATE:
                 return {"opened": "desktop", "messagesRead": False,
                         "foreground": None, "verified": None}
@@ -56,8 +56,9 @@ def open_whatsapp(mode: str, browser_pref: str) -> dict:
                     "note": "WhatsApp launch requested, but its desktop window could not be focused. Check taskbar or Windows app installation.",
                     "windowDetected": bool(visible)}
         except (OSError, launcher.LaunchError):
-            return {"opened": None, "needsChoice": True, "verified": False,
-                    "note": "WhatsApp Desktop could not be launched. Open the installed WhatsApp Windows app, not WhatsApp Web.",
+            return {"opened": None, "needsChoice": False, "verified": False,
+                    "note": "Personal WhatsApp Desktop launch failed. Open it from Windows Start; "
+                            "HUKM will never switch to Web without an explicit Web instruction.",
                     "messagesRead": False}
     if mode != "web":
         raise launcher.LaunchError("WhatsApp mode must be desktop or web")
@@ -187,11 +188,15 @@ def check(mode: str, browser_pref: str) -> dict:
 
 
 def compose(phone: str, message: str, mode: str, browser_pref: str) -> dict:
-    if mode == "desktop":
-        try:
-            launcher.open_uri(f"whatsapp://send?phone={phone}&text={quote(message)}")
-            return {"drafted": True, "sent": False, "via": "desktop"}
-        except Exception:
-            pass
+    """Explicit WhatsApp Web draft only; native drafts use desktop_ops.
+
+    This old URI helper previously fell back to a browser when native routing
+    failed. Such a fallback is forbidden for a Personal Desktop request.
+    """
+    if mode != "web":
+        raise launcher.LaunchError(
+            "Desktop drafting must use verified WhatsApp Desktop chat controls; "
+            "automatic WhatsApp Web fallback is disabled"
+        )
     launcher.open_url(f"https://web.whatsapp.com/send?phone={phone}&text={quote(message)}", browser_pref)
-    return {"drafted": True, "sent": False, "via": "web"}
+    return {"drafted": True, "sent": False, "via": "web", "verified": False}

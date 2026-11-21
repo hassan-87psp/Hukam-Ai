@@ -207,6 +207,10 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
     case 'whatsapp.unread_senders': {
       const senders = Array.isArray(r.senders) ? r.senders.filter((x): x is string => typeof x === 'string').slice(0, 12) : [];
       if (!senders.length) return L('WhatsApp ne unread sender names verify nahi kiye.', 'واٹس ایپ کے ناموں کی تصدیق نہیں ہوئی۔', 'No unread sender names could be verified.');
+      if (r.filterSelectedVerified === false)
+        return L(`Sir, visible chat names: ${senders.join(', ')}. WhatsApp ka Unread filter select hona confirm nahi hua, isliye inhe verified unread na samjhein.`,
+          `نظر آنے والے چیٹ نام: ${senders.join('، ')}۔ ان ریڈ فلٹر کی تصدیق نہیں ہوئی۔`,
+          `Visible chat names: ${senders.join(', ')}. Unread filter selection was NOT verified.`);
       return L(`WhatsApp par visible unread chats: ${senders.join(', ')}. Messages ka content nahi parha.`,
         `نظر آنے والی ان ریڈ چیٹس: ${senders.join('، ')}۔ میسج نہیں پڑھے۔`,
         `Visible unread chats: ${senders.join(', ')}. Message contents were not read.`);
@@ -233,6 +237,28 @@ export function failureMessage(error: CommandError | null): Localized {
   switch (error?.code) {
     case 'DEVICE_OFFLINE':
       return L('Laptop offline hai. Controller start karein.', 'لیپ ٹاپ آف لائن ہے۔ کنٹرولر چلائیں۔', 'The laptop is offline. Start the controller.');
+    case 'UNVERIFIABLE':
+      return /unread sender|sender names|chat-row|unread filter/i.test(msg)
+        ? L('Sir, WhatsApp ki Unread list ke contact names Windows se verify nahi hue. HUKM diagnostics run karein; bina verified names ke koi chat assume nahi karunga.',
+            'واٹس ایپ کی ان ریڈ چیٹس کے نام تصدیق نہیں ہو سکے۔ ڈائگناسٹکس چلائیں۔',
+            'WhatsApp did not expose verifiable unread chat names. Run HUKM diagnostics.')
+        : L('Sir, Personal WhatsApp Desktop ka unread count verify nahi hua. Ye zero nahi hai. Aap "WhatsApp par kis kis ka unread msg aya" bolein; approval ke baad visible names check karunga.',
+            'واٹس ایپ ڈیسک ٹاپ کی ان ریڈ تعداد کی تصدیق نہیں ہوئی۔ یہ صفر نہیں ہے۔',
+            'Personal WhatsApp Desktop unread count is unknown, not zero. Try an approved visible unread sender scan.');
+    case 'WHATSAPP_DESKTOP_UNAVAILABLE':
+      return L('Sir, installed WhatsApp Desktop open/focus nahi ho saka. Windows Start se WhatsApp kholein, phir HUKM diagnostics chalayein. Main WhatsApp Web automatically nahi kholunga.',
+        'واٹس ایپ ڈیسک ٹاپ کھل نہیں سکا۔ ونڈوز اسٹارٹ سے کھول کر ڈائگناسٹکس چلائیں۔',
+        'Native WhatsApp Desktop could not be opened. Open it from Windows Start and run diagnostics; no automatic Web fallback.');
+    case 'LAUNCH_FAILED':
+      return /whatsapp/i.test(msg)
+        ? L('Sir, Personal WhatsApp Desktop ka native launcher kaam nahi kar saka. Windows Start se app kholein; Web automatically nahi khulega.',
+            'واٹس ایپ ڈیسک ٹاپ کھل نہیں سکا، ونڈوز اسٹارٹ سے کھولیں۔',
+            'WhatsApp Desktop native launch failed. Open it from Start; no Web fallback.')
+        : L(`App launch nahi ho saka: ${msg}`, `ایپ کھل نہیں سکی: ${msg}`, `Application launch failed: ${msg}`);
+    case 'WHATSAPP_UI_UNAVAILABLE':
+      return L('Sir, WhatsApp Desktop screen ke required controls accessible nahi hain. Window ko foreground mein la kar HUKM diagnostics chalayein. Main guess karke wrong chat nahi kholunga.',
+        'واٹس ایپ کے کنٹرولز دستیاب نہیں۔ ایپ سامنے لا کر ڈائگناسٹکس چلائیں۔',
+        'WhatsApp Desktop accessibility controls are unavailable. Focus the app and run diagnostics.');
     case 'NOT_ALLOWED':
       return L(`Ye ijazat ke bahar hai: ${msg}`, `یہ اجازت سے باہر ہے: ${msg}`, `Not permitted: ${msg}`);
     case 'NOT_FOUND':

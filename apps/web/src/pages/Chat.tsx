@@ -54,17 +54,23 @@ export default function Chat() {
     let active=true;
     setPendingQuestion(null);
     const query=activeProject?'?projectId='+encodeURIComponent(activeProject):'';
-    // Operator and deterministic clarification are both recovered after refresh.
-    const pending=get<{question:string;topic:string}|null>('/api/operator/pending'+query);
-    const basic=activeProject?Promise.resolve(null):
-      get<{topic:string}|null>('/api/dialogue/pending');
-    void Promise.all([pending,basic]).then(([operator,dialogue])=>{
-      if(active){
-        restoreOperatorPending(operator?'operator-followup':dialogue?.topic??null);
-        setPendingQuestion(operator?.question??null);
-      }
-    }).catch(()=>{});
-    return ()=>{active=false;};
+    const refreshPending=()=>{
+      // A multi-step Windows task can finish *after* the original chat turn.
+      // Poll just the pending question (no WhatsApp message text) so "Ali ka"
+      // reaches the same persistent planner instead of falling into AI chat.
+      const pending=get<{question:string;topic:string}|null>('/api/operator/pending'+query);
+      const basic=activeProject?Promise.resolve(null):
+        get<{topic:string}|null>('/api/dialogue/pending');
+      void Promise.all([pending,basic]).then(([operator,dialogue])=>{
+        if(active){
+          restoreOperatorPending(operator?'operator-followup':dialogue?.topic??null);
+          setPendingQuestion(operator?.question??null);
+        }
+      }).catch(()=>{});
+    };
+    refreshPending();
+    const id=window.setInterval(refreshPending,4000);
+    return ()=>{active=false;window.clearInterval(id);};
   },[activeProject,restoreOperatorPending,visibleChat.length]);
   useEffect(()=>{
     let active=true;

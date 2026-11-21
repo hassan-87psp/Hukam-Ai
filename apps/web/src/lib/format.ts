@@ -56,7 +56,8 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
         (r.source === 'WhatsApp Desktop Unread filter' || r.source === 'window title'));
     case 'whatsapp.unread_senders':
       return !(Array.isArray(r.senders) && r.senders.length > 0 &&
-        r.senders.every((x:unknown)=>typeof x === 'string' && !!x.trim()));
+        r.senders.every((x:unknown)=>typeof x === 'string' && !!x.trim())) ||
+        r.filterSelectedVerified === false;
     default:
       return false;
   }

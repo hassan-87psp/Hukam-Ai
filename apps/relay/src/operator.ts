@@ -6,7 +6,7 @@
  * credential reading, or model-generated screen coordinates. No action may
  * be reported as verified solely because Windows accepted an input event.
  */
-import { ACTIONS, parseCommand, routeIntent, validateCommand } from '../../../packages/command-protocol/src/index';
+import { ACTIONS, parseCommand, routeIntent, desktopWhatsAppWorkflow, validateCommand } from '../../../packages/command-protocol/src/index';
 import type { ActionName, CommandStatus } from '../../../packages/shared-types/src/index';
 import { HttpError, Relay } from './core';
 import { all, one, run, type DB, type Row } from './db';
@@ -293,7 +293,23 @@ export class Operator {
     const intent=routeIntent(request,parsed);
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/.test(url);
-    if(projectLaunch && !isFollowup){
+    const nativeWhatsAppWorkflow = !isFollowup ? desktopWhatsAppWorkflow(answer) : null;
+    if(nativeWhatsAppWorkflow){
+      // Keep the user's request intact: open the personal desktop app first,
+      // then check either verified numeric unread count or visible unread sender
+      // names (the latter needs a separate owner approval). Never use Web.
+      const inspectAction = nativeWhatsAppWorkflow === 'count'
+        ? 'whatsapp.check' : 'whatsapp.unread_senders';
+      result = {
+        summary: nativeWhatsAppWorkflow === 'count'
+          ? 'Open Personal WhatsApp Desktop and verify unread chat count'
+          : 'Open Personal WhatsApp Desktop and review visible unread chat senders (approval required)',
+        steps: [
+          validateStep({action:'whatsapp.open',args:{mode:'desktop'}}),
+          validateStep({action:inspectAction,args: nativeWhatsAppWorkflow==='count'?{mode:'desktop'}:{}}),
+        ],
+      };
+    } else if(projectLaunch && !isFollowup){
       if(!/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile))
         throw new HttpError(422,'PROJECT_PROFILE_REQUIRED','Set the exact Chrome profile directory in this HUKM Project.');
       const destination=url.startsWith('https://chatgpt.com/')
@@ -399,6 +415,7 @@ export class Operator {
     if(this.running.has(taskId))return;
     this.running.add(taskId);
     let unverified=false,ids:string[]=[];
+    let visibleUnreadSendersReviewed=false;
     try{
       for(let i=0;i<plan.steps.length;i++){
         if(this.getRun(userId,taskId).status==='cancelled')return;
@@ -418,11 +435,25 @@ export class Operator {
           return;
         }
         const data=final.result?JSON.parse(final.result):{};
+        if(step.action==='whatsapp.unread_senders' &&
+          Array.isArray(data.senders) && data.senders.length>0){
+          visibleUnreadSendersReviewed=true;
+        }
         if(data.verified!==true)unverified=true;
       }
       this.update(taskId,unverified?'unverified':'completed',unverified?
         'Actions reported success, but their final on-screen outcome was not independently verified.':null,
         plan.steps.length,ids);
+      if(visibleUnreadSendersReviewed){
+        // Follow-up is an owner-scoped *question* only. Never persist sender
+        // names or private message text in the planner's Gemini prompt.
+        // Selecting and reading a named contact requires separate approvals.
+        this.savePending(userId,this.dialogueKey(plan.projectId),
+          'The owner opened Personal WhatsApp Desktop and reviewed visible unread chat names. '+
+          'Now ask which exact contact to select and read. Use only whatsapp.select_chat '+
+          'then whatsapp.read_selected with the SAME contact; never send a message.',
+          'Sir, kis contact ka visible message parhun? Contact ka naam batayein.');
+      }
     }finally{this.running.delete(taskId);}
   }
 }

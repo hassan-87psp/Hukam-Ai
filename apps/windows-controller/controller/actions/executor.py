@@ -264,7 +264,7 @@ class Executor:
                 "note": "Could not determine a reliable top video, so the search results were opened instead."}
 
     def do_diagnostics_probe(self, _a, _c):
-        return diagnostics.probe()
+        return diagnostics.probe(self.cfg)
 
     # -- approved screen and browser observation ------------------------
     def do_ui_scroll(self, a, cancel):
@@ -339,12 +339,14 @@ class Executor:
 
     # -- whatsapp -------------------------------------------------------
     def do_whatsapp_open(self, a, _c):
-        return wa.open_whatsapp(a.get("mode", self.cfg.whatsapp_mode), self.cfg.browser)
+        # Personal Desktop is the default regardless of an old saved Web preference.
+        # An explicit "WhatsApp Web" instruction carries mode="web".
+        return wa.open_whatsapp(a.get("mode", "desktop"), self.cfg.browser)
 
     def do_whatsapp_check(self, a, _c):
         if not launcher.IS_WINDOWS and not launcher.SIMULATE:
             raise ActionError("NOT_SUPPORTED", "WhatsApp check reads window titles and needs Windows")
-        result = wa.check(a.get("mode", self.cfg.whatsapp_mode), self.cfg.browser)
+        result = wa.check(a.get("mode", "desktop"), self.cfg.browser)
         if result.get("unreadChats") is None:
             raise ActionError("UNVERIFIABLE", result.get(
                 "note", "WhatsApp unread count is unknown, not zero."))
@@ -415,8 +417,28 @@ class Executor:
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_SEND_NOT_SAFE", str(exc)) from exc
 
-    def do_whatsapp_compose(self, a, _c):
-        return {"contact": a["contact"], **wa.compose(a["phone"], a["message"], self.cfg.whatsapp_mode, self.cfg.browser)}
+    def do_whatsapp_compose(self, a, cancel):
+        """One owner-approved draft in the installed Personal WhatsApp Desktop.
+
+        Never follow an HTTPS/web.whatsapp.com fallback, even when a stale
+        configuration says whatsapp_mode=web. Does NOT press Send.
+        """
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "WhatsApp draft cancelled")
+        try:
+            opened = wa.open_whatsapp("desktop", self.cfg.browser)
+            if not launcher.SIMULATE and opened.get("verified") is not True:
+                raise ActionError("WHATSAPP_DESKTOP_UNAVAILABLE",
+                    opened.get("note", "Personal WhatsApp Desktop could not be focused"))
+            selected = wa_desktop.select_chat(a["contact"], cancel)
+            if cancel.is_set():
+                raise ActionError("CANCELLED", "WhatsApp draft cancelled before typing")
+            drafted = wa_desktop.draft_reply(a["contact"], a["message"])
+            return {"contact": a["contact"], "via": "desktop", "sent": False,
+                    "recipientVerified": selected.get("recipientVerified", False),
+                    **drafted}
+        except wa_desktop.DesktopWhatsAppError as exc:
+            raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
     def do_whatsapp_read_visible(self, _a, _c):
         try:

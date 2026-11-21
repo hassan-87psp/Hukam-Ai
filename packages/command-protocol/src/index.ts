@@ -5,4 +5,4 @@ export * from './dialogue';
 export * from './messages';
 export * from './provider';
 
-export { routeIntent, type IntentRoute } from './intent';
+export { routeIntent, desktopWhatsAppWorkflow, type IntentRoute, type DesktopWhatsAppWorkflow } from './intent';

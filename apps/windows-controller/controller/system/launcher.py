@@ -96,6 +96,69 @@ def open_uri(uri: str) -> None:
         raise LaunchError("protocol URIs are only supported on Windows")
 
 
+
+def launch_personal_whatsapp() -> None:
+    """Start only the *installed* native Windows WhatsApp app.
+
+    Do not use whatsapp: URI. Third-party/default URI handlers can open
+    Chrome or WhatsApp Web without the user asking for Web. The one
+    PowerShell query only enumerates local Start-menu app identifiers;
+    it never executes code derived from a user command or contact.
+    """
+    if SIMULATE:
+        return _record("launch_whatsapp_native", "WhatsApp Desktop")
+    if not IS_WINDOWS:
+        raise LaunchError("Personal WhatsApp Desktop requires Windows")
+
+    candidates = [
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "WhatsApp", "WhatsApp.exe"),
+        shutil.which("WhatsApp.exe"),
+        shutil.which("WhatsAppDesktop.exe"),
+    ]
+    for candidate in candidates:
+        if candidate and os.path.isfile(candidate):
+            try:
+                subprocess.Popen([candidate], close_fds=True)
+                return
+            except OSError:
+                continue
+    # Microsoft Store installs frequently have no ordinary executable path.
+    # Query the fixed Windows Start-menu registry rather than a generic URL.
+    script = (
+        "Get-StartApps | Where-Object { $_.Name -match '^WhatsApp(?:\s|$)' } "
+        "| Select-Object -First 6 Name, AppID | ConvertTo-Json -Compress"
+    )
+    try:
+        import json
+        import re
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        output = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, timeout=7, check=False, creationflags=flags,
+        )
+        if output.returncode == 0 and output.stdout.strip():
+            entries = json.loads(output.stdout)
+            if isinstance(entries, dict):
+                entries = [entries]
+            for entry in entries if isinstance(entries, list) else []:
+                if not isinstance(entry, dict):
+                    continue
+                name = str(entry.get("Name", ""))
+                app_id = str(entry.get("AppID", ""))
+                if not re.match(r"^WhatsApp(?:\s|$)", name, re.I):
+                    continue
+                if "whatsapp" not in app_id.casefold() or not re.fullmatch(r"[A-Za-z0-9_.!\-]{5,190}", app_id):
+                    continue
+                subprocess.Popen(["explorer.exe", "shell:AppsFolder\\" + app_id],
+                                 close_fds=True)
+                return
+    except (OSError, ValueError, TimeoutError, subprocess.TimeoutExpired):
+        pass
+    raise LaunchError(
+        "Personal WhatsApp Desktop native launcher could not find the installed app. "
+        "Open it from Windows Start; HUKM will not switch to WhatsApp Web."
+    )
+
 def start_program(candidates: list[str]) -> str:
     """Start the first candidate that resolves. Candidates are fixed allowlist entries, never user text."""
     if SIMULATE:

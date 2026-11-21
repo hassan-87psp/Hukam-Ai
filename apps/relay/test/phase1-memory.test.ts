@@ -96,6 +96,29 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     expect((await api('GET','/api/ai/history?projectId='+p2)).data).toHaveLength(2);
   });
 
+  it('plans the entire native WhatsApp open-and-check request, without Gemini or WhatsApp Web',async()=>{
+    const before=plannerRequests.length;
+    const names=await api('POST','/api/operator/plan',{
+      text:'WhatsApp Desktop on laptop and check msg'
+    });
+    expect(names.status).toBe(200);
+    expect(names.data.steps).toEqual([
+      {action:'whatsapp.open',args:{mode:'desktop'}},
+      {action:'whatsapp.unread_senders',args:{}}
+    ]);
+    const count=await api('POST','/api/operator/plan',{
+      text:'WhatsApp kholo aur check karo kitne unread msg hain'
+    });
+    expect(count.status).toBe(200);
+    expect(count.data.steps).toEqual([
+      {action:'whatsapp.open',args:{mode:'desktop'}},
+      {action:'whatsapp.check',args:{mode:'desktop'}}
+    ]);
+    expect(plannerRequests.length).toBe(before);
+    const health=await api('GET','/api/health');
+    expect(health.data.version).toBe('1.6.2');
+  });
+
   it('restores deterministic and AI follow-up slots after a real Relay database restart',async()=>{
     const basic=await api('POST','/api/commands',{text:'folder kholo'});
     expect(basic.data.kind).toBe('clarify');
