@@ -138,7 +138,10 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     name: 'controller.update', capability: 'system',
     label: 'Install verified HUKM update on paired Windows device',
     timeoutMs: 120000, alwaysApprove: true,
-    validate: () => ok({}),
+    validate(a) {
+      return Object.keys(a).length === 0 ? ok({}) :
+        fail('HUKM update accepts no user-supplied URL, executable or arguments');
+    },
   },
   'app.close': {
     name: 'app.close', capability: 'apps', label: 'Close a verified Notepad window',
