@@ -245,6 +245,53 @@ describe('supervised AI computer operator', () => {
     expect(()=>validatePlanShape({summary:'click',steps:[{action:'browser.control',args:{kind:'click',x:100,y:200}}]})).toThrow();
     expect(()=>validatePlanShape({summary:'delete',steps:[{action:'file.delete',args:{path:'C:/x'}}]})).toThrow();
   });
+  it('asks natural WhatsApp follow-ups, persists slots and never sends without a plan review',async()=>{
+    const originalFetch=globalThis.fetch;
+    const oldKey=process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY='HUKM_TEST_KEY';
+    const outputs=[
+      {question:'WhatsApp par kis contact ko reply draft karna hai?',steps:[]},
+      {question:'Ali ko kya message likhna hai?',steps:[]},
+      {summary:'Open Personal WhatsApp Desktop and draft reply for Ali, do not send.',
+       steps:[{action:'whatsapp.open',args:{mode:'desktop'}},
+         {action:'whatsapp.draft_reply',args:{contact:'Ali',message:'Kal 3 PM milte hain'}}]},
+    ];
+    let calls=0;
+    const seenRequests:string[]=[];
+    try{
+      globalThis.fetch=((input:any,init?:any)=>{
+        if(String(input).startsWith('https://generativelanguage.googleapis.com/')){
+          const body=JSON.parse(String(init?.body));
+          seenRequests.push(body.contents[0].parts[0].text);
+          return Promise.resolve(new Response(JSON.stringify({candidates:[{content:{parts:[{
+            text:JSON.stringify(outputs[calls++])
+          }]}}]}),{status:200}));
+        }
+        return originalFetch(input,init);
+      }) as typeof fetch;
+      const before=(h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands').get() as any).n;
+      const first=await api('POST','/api/operator/plan',{text:'WhatsApp par message bhejo'});
+      expect(first.data).toMatchObject({kind:'clarify',topic:'operator-followup'});
+      expect((await api('GET','/api/operator/pending')).data.question).toContain('kis contact');
+      const next=await api('POST','/api/operator/plan',{text:'Ali'});
+      expect(next.data).toMatchObject({kind:'clarify'});
+      expect((await api('GET','/api/operator/pending')).data.question).toContain('kya message');
+      const plan=await api('POST','/api/operator/plan',{text:'Kal 3 PM milte hain'});
+      expect(plan.data.steps.map((x:any)=>x.action)).toEqual(['whatsapp.open','whatsapp.draft_reply']);
+      expect(seenRequests[1]).toContain('WhatsApp par message bhejo');
+      expect(seenRequests[2]).toContain('Ali');
+      expect((await api('GET','/api/operator/pending')).data).toBeNull();
+      expect((h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands').get() as any).n).toBe(before);
+      expect(calls).toBe(3);
+      const cancelled=await api('POST','/api/operator/plan',{text:'Rehne do'});
+      expect(cancelled.data.kind).toBe('cancelled');
+    }finally{
+      globalThis.fetch=originalFetch;
+      if(oldKey===undefined)delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY=oldKey;
+    }
+  });
+
   it('generates an owner-reviewed multi-step task, then executes with audited status', async () => {
     const originalFetch=globalThis.fetch;
     const oldKey=process.env.GEMINI_API_KEY;
