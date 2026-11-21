@@ -6,7 +6,7 @@
  * credential reading, or model-generated screen coordinates. No action may
  * be reported as verified solely because Windows accepted an input event.
  */
-import { ACTIONS, parseCommand, validateCommand } from '../../../packages/command-protocol/src/index';
+import { ACTIONS, parseCommand, routeIntent, validateCommand } from '../../../packages/command-protocol/src/index';
 import type { ActionName, CommandStatus } from '../../../packages/shared-types/src/index';
 import { HttpError, Relay } from './core';
 import { all, one, run, type DB, type Row } from './db';
@@ -238,7 +238,10 @@ export class Operator {
     // A single clearly parsed action works without Gemini. Complex/unknown
     // commands need model classification; no automatic fallback to web search.
     const parsed=parseCommand(request);
-    const compound=/\b(?:aur|phir|then|after that|us\s*me|likho.*notepad|notepad.*likho|meeting.*add|schedule.*meeting)\b/i.test(request);
+    // The relay must use the SAME intention gate as the website. Otherwise
+    // a WhatsApp reply can be misclassified as a "check" action and silently
+    // bypass the model's missing-contact question.
+    const intent=routeIntent(request,parsed);
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/.test(url);
     if(projectLaunch){
@@ -251,7 +254,7 @@ export class Operator {
       result={summary:'Open selected HUKM Project in the configured Chrome profile',
         steps:[validateStep({action:'browser.profile_open',
           args:{profile:project.chromeProfile,url:destination}})]};
-    } else if(!compound && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
+    } else if(intent==='command' && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
       result={summary:ACTIONS[parsed.action].label,steps:[validateStep({action:parsed.action,args:parsed.args})]};
     }else{
       if(!geminiConfigured())throw new HttpError(503,'AI_NOT_CONFIGURED','Natural-language planner requires Gemini');
