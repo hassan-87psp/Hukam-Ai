@@ -42,12 +42,20 @@ function UserBubble({ m }: { m: Extract<ChatMessage, { kind: 'user' }> }) {
 }
 
 export default function Chat() {
-  const { chat, commandMap, devices, clearChat, pendingDialogueTopic, runText } = useStore();
+  const { chat, commandMap, devices, clearChat, pendingDialogueTopic, restoreOperatorPending, runText } = useStore();
   const end = useRef<HTMLDivElement>(null);
   const [searchParams,setSearchParams] = useSearchParams();
   const [projects,setProjects] = useState<{id:string;name:string}[]>([]);
   const activeProject = searchParams.get('projectId') ?? '';
   useEffect(()=>{void get<{id:string;name:string}[]>('/api/projects').then(setProjects).catch(()=>{});},[]);
+  useEffect(()=>{
+    let active=true;
+    const query=activeProject?'?projectId='+encodeURIComponent(activeProject):'';
+    void get<{question:string;topic:string}|null>('/api/operator/pending'+query)
+      .then(p=>{if(active)restoreOperatorPending(!!p);})
+      .catch(()=>{});
+    return ()=>{active=false;};
+  },[activeProject,restoreOperatorPending]);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [chat.length]);
