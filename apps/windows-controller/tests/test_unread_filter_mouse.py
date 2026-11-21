@@ -38,6 +38,10 @@ class Control:
 
 
 def install_uia(monkeypatch,root):
+    # A restored verified WhatsApp main window is required before the mouse
+    # is allowed to click its Unread filter.
+    monkeypatch.setattr(unread_senders.locator,"focus_whatsapp",
+                        lambda:windows.active_window())
     fake=SimpleNamespace(
         WalkControl=lambda node,maxDepth=12: iter([(c,1) for c in node.children]),
         ControlFromHandle=lambda hwnd:root)
