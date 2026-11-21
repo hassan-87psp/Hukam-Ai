@@ -59,6 +59,8 @@ def test_exact_snapshot_click_requires_same_role_label_and_fingerprint(monkeypat
     ok = ex.run("ui.activate_observed", clean, threading.Event())
     assert ok.ok and ok.result["inputDelivered"] is True
     assert ok.result["verified"] is False
+    repeated = ex.run("ui.activate_observed", clean, threading.Event())
+    assert not repeated.ok, "Snapshot must be single-use"
 
     for wrong in (
         {**approved, "snapshot": "0" * 64},
@@ -73,6 +75,23 @@ def test_exact_snapshot_click_requires_same_role_label_and_fingerprint(monkeypat
     }, threading.Event())
     assert not denied.ok
     assert denied.error["code"] == "NOT_ALLOWED"
+
+
+def test_stale_observation_expires_without_any_mouse_input(monkeypatch):
+    monkeypatch.setattr(launcher, "SIMULATE", True)
+    scan = uia.inspect()
+    token = scan["snapshot"]
+    monkeypatch.setattr(uia, "_OBSERVED", (token, uia.time.monotonic()-uia.OBSERVATION_TTL_S-1))
+    with pytest.raises(uia.AccessibilityError, match="expired"):
+        uia.activate_observed("Search", "ButtonControl", token)
+
+
+def test_new_inspection_invalidates_previous_token(monkeypatch):
+    monkeypatch.setattr(launcher, "SIMULATE", True)
+    original = uia.inspect()["snapshot"]
+    monkeypatch.setattr(uia, "_OBSERVED", ("b" * 64, uia.time.monotonic()))
+    with pytest.raises(uia.AccessibilityError, match="expired"):
+        uia.activate_observed("Search", "ButtonControl", original)
 
 
 def test_unbound_legacy_clicks_not_executable_and_cross_app_generic_blocked():
