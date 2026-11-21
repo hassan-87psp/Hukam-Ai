@@ -42,29 +42,55 @@ class Word:
 
 
 def _ocr_words(image) -> list[Word]:
-    """Windows OCR stays on this laptop. OCR backend is lazily imported."""
-    try:
-        from natocr import OCR
-        # A fresh local OCR object avoids stale screenshots/recognition caches.
-        pages = OCR(language="en").recognize(image)
-        if not pages:
-            return []
-        words: list[Word] = []
-        for element in pages[0].elements[:1300]:
-            text = " ".join(str(element.text or "").split())
-            box = element.bounds.bounds
-            if text and len(box) == 4:
-                x, y, width, height = map(float, box)
-                if width > 0 and height > 0:
-                    words.append(Word(text, x, y, width, height))
-        return words
-    except Exception as exc:
-        # Do not expose OCR text/image/raw errors in web logs.
-        raise VisualUnreadUnavailable(
-            "Local Windows screen-text recognition is unavailable. "
-            "The installed Windows OCR language/engine may be missing."
-        ) from exc
+    """Direct Windows.Media.Ocr word rectangles, no model/cloud/wrapper.
 
+    The WinRT APIs are an on-device last resort when WhatsApp UIAutomation
+    hides its controls. We intentionally retain *individual word bounding
+    boxes*, not only OCR lines: titles and right-column timestamps must be
+    differentiated geometrically before HUKM can report senders.
+    """
+    try:
+        import asyncio
+        import io
+        from winrt.windows.media import ocr
+        from winrt.windows.graphics import imaging
+        from winrt.windows.storage import streams
+
+        async def recognize() -> list[Word]:
+            engine = ocr.OcrEngine.try_create_from_user_profile_languages()
+            if engine is None:
+                raise VisualUnreadUnavailable(
+                    "No local Windows OCR language pack is available.")
+            buffer = io.BytesIO()
+            image.convert("RGB").save(buffer, format="PNG")
+            stream = streams.InMemoryRandomAccessStream()
+            writer = streams.DataWriter(stream)
+            writer.write_bytes(buffer.getvalue())
+            await writer.store_async()
+            await writer.flush_async()
+            stream.seek(0)
+            decoder = await imaging.BitmapDecoder.create_async(stream)
+            bitmap = await decoder.get_software_bitmap_async()
+            result = await engine.recognize_async(bitmap)
+            output: list[Word] = []
+            for line in result.lines:
+                for word in line.words:
+                    value = " ".join(str(word.text or "").split())
+                    b = word.bounding_rect
+                    if value and b.width > 0 and b.height > 0:
+                        output.append(Word(
+                            value, float(b.x), float(b.y),
+                            float(b.width), float(b.height)))
+            return output
+
+        return asyncio.run(recognize())
+    except VisualUnreadUnavailable:
+        raise
+    except Exception as exc:
+        raise VisualUnreadUnavailable(
+            "Windows on-device OCR could not initialize or recognize the "
+            "WhatsApp chat pane. Check local Windows OCR language support."
+        ) from exc
 
 def _safe_foreground(hwnd: int) -> None:
     import win32gui
