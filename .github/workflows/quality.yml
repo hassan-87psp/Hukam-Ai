@@ -26,6 +26,8 @@ jobs:
           cache: npm
       - run: npm ci --include=dev
       - run: npm run typecheck
+      - name: Verify release version and package contract
+        run: node scripts/check-release-version.mjs
       - run: npm test
       # Mirror Render's production build path, including the root prebuild.
       # Optional voice preview must never be able to abort deployment.
@@ -76,7 +78,7 @@ jobs:
           Copy-Item apps/windows-controller/README.md release/README.txt
           Copy-Item apps/windows-controller/packaging/*.cmd release/
           Copy-Item apps/windows-controller/packaging/ONE_ZIP_SETUP.txt release/
-          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.6.6.zip -Force
+          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.6.7.zip -Force
       - name: Smoke test consolidated installer in isolated sandbox
         shell: pwsh
         run: |
@@ -90,9 +92,19 @@ jobs:
           if (!(Test-Path $exe)) { throw "Installed EXE missing" }
           & $exe --version
           if ($LASTEXITCODE -ne 0) { throw "Installed EXE failed" }
+      - name: Generate installer SHA-256 integrity checksum
+        shell: pwsh
+        run: |
+          $zip = 'HUKM-Windows-Controller-v1.6.7.zip'
+          if (!(Test-Path $zip)) { throw 'HUKM installer ZIP missing' }
+          $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  $zip" | Set-Content -Path "$zip.sha256" -Encoding ascii
+          if (!(Test-Path "$zip.sha256")) { throw 'HUKM installer checksum missing' }
       - uses: actions/upload-artifact@v4
         with:
-          name: HUKM-Windows-Controller-v1.6.6
-          path: HUKM-Windows-Controller-v1.6.6.zip
+          name: HUKM-Windows-Controller-v1.6.7
+          path: |
+            HUKM-Windows-Controller-v1.6.7.zip
+            HUKM-Windows-Controller-v1.6.7.zip.sha256
           retention-days: 14
           if-no-files-found: error
