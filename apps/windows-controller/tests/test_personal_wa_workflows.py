@@ -81,11 +81,23 @@ def test_calendar_draft_is_not_event_creation(sandbox):
     assert "HUKM+Test+Meeting" in url
     google = run("calendar.event_draft", clean)
     assert google.ok and google.result["eventSaved"] is False and google.result["verified"] is False
+    save = run("calendar.save_reviewed", v.validate("calendar.save_reviewed", args))
+    assert save.ok and save.result["saveAttempted"] is True
+    assert save.result["eventCreatedVerified"] is False
+    assert save.result["verified"] is False
+    editor_url = calendar_draft.event_url("google", args["title"], args["startUtc"],
+        args["endUtc"], args["timeZone"])
+    assert calendar_draft._same_prefilled_editor(editor_url, editor_url)
+    assert not calendar_draft._same_prefilled_editor(
+        editor_url.replace("HUKM+Test+Meeting", "Different+Event"), editor_url)
+    assert not calendar_draft._same_prefilled_editor("https://evil.test/", editor_url)
     args["provider"] = "outlook"
     outlook = run("calendar.event_draft", v.validate("calendar.event_draft", args))
     assert outlook.ok and outlook.result["invitesSent"] is False
     with pytest.raises(v.ValidationError):
         v.validate("calendar.event_draft", {**args, "startUtc": "2001-01-01T03:00:00Z"})
+    with pytest.raises(v.ValidationError):
+        v.validate("calendar.save_reviewed", {**args, "startUtc": "2001-01-01T03:00:00Z"})
 
 
 def test_whatsapp_read_and_draft_are_explicit_and_not_sent(sandbox):
