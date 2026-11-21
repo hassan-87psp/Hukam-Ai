@@ -40,7 +40,7 @@ export default function Settings() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [shots, setShots] = useState<any[]>([]);
   const [pw, setPw] = useState({ current: '', next: '' });
-  const [system, setSystem] = useState<any>(null);
+  const [aiStatus,setAiStatus]=useState<{configured:boolean;provider:string}|null>(null);
   const [aiDiagnostic,setAiDiagnostic]=useState<AiDiagnostic|null>(null);
   const [aiTestBusy,setAiTestBusy]=useState(false);
   const [aiTestError,setAiTestError]=useState('');
@@ -49,7 +49,7 @@ export default function Settings() {
   useEffect(() => {
     loadSessions();
     loadShots();
-    get('/api/system').then(setSystem).catch(() => {});
+    get<{configured:boolean;provider:string}>('/api/ai/status').then(setAiStatus).catch(() => {});
   }, []);
   const notifPerm = 'Notification' in window ? Notification.permission : 'unsupported';
 
@@ -179,13 +179,11 @@ export default function Settings() {
 
           <Section id="ai" icon={<Brain className="h-5 w-5" />} title="AI engine & connection test"
             desc="Gemini powers HUKM chat and proposed task plans. Laptop execution requires independent owner approval.">
-            <div className="space-y-2">
-              {(system?.providers ?? []).map((p: any) => (
-                <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl bg-field/40 px-3 py-2 text-sm">
-                  <span>{p.label}</span>
-                  <Badge tone={p.status==='active'?'ok':'muted'}>{p.status==='active'?'Configured':'Not connected'}</Badge>
-                </div>
-              ))}
+            <div className="flex items-center justify-between gap-3 rounded-xl bg-field/40 px-3 py-3 text-sm">
+              <span>Gemini API key on relay</span>
+              {aiStatus
+                ? <Badge tone={aiStatus.configured?'ok':'muted'}>{aiStatus.configured?'Configured (not live-tested)':'Not configured'}</Badge>
+                : <Badge tone="muted">Unknown</Badge>}
             </div>
             <div className="mt-3 rounded-xl bg-field/30 p-3">
               <p className="text-sm font-semibold">Live Gemini connection check</p>
