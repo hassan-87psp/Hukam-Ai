@@ -303,7 +303,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Scroll cancelled")
         try:
-            return accessibility.scroll_active(a["steps"])
+            return accessibility.scroll_active(a["steps"], cancel=cancel)
         except accessibility.AccessibilityError as exc:
             raise ActionError("ACCESSIBILITY_UNAVAILABLE", str(exc)) from exc
 
@@ -325,7 +325,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Inspected button click cancelled")
         try:
-            return accessibility.activate_observed(a["label"], a["role"], a["snapshot"])
+            return accessibility.activate_observed(a["label"], a["role"], a["snapshot"], cancel=cancel)
         except accessibility.AccessibilityError as exc:
             raise ActionError("WINDOW_CHANGED", str(exc)) from exc
 

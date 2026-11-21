@@ -45,3 +45,13 @@ def test_cancelled_capture_refuses_before_input(monkeypatch):
     stop.set()
     with pytest.raises(RuntimeError,match="cancelled"):
         capture.capture(cancel=stop)
+
+def test_cancelled_uia_actions_refuse_before_input(monkeypatch):
+    from controller.screen import accessibility
+    monkeypatch.setattr(launcher,"SIMULATE",True)
+    stop=threading.Event()
+    stop.set()
+    with pytest.raises(accessibility.AccessibilityError,match="cancelled"):
+        accessibility.scroll_active(1,cancel=stop)
+    with pytest.raises(accessibility.AccessibilityError,match="cancelled"):
+        accessibility.activate_observed("Search","ButtonControl","a"*64,cancel=stop)
