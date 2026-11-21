@@ -448,7 +448,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try {
         // Model proposals are never executed without a separate user review.
         if (shouldPlan) {
-          if (!hasDevice) { agent(STATUS_MESSAGES.noDevice,'warn'); return; }
+          // Clarification/planning must work even when the laptop is offline.
+          // Actual Run still requires a paired, online Controller and owner approval.
           try {
             const projectId = new URLSearchParams(window.location.search).get('projectId');
             const planned = await post<OperatorPlan | {kind:'clarify'; question:string; questionUrdu?:string; topic:string} |
