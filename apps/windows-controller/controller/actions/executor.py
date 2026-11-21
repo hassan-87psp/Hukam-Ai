@@ -329,8 +329,12 @@ class Executor:
         if not launcher.IS_WINDOWS and not launcher.SIMULATE:
             raise ActionError("NOT_SUPPORTED", "WhatsApp check reads window titles and needs Windows")
         result = wa.check(a.get("mode", self.cfg.whatsapp_mode), self.cfg.browser)
-        if result.get("unreadChats") is None and not result.get("opened"):
-            raise ActionError("UNVERIFIABLE", result.get("note", "WhatsApp unread count could not be verified"))
+        if result.get("unreadChats") is None:
+            raise ActionError("UNVERIFIABLE", result.get(
+                "note", "WhatsApp unread count is unknown, not zero."))
+        # A counted unread chat must come from an explicit Desktop badge/title.
+        if result.get("source") not in ("WhatsApp Desktop Unread filter", "window title"):
+            raise ActionError("UNVERIFIABLE", "WhatsApp unread indicator was not verified")
         return result
 
     def do_whatsapp_unread_senders(self, _a, _c):
