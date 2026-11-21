@@ -153,6 +153,67 @@ describe('Projects, instructions, memory and private conversations', () => {
   });
 });
 
+describe('Phase 5: owner-scoped project tasks and editable memory',()=>{
+  it('shows only matching project task history and never exposes a different workspace',async()=>{
+    const a=await api('POST','/api/projects',{name:'Phase5 Marketing',instructions:'Marketing only'});
+    const b=await api('POST','/api/projects',{name:'Phase5 Finance',instructions:'Finance only'});
+    expect(a.status).toBe(200);expect(b.status).toBe(200);
+    const user=(h.relay.db.prepare('SELECT id FROM users LIMIT 1').get() as any).id;
+    const now=new Date().toISOString(),expires=new Date(Date.now()+600000).toISOString();
+    const db=h.relay.db;
+    const first='plan-phase5-'+Date.now(),second=first+'b';
+    db.prepare(`INSERT INTO operator_plans
+      (id,user_id,project_id,request,summary,steps,created_at,expires_at)
+      VALUES(?,?,?,?,?,?,?,?)`).run(first,user,a.data.id,'Read dashboard','Review marketing workspace',
+        JSON.stringify([{action:'device.status',args:{}}]),now,expires);
+    db.prepare(`INSERT INTO operator_plans
+      (id,user_id,project_id,request,summary,steps,created_at,expires_at)
+      VALUES(?,?,?,?,?,?,?,?)`).run(second,user,b.data.id,'Review finances','Finance-only review',
+        JSON.stringify([{action:'device.status',args:{}}]),now,expires);
+    const firstTask='task-phase5-'+Date.now(),secondTask=firstTask+'b';
+    const insert=db.prepare(`INSERT INTO operator_runs
+      (id,user_id,plan_id,device_id,status,current_step,total_steps,command_ids,error,created_at,updated_at)
+      VALUES(?,?,?,NULL,?,?,?,?,?,?,?)`);
+    insert.run(firstTask,user,first,'unverified',1,1,'[]','Outcome not yet verified',now,now);
+    insert.run(secondTask,user,second,'completed',1,1,'[]',null,now,now);
+    const [one,two]=await Promise.all([
+      api('GET','/api/projects/'+a.data.id+'/tasks'),
+      api('GET','/api/projects/'+b.data.id+'/tasks'),
+    ]);
+    expect(one.status).toBe(200);expect(two.status).toBe(200);
+    expect(one.data).toHaveLength(1);
+    expect(two.data).toHaveLength(1);
+    expect(one.data[0]).toMatchObject({id:firstTask,status:'unverified',summary:'Review marketing workspace'});
+    expect(two.data[0]).toMatchObject({id:secondTask,status:'completed',summary:'Finance-only review'});
+    expect(JSON.stringify(one.data)).not.toContain('Finance-only review');
+    expect(one.data[0].steps).toBeUndefined();
+    expect(one.data[0].request).toBeUndefined();
+    expect((await api('GET','/api/projects/prj_missing/tasks')).status).toBe(404);
+    expect((await api('GET','/api/projects/'+a.data.id+'/tasks',undefined,{cookie:null})).status).toBe(401);
+    expect((await api('DELETE','/api/projects/'+a.data.id)).status).toBe(200);
+    expect((await api('GET','/api/projects/'+a.data.id+'/tasks')).status).toBe(404);
+    await api('DELETE','/api/projects/'+b.data.id);
+  });
+
+  it('edits a single saved note without changing another project memory',async()=>{
+    const a=await api('POST','/api/projects',{name:'Phase5 Notes A'});
+    const b=await api('POST','/api/projects',{name:'Phase5 Notes B'});
+    const na=await api('POST','/api/projects/'+a.data.id+'/notes',{title:'Palette',content:'Blue'});
+    const nb=await api('POST','/api/projects/'+b.data.id+'/notes',{title:'Palette',content:'Orange'});
+    expect(na.status).toBe(200);expect(nb.status).toBe(200);
+    const edited=await api('PATCH','/api/projects/'+a.data.id+'/notes/'+na.data.id,
+      {title:'Updated palette',content:'Navy blue'});
+    expect(edited.status).toBe(200);
+    expect(edited.data.content).toBe('Navy blue');
+    expect((await api('GET','/api/projects/'+b.data.id+'/notes')).data[0].content).toBe('Orange');
+    expect((await api('PATCH','/api/projects/'+a.data.id+'/notes/'+nb.data.id,
+      {content:'Attempt crossing'})).status).toBe(404);
+    expect((await api('GET','/api/projects/'+b.data.id+'/notes')).data[0].content).toBe('Orange');
+    await api('DELETE','/api/projects/'+a.data.id);
+    await api('DELETE','/api/projects/'+b.data.id);
+  });
+});
+
 describe('Gemini authenticated chat', () => {
   it('never exposes the API key and never allows anonymous or CSRF calls', async () => {
     const status = await api('GET', '/api/ai/status');
