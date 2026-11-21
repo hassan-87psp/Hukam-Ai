@@ -309,6 +309,14 @@ function ApprovalBox({ c }: { c: Command }) {
           <dt className="text-ink2">Reply</dt><dd className="whitespace-pre-wrap break-words">{String(a.message)}</dd>
           <dt className="text-ink2">Effect</dt><dd>Types draft in selected WhatsApp Desktop chat, never sends.</dd>
         </>)}
+        {c.action === 'whatsapp.send_reviewed' && (<>
+          <dt className="text-ink2">FINAL SEND APPROVAL — Exact recipient</dt><dd>{String(a.contact)}</dd>
+          <dt className="text-ink2">Exact message</dt><dd className="whitespace-pre-wrap break-words">{String(a.message)}</dd>
+          <dt className="text-ink2">Effect</dt><dd>
+            Will click Send only if the foreground WhatsApp Desktop chat header and existing draft
+            match exactly. This may deliver a message immediately. Never automatically retry.
+          </dd>
+        </>)}
         {c.action === 'whatsapp.attach_preview' && (<>
           <dt className="text-ink2">Verified contact</dt><dd>{String(a.contact)}</dd>
           <dt className="text-ink2">Local file</dt><dd className="break-all">{String(a.path)}</dd>
