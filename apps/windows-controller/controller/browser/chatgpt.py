@@ -152,20 +152,45 @@ def _files(folder: Path) -> dict[str, float]:
         return {}
 
 
-def download_visible(expected_url: str, downloads: Path) -> dict:
+def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
+    """Wait for a unique visible ChatGPT Download control after generation.
+
+    This is allowed only in the exact user-configured ChatGPT Project tab.
+    No blind click, no guessed URL, no Chrome profile switching.
+    """
     if launcher.SIMULATE:
         launcher._record("chatgpt.download_visible", "visible download")
         return {"downloadVerified": True, "fileName": "test-image.png",
                 "simulated": True}
     try:
-        _active, root = _chrome_context(expected_url)
-        buttons = _interactive(root, "ButtonControl", ("download", "download image", "save image"))
-        if len(buttons) != 1:
-            raise ChatGPTError("Exactly one visible ChatGPT Download button must be available")
+        # ChatGPT image generation can take longer than the next model step;
+        # do not immediately fail just because the Download button is absent.
+        deadline = time.monotonic() + 75.0
+        chosen = None
+        while time.monotonic() < deadline:
+            if cancel is not None and cancel.is_set():
+                raise ChatGPTError("ChatGPT download cancelled before selecting a file")
+            active, root = _chrome_context(expected_url)
+            buttons = _interactive(root, "ButtonControl", ("download", "download image", "save image"))
+            if len(buttons) > 1:
+                raise ChatGPTError("More than one Download button is visible; select the intended result manually")
+            if len(buttons) == 1 and buttons[0].IsEnabled:
+                chosen = (active, buttons[0])
+                break
+            time.sleep(0.85)
+        if chosen is None:
+            raise ChatGPTError(
+                "No single visible Download button appeared before timeout. Generation may still be running."
+            )
+        active, button = chosen
+        if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
+            raise ChatGPTError("Chrome focus changed, so Download was not clicked")
         before = _files(downloads)
-        buttons[0].Click()
-        for _ in range(15):
-            time.sleep(0.3)
+        button.Click()
+        download_deadline = time.monotonic() + 22.0
+        while time.monotonic() < download_deadline:
+            if cancel is not None and cancel.is_set():
+                raise ChatGPTError("Download monitoring stopped; file transfer may still continue in Chrome")
             current = _files(downloads)
             new_files = sorted((x for x in current if x not in before), key=lambda x: current[x], reverse=True)
             if new_files:
@@ -173,8 +198,12 @@ def download_visible(expected_url: str, downloads: Path) -> dict:
                 if path.stat().st_size > 0:
                     return {"downloadVerified": True, "fileName": path.name,
                             "sizeBytes": path.stat().st_size, "verified": True,
-                            "note": "A new file was detected in Downloads after the selected Download click."}
-        raise ChatGPTError("No new supported image/document was detected in Downloads")
+                            "note": "Unique visible Download button clicked and a new finished file detected in Downloads."}
+            time.sleep(0.4)
+        raise ChatGPTError(
+            "Download button was clicked but no new finished image/document was detected. "
+            "Check Chrome Downloads; do not assume success."
+        )
     except ChatGPTError:
         raise
     except Exception as exc:
