@@ -25,7 +25,7 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "diagnostics.probe", "ui.inspect", "ui.activate", "calendar.event_draft", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
+    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "calendar.event_draft", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
     "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.attach_preview",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
@@ -34,7 +34,7 @@ CAPABILITY_OF = {
     "app.open": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
-    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input",
+    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.scroll": "input",
     "calendar.event_draft": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
     "chatgpt.download_visible": "browser", "whatsapp.read_selected": "whatsapp",
     "whatsapp.draft_reply": "whatsapp", "whatsapp.attach_preview": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
@@ -153,6 +153,11 @@ def validate(action: str, args: dict) -> dict:
         return {"url": safe_url(a.get("url"))}
     if action in ("web.search", "youtube.search", "youtube.play"):
         return {"query": _str(a.get("query"), "query", 200)}
+    if action == "ui.scroll":
+        steps = a.get("steps")
+        if not isinstance(steps, int) or isinstance(steps, bool) or steps == 0 or abs(steps) > 5:
+            raise ValidationError("scroll steps must be between -5 and 5")
+        return {"steps": steps}
     if action == "ui.activate":
         label = _str(a.get("label"), "label", 100)
         if re.match(r"^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\b|\s)", label, re.I):
