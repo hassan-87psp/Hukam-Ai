@@ -419,9 +419,11 @@ class Executor:
             raise ActionError("UNVERIFIABLE", "WhatsApp unread indicator was not verified")
         return result
 
-    def do_whatsapp_unread_senders(self, _a, _c):
+    def do_whatsapp_unread_senders(self, _a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "WhatsApp unread scan cancelled before execution")
         try:
-            return wa_senders.read_unread_senders()
+            return wa_senders.read_unread_senders(cancel)
         except wa_senders.UnreadSendersUnavailable as e:
             raise ActionError("UNVERIFIABLE", str(e)) from e
 
