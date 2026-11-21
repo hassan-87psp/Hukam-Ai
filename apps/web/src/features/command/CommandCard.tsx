@@ -236,6 +236,11 @@ export function CommandResult({ c }: { c: Command }) {
       return <p className="text-xs text-warn">{r.note ?? 'Control activated; outcome unverified.'}</p>;
     case 'calendar.event_draft':
       return <p className="text-xs text-warn">{r.note ?? 'Calendar composer opened; event NOT saved.'}</p>;
+    case 'calendar.save_reviewed':
+      return <div className="space-y-1 text-xs text-warn">
+        <p>{r.note ?? 'Calendar Save may have been clicked; event ID not verified.'}</p>
+        <p>Event ID verified: No · Attendee invites verified: No · Do not retry without checking Calendar first.</p>
+      </div>;
     case 'chatgpt.prompt_draft':
     case 'chatgpt.submit_prompt':
       return <p className="text-xs text-warn">{r.note ?? 'ChatGPT input attempted; output not independently verified.'}</p>;
