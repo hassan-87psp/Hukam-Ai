@@ -18,3 +18,8 @@ Workflow #282 (44931745524) passed on bf87a43a344e1505322b18c9d77d4aaf3f98d568, 
 
 ## Exit and later phases
 Latest combined CI must pass before this change is considered regression-verified. Native personal Windows acceptance, browser focus performance, actual Chrome profile interaction, dependency vulnerability remediation, privacy review, cloud quota and data recovery gates remain open. Do not call this full OpenClaw/UFO/Browser Use parity. No production merge or new release until version and release gates are met.
+
+## Static follow-up review
+- Removed the remaining legacy allowlist reference from deterministic command routing, ensuring both planner and no-model route use the same registry.
+- Workflow #282 Windows logs: 190 passed, 1 skipped; official release skipped by design.
+- Existing npm lockfile v3 licenses (entries, not unique projects): MIT 253, ISC 12, Apache-2.0 5, CC-BY-4.0 1, BSD-3-Clause 1, 4 not recorded. This metadata scan is not a legal certification. Existing React Router 6.30.6, Vite 5.4.21, Vitest 2.1.9, esbuild 0.24.2/0.21.5/0.28.2 and ws 8.23.0 remain unchanged. Resolve known advisories before release; avoid force upgrades.

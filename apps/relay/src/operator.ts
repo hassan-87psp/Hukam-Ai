@@ -412,7 +412,7 @@ export class Operator {
       const checked=validateCommand(parsed.action,parsed.args);
       if(!checked.ok)throw new HttpError(400,'BAD_DESKTOP_INPUT',checked.error);
       result={summary:ACTIONS[parsed.action].label,steps:[{action:'desktop.control',args:checked.args}]};
-    } else if(!isFollowup && intent==='command' && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
+    } else if(!isFollowup && intent==='command' && parsed.kind==='command' && isAgentTool(parsed.action)){
       result={summary:ACTIONS[parsed.action].label,steps:[validateStep({action:parsed.action,args:parsed.args})]};
     }else{
       if(!geminiConfigured())throw new HttpError(503,'AI_NOT_CONFIGURED','Natural-language planner requires Gemini');
