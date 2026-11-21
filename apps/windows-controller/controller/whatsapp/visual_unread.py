@@ -134,6 +134,37 @@ def _check_capture_owner(hwnd,left,top,width,height):
             raise VisualUnreadUnavailable("WhatsApp capture area is overlapped by another window")
 
 
+def _monitor_rect(hwnd):
+    import win32api
+    return tuple(win32api.GetMonitorInfo(win32api.MonitorFromWindow(hwnd, 2))["Monitor"])
+
+
+def _visible_region(rect, monitor):
+    """Keep maximized invisible frame margins out of the physical OCR crop.
+
+    Coordinates remain signed virtual desktop pixels on either monitor.
+    Refuse large clipping instead of guessing the position of the sidebar.
+    """
+    left, top, right, bottom = rect
+    ml, mt, mr, mb = monitor
+    width, height = right - left, bottom - top
+    x, y = max(left, ml), max(top, mt)
+    capture_width = min(520, int(width * .57))
+    capture_height = min(920, bottom - y - 12, mb - y)
+    if (width < 690 or height < 530 or capture_height < 400
+            or x - left > 24 or y - top > 24
+            or x + capture_width > min(right, mr)):
+        raise VisualUnreadUnavailable(
+            "WhatsApp window is too small or sidebar clipped; maximize on one monitor.")
+    return x, y, capture_width, capture_height
+
+
+def _same_capture(hwnd, image, left, top):
+    import win32gui
+    return _visible_region(win32gui.GetWindowRect(hwnd), _monitor_rect(hwnd)) == (
+        left, top, image.width, image.height)
+
+
 def _capture_left(hwnd: int):
     """Return screenshot of ONLY native WhatsApp's left chat/sidebar pane."""
     import win32gui
@@ -147,20 +178,13 @@ def _capture_left(hwnd: int):
     with mss.mss() as screen:
         _safe_foreground(hwnd)
         rect = win32gui.GetWindowRect(hwnd)
-        left, top, right, bottom = rect
-        window_width = right - left
-        window_height = bottom - top
-        if window_width < 690 or window_height < 530:
-            raise VisualUnreadUnavailable(
-                "WhatsApp Desktop window is too small for safe visual scanning; maximize it."
-            )
-        width = min(520, int(window_width * 0.57))
-        height = min(920, window_height - 12)
+        monitor = _monitor_rect(hwnd)
+        left, top, width, height = _visible_region(rect, monitor)
         _check_capture_owner(hwnd,left,top,width,height)
         raw = screen.grab({"left": left, "top": top,
                            "width": width, "height": height})
         _safe_foreground(hwnd)
-        if win32gui.GetWindowRect(hwnd) != rect:
+        if win32gui.GetWindowRect(hwnd) != rect or _monitor_rect(hwnd) != monitor:
             raise VisualUnreadUnavailable("WhatsApp moved during capture.")
         _check_capture_owner(hwnd,left,top,width,height)
         image = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
@@ -349,7 +373,7 @@ def _recover_before_click(hwnd,image,left,top,words,cancel):
     native=_probe_native(hwnd,cancel)
     import win32gui
     current=win32gui.GetWindowRect(hwnd)
-    if native.get("windowRect")!=list(current) or current[:2]!=(left,top):
+    if native.get("windowRect")!=list(current) or not _same_capture(hwnd,image,left,top):
         native={}
     chip=_chip_from_probe(native,left,top,image)
     if chip is not None:
@@ -365,9 +389,19 @@ def _recover_before_click(hwnd,image,left,top,words,cancel):
         time.sleep(.35)
     _ensure_not_cancelled(cancel)
     image,left,top=_capture_left(hwnd)
-    words=_ocr_enlarged(image,cancel)
-    _header_diagnostics(words,image,"enlarged-retry")
+    # Use the same top-header geometry that succeeded in the owner's
+    # Windows diagnostic; keep the full screenshot only for later row reading.
+    header_height=min(image.height, max(240, min(400, round(image.width*.6))))
+    header=image.crop((0,0,image.width,header_height))
+    words=_ocr_enlarged(header,cancel)
+    _header_diagnostics(words,image,"enlarged-header-retry")
     chip=locate_unread(words,image.width,image.height)
+    if chip is not None and _search_header(words,chip)=="search unread chats":
+        # Already selected: need fresh full-row OCR, not header-only names.
+        _ensure_not_cancelled(cancel)
+        row_words=_ocr_words(image,cancel=cancel)
+        split=chip.cy+chip.height*2
+        words=[w for w in words if w.cy<=split]+[w for w in row_words if w.cy>split]
     return image,left,top,words,chip,{}
 
 
@@ -666,9 +700,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     def guard():
         _ensure_not_cancelled(cancel)
         _safe_foreground(active_hwnd)
-        current = win32gui.GetWindowRect(active_hwnd)
-        w, h = current[2]-current[0], current[3]-current[1]
-        if current[:2] != (left, top) or (min(520,int(w*0.57)),min(920,h-12)) != image.size:
+        if not _same_capture(active_hwnd,image,left,top):
             raise VisualUnreadUnavailable("WhatsApp moved or resized before click; no mouse click attempted.")
         client = win32gui.GetClientRect(active_hwnd)
         a,b=win32gui.ClientToScreen(active_hwnd,(client[0],client[1]))

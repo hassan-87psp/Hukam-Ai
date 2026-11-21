@@ -124,6 +124,7 @@ def test_unread_visual_scan_requires_verified_native_foreground(monkeypatch):
     monkeypatch.setattr(win32gui,"ClientToScreen",lambda hwnd,pos:pos)
     pointer=[(0,0)]
     monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(0,0,1000,1000))
+    monkeypatch.setattr(vu,"_monitor_rect",lambda hwnd:(0,0,1920,1080))
     monkeypatch.setattr(win32gui,"WindowFromPoint",lambda point:120)
     monkeypatch.setattr(win32gui,"GetAncestor",lambda hwnd,flag:120)
     monkeypatch.setattr(win32api,"GetCursorPos",lambda:pointer[0])
@@ -211,6 +212,7 @@ def test_cancellation_after_click_does_not_return_names(monkeypatch):
     monkeypatch.setattr(win32gui,"ClientToScreen",lambda hwnd,p:p)
     pointer=[(0,0)]
     monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(0,0,1000,1000))
+    monkeypatch.setattr(vu,"_monitor_rect",lambda hwnd:(0,0,1920,1080))
     monkeypatch.setattr(win32gui,"WindowFromPoint",lambda point:120)
     monkeypatch.setattr(win32gui,"GetAncestor",lambda hwnd,flag:120)
     monkeypatch.setattr(win32api,"GetCursorPos",lambda:pointer[0])
@@ -260,6 +262,7 @@ def test_capture_initializes_dpi_context_before_window_rect(monkeypatch):
         return (-1920,0,-200,1080)
     monkeypatch.setattr(mss,"mss",Screen)
     monkeypatch.setattr(win32gui,"GetWindowRect",rect)
+    monkeypatch.setattr(vu,"_monitor_rect",lambda hwnd:(-1920,0,0,1080))
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
     monkeypatch.setattr(vu,"_check_capture_owner",lambda *a:None)
     image,left,top=vu._capture_left(120)
@@ -277,6 +280,7 @@ def test_capture_rejects_window_motion_before_any_ocr(monkeypatch):
     rectangles=iter([(0,0,1200,1000),(8,0,1208,1000)])
     monkeypatch.setattr(mss,"mss",Screen)
     monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:next(rectangles))
+    monkeypatch.setattr(vu,"_monitor_rect",lambda hwnd:(0,0,1920,1080))
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
     monkeypatch.setattr(vu,"_check_capture_owner",lambda *a:None)
     with pytest.raises(vu.VisualUnreadUnavailable,match="moved during capture"):
@@ -371,6 +375,64 @@ def test_recovery_uses_native_candidate_without_repeating_ocr(monkeypatch):
             "windowRect":[0,0,1000,1000],"selected":True,"count":2}
     monkeypatch.setattr(vu,"_probe_native",lambda hwnd,cancel:native)
     monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(0,0,1000,1000))
+    monkeypatch.setattr(vu,"_monitor_rect",lambda hwnd:(0,0,1920,1080))
     monkeypatch.setattr(vu,"_ocr_enlarged",lambda *a:pytest.fail("unnecessary duplicate OCR"))
     result=vu._recover_before_click(120,im,0,0,[],None)
     assert result[4] is not None and result[5]["selected"] is True
+
+
+def test_owner_actual_unread_geometry_and_second_monitor_origin():
+    # Fixed-label rectangles from the successful read-only 96 DPI diagnostic.
+    data=[vu.Word("Chats",77,56,50,15),
+          vu.Word("Search",120,107,39,10),
+          vu.Word("All",88,149,16,10),
+          vu.Word("Unread",135,149,40,10),
+          vu.Word("Favourites",217,149,59,10),
+          vu.Word("Groups",308,150,41,12)]
+    region=vu._visible_region((1912,-8,3848,1048),(1920,0,3840,1080))
+    assert region==(1920,0,520,920)
+    chip=vu.locate_unread(data,region[2],region[3])
+    assert chip==data[3]
+    assert (region[0]+round(chip.cx),region[1]+round(chip.cy))==(2075,154)
+    assert vu._verified_badge_count(data,chip) is None
+    assert vu._verified_badge_count(data+[vu.Word("9",180,149,7,10)],chip)==9
+    assert vu.locate_unread(data+[vu.Word("Unread",180,149,40,10)],520,920) is None
+
+
+def test_visible_region_left_and_above_primary_and_large_clipping():
+    assert vu._visible_region((-1928,-1088,8,-32),(-1920,-1080,0,0))==(-1920,-1080,520,920)
+    with pytest.raises(vu.VisualUnreadUnavailable,match="clipped"):
+        vu._visible_region((1700,0,3700,1000),(1920,0,3840,1080))
+
+
+def test_same_capture_geometry_rejects_moved_monitor(monkeypatch):
+    import win32gui
+    from PIL import Image
+    image=Image.new("RGB",(520,920))
+    monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(1912,-8,3848,1048))
+    monkeypatch.setattr(vu,"_monitor_rect",lambda hwnd:(1920,0,3840,1080))
+    assert vu._same_capture(120,image,1920,0)
+    assert not vu._same_capture(120,image,1912,-8)
+
+
+def test_header_recovery_uses_fresh_crop_and_keeps_first_sender(monkeypatch):
+    from PIL import Image
+    import win32gui
+    image=Image.new("RGB",(520,920))
+    labels=compact_words()
+    first=vu.Word("Sample",69,156,40,11)
+    calls=[]
+    monkeypatch.setattr(vu,"_probe_native",lambda *a:{})
+    monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(0,0,1000,1000))
+    monkeypatch.setattr(win32gui,"IsZoomed",lambda hwnd:True)
+    monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
+    monkeypatch.setattr(vu,"_capture_left",lambda hwnd:(image,0,0))
+    def enlarged(crop,cancel):
+        calls.append(crop.size)
+        return labels
+    monkeypatch.setattr(vu,"_ocr_enlarged",enlarged)
+    monkeypatch.setattr(vu,"_ocr_words",lambda im,cancel=None:labels+[first])
+    result=vu._recover_before_click(120,image,0,0,[],None)
+    assert calls==[(520,312)]
+    assert result[4] is not None and result[4].text=="Unread"
+    assert first in result[3]
