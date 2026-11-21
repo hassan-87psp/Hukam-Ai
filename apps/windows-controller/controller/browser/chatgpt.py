@@ -143,10 +143,11 @@ def submit_prompt(expected_url: str, expected_prompt: str) -> dict:
         raise ChatGPTError("Unable to submit ChatGPT prompt safely") from exc
 
 
-def _files(folder: Path) -> dict[str, float]:
+def _files(folder: Path) -> dict[str, tuple[float, int]]:
+    """Only completed-type files, with size to detect in-progress writes."""
     allowed = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".txt", ".docx"}
     try:
-        return {p.name: p.stat().st_mtime for p in folder.iterdir()
+        return {p.name: (p.stat().st_mtime, p.stat().st_size) for p in folder.iterdir()
                 if p.is_file() and p.suffix.casefold() in allowed}
     except OSError:
         return {}
@@ -188,17 +189,39 @@ def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
         before = _files(downloads)
         button.Click()
         download_deadline = time.monotonic() + 22.0
+        stable_name = None
+        stable_size = -1
+        stable_checks = 0
         while time.monotonic() < download_deadline:
             if cancel is not None and cancel.is_set():
                 raise ChatGPTError("Download monitoring stopped; file transfer may still continue in Chrome")
             current = _files(downloads)
             new_files = sorted((x for x in current if x not in before), key=lambda x: current[x], reverse=True)
+            if len(new_files) > 1:
+                raise ChatGPTError("Multiple new downloads appeared. Cannot safely identify the exact generated file.")
             if new_files:
-                path = downloads / new_files[0]
-                if path.stat().st_size > 0:
-                    return {"downloadVerified": True, "fileName": path.name,
-                            "sizeBytes": path.stat().st_size, "verified": True,
-                            "note": "Unique visible Download button clicked and a new finished file detected in Downloads."}
+                name = new_files[0]
+                size = current[name][1]
+                # Chrome can expose the target file before writing finishes.
+                # Require a stable nonzero size for several independent polls.
+                try:
+                    partial = any(
+                        p.name.casefold().startswith(name.casefold()) and p.suffix.casefold() in (".crdownload", ".tmp")
+                        for p in downloads.iterdir()
+                    )
+                except OSError:
+                    partial = True
+                if size > 0 and not partial:
+                    if name == stable_name and size == stable_size:
+                        stable_checks += 1
+                    else:
+                        stable_name, stable_size, stable_checks = name, size, 1
+                    if stable_checks >= 4:
+                        return {"downloadVerified": True, "fileName": name,
+                                "sizeBytes": size, "verified": True,
+                                "note": "One newly downloaded file remained stable across multiple checks in Downloads."}
+                else:
+                    stable_name, stable_size, stable_checks = None, -1, 0
             time.sleep(0.4)
         raise ChatGPTError(
             "Download button was clicked but no new finished image/document was detected. "
