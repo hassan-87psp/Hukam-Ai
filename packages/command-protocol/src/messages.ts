@@ -174,6 +174,8 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Selected chat mein reply draft hua; send nahi hua.', 'ریپلائی ڈرافٹ ہوا، بھیجا نہیں گیا۔', 'Reply drafted in selected chat; not sent.');
     case 'whatsapp.attach_preview':
       return L('Attachment request hui; send nahi hua. Preview check karein.', 'فائل ڈرافٹ ہوئی، بھیجی نہیں گئی۔', 'Attachment was selected, not sent. Verify the preview.');
+    case 'whatsapp.send_attachment_reviewed':
+      return L('WhatsApp file Send attempt hua; delivery verify nahi hui. Auto-retry mat karein.', 'فائل بھیجنے کی کوشش ہوئی مگر تصدیق نہیں ہوئی۔', 'WhatsApp attachment Send attempted; delivery is not verified. Do not retry automatically.');
     case 'whatsapp.send_reviewed':
       return L('WhatsApp Send button press hua; delivery confirm nahi. Chat check karein, auto-retry nahi.', 'واٹس ایپ ارسال کرنے کی کوشش ہوئی، ڈیلیوری کی تصدیق نہیں۔', 'WhatsApp Send was attempted, but delivery is not verified. Check the chat; do not retry automatically.');
     case 'browser.profile_open':
