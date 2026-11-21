@@ -41,8 +41,10 @@ begin
     CurrentExe := ExpandConstant('{app}\hukm-controller.exe');
     PreviousExe := ExpandConstant('{app}\hukm-controller.previous.exe');
     if FileExists(CurrentExe) then begin
-      if not FileCopy(CurrentExe, PreviousExe, False) then
-        MsgBox('Please close the HUKM Controller before updating. The previous executable could not be backed up.', mbError, MB_OK);
+      if not FileCopy(CurrentExe, PreviousExe, False) then begin
+        MsgBox('Please close the HUKM Controller before updating. The previous executable could not be backed up, so installation will stop.', mbError, MB_OK);
+        Abort;
+      end;
     end;
   end;
 end;
