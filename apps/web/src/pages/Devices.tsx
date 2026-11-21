@@ -116,11 +116,33 @@ function CopyLine({ text, mono }: { text: string; mono?: boolean }) {
 }
 
 function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null }) {
-  const { toast, setDevices, devices, runAction } = useStore();
+  const { toast, setDevices, devices, runAction, commands, approve, reject } = useStore();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(d.name);
   const [confirm, setConfirm] = useState(false);
   const [history, setHistory] = useState<any[] | null>(null);
+  const [updateBusy,setUpdateBusy] = useState(false);
+  // Keep the approval and download status on the Devices page. Previously
+  // clicking Update from website created a hidden Chat command, leaving the
+  // owner with no visible indication of what required approval next.
+  const lastUpdate = commands.find(c=>c.deviceId===d.id && c.action==='controller.update') ?? null;
+  const updateActive = lastUpdate != null &&
+    (lastUpdate.status === 'awaiting_approval' || lastUpdate.status === 'pending' ||
+     lastUpdate.status === 'running');
+  const requestUpdate = async () => {
+    if(updateBusy || updateActive || !d.online || d.paused) return;
+    setUpdateBusy(true);
+    try {
+      const c = await runAction('controller.update',{},
+        {source:'ui',deviceId:d.id,label:'Check official HUKM Windows update (local install confirmation required)'});
+      if(c?.action==='controller.update')
+        toast({title:'Update request created',
+          body:'Approve the request below on Devices, then look at the laptop for a separate Windows installer confirmation.',
+          tone:'ok'});
+    } finally {
+      setUpdateBusy(false);
+    }
+  };
   const update = (nd: Device) => setDevices(devices.map((x) => (x.id === nd.id ? nd : x)));
   const act = async (fn: () => Promise<any>, ok: string) => {
     try {
@@ -162,13 +184,42 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
             <button className="btn-ghost" onClick={() => act(() => post(`/api/devices/${d.id}/pause`), 'Device paused')}><Pause className="h-4 w-4" /> Pause control</button>
           )}
           {versionMismatch && supportsWebUpdate && d.online && !d.paused &&
-            <button className="btn-primary" onClick={()=>void runAction('controller.update',{},
-                {source:'ui',deviceId:d.id,label:'Update HUKM Controller from official verified release'})}>
-              <Download className="h-4 w-4" /> Update from website
+            <button className="btn-primary" disabled={updateBusy || updateActive}
+              onClick={()=>void requestUpdate()}>
+              <Download className="h-4 w-4" />
+              {updateBusy ? 'Requesting…' : updateActive ? 'Update in progress' : 'Update from website'}
             </button>}
           <button className="btn-ghost text-bad" onClick={() => setConfirm(true)}><Trash2 className="h-4 w-4" /> Remove</button>
         </div>
       </div>
+      {lastUpdate && d.controllerVersion !== latestVersion &&
+        <div className="mx-5 mt-4 space-y-2 rounded-xl bg-field/60 p-4 text-sm ring-1 ring-line/25">
+          <p className="font-semibold">Windows update · {STATUS_LABEL[lastUpdate.status]}</p>
+          {lastUpdate.status==='awaiting_approval' &&
+            <>
+              <p className="text-ink2">Website permission is still required. Approve here, then confirm again in the HUKM Windows Controller popup on your laptop.</p>
+              <div className="flex gap-2">
+                <button className="btn-primary" onClick={()=>void approve(lastUpdate.id)}>Approve HUKM update</button>
+                <button className="btn-ghost" onClick={()=>void reject(lastUpdate.id)}>Cancel</button>
+              </div>
+            </>}
+          {(lastUpdate.status==='pending' || lastUpdate.status==='running') &&
+            <p className="text-warn">Approved. The laptop is contacting official GitHub, verifying SHA-256 and may be asking you to confirm the installer in Windows. Check the actual laptop, not only this browser. Closing the Controller or losing connection may interrupt this stage.</p>}
+          {lastUpdate.status==='completed' &&
+            <p className="text-warn">{lastUpdate.result?.installerLaunched === true
+              ? 'The Windows installer was launched, but the update is NOT yet confirmed. Finish its installation on the laptop; restart HUKM and check the new version here.'
+              : lastUpdate.result?.updateAvailable === false
+                ? 'The laptop reported no newer GitHub release. If the backend version differs, check official Releases below.'
+                : 'Update request finished, but a new Controller version has NOT been verified. Check the laptop installation and reconnect.'}</p>}
+          {(lastUpdate.status==='failed' || lastUpdate.status==='timed_out' ||
+            lastUpdate.status==='cancelled') &&
+            <p className="text-bad">Updater did not finish: {lastUpdate.error?.message ?? 'Windows command failed or was interrupted'}. Do not repeatedly approve the same failed command.</p>}
+          {latestVersion &&
+            <a className="text-ice underline" target="_blank" rel="noreferrer"
+              href={`https://github.com/hassan-87psp/Hukam-Ai/releases/tag/v${encodeURIComponent(latestVersion)}`}>
+              Official setup and checksum (manual recovery if the website updater cannot finish)
+            </a>}
+        </div>}
       <div className="grid gap-6 p-5 lg:grid-cols-[1fr_1.3fr]">
         <dl className="grid content-start grid-cols-[130px_1fr] gap-x-3 gap-y-2.5 text-sm">
           <dt className="text-ink2">Operating system</dt><dd>{d.os ? `${d.os} ${d.osVersion ?? ''}` : '—'}</dd>
