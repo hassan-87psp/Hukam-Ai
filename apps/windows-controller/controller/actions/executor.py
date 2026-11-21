@@ -318,7 +318,7 @@ class Executor:
             raise ActionError("CANCELLED", "ChatGPT download cancelled")
         p = self.folder_path("downloads")
         try:
-            return chatgpt.download_visible(a["projectUrl"], p)
+            return chatgpt.download_visible(a["projectUrl"], p, cancel)
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 
