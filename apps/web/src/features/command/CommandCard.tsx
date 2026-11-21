@@ -215,6 +215,10 @@ export function CommandResult({ c }: { c: Command }) {
         <p>WhatsApp windows: {String(r.whatsappWindowCount ?? 'unknown')}
           · WhatsApp foreground: {r.whatsappForeground ? 'Yes' : 'No'}
         </p>
+        {r.whatsappChromeTabDetected && <p className="rounded-lg bg-warn/10 p-2 text-warn">
+          WhatsApp Web is open in Chrome. This is NOT the installed Personal WhatsApp Desktop app.
+          HUKM will not silently use this browser tab for Desktop commands.
+        </p>}
         {r.whatsappDiagnosis && <p className="rounded-lg bg-field/50 p-2 text-ink">{String(r.whatsappDiagnosis)}</p>}
         {r.whatsappForeground !== true && <button className="btn-ghost px-3 py-2 text-xs"
           onClick={()=>void runAction('whatsapp.open',{mode:'desktop'},{label:'Open installed WhatsApp Desktop on laptop'})}>
