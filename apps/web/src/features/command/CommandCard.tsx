@@ -5,7 +5,7 @@ import {
 import { useState } from 'react';
 import type { ActionName, Command } from '../../../../../packages/shared-types/src/index';
 import { Badge, cx, Modal, Spinner } from '../../components/ui';
-import { ACTION_LABEL, bytes, clock, describeArgs, duration, STATUS_LABEL, STATUS_TONE } from '../../lib/format';
+import { ACTION_LABEL, bytes, clock, describeArgs, duration, STATUS_LABEL, STATUS_TONE, whatsappResultUnverified } from '../../lib/format';
 import { useStore } from '../../services/store';
 import { post } from '../../services/api';
 
@@ -33,16 +33,19 @@ export function ActionIcon({ action, className }: { action: ActionName; classNam
 }
 
 export function StatusChip({ c }: { c: Command }) {
-  const tone = STATUS_TONE[c.status];
+  const unknown = c.status === 'completed' && whatsappResultUnverified(c.action,c.result);
+  const tone = unknown ? 'warn' : STATUS_TONE[c.status];
   return (
     <Badge tone={tone} dot>
       {c.status === 'running' && <Spinner className="h-3 w-3" />}
-      {STATUS_LABEL[c.status]}
+      {unknown ? 'Not verified' : STATUS_LABEL[c.status]}
     </Badge>
   );
 }
 
 export function StatusIcon({ c }: { c: Command }) {
+  if (c.status === 'completed' && whatsappResultUnverified(c.action,c.result))
+    return <ShieldAlert className="h-4 w-4 text-warn" />;
   switch (c.status) {
     case 'completed': return <CheckCircle2 className="h-4 w-4 text-ok" />;
     case 'failed': return <XCircle className="h-4 w-4 text-bad" />;
@@ -378,6 +381,10 @@ export default function CommandCard({ c, deviceName }: { c: Command; deviceName?
       )}
       {c.status === 'awaiting_approval' && <div className="mt-3"><ApprovalBox c={c} /></div>}
       {c.error && c.status !== 'cancelled' && <p className="mt-3 rounded-lg bg-bad/10 px-3 py-2 text-xs text-bad ring-1 ring-bad/20">{c.error.code}: {c.error.message}</p>}
+      {c.status === 'completed' && whatsappResultUnverified(c.action,c.result) &&
+        <p className="mt-3 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
+          WhatsApp unread result could not be verified. An older Controller incorrectly marked this check as Completed. The unread count is unknown, not zero.
+        </p>}
       {c.status === 'completed' && <div className="mt-3"><CommandResult c={c} /></div>}
     </div>
   );
