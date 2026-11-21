@@ -408,7 +408,7 @@ export class Operator {
           validateStep({action:'whatsapp.read_selected',args:{contact:selectedWhatsAppContact}}),
         ],
       };
-    } else if(projectLaunch && !isFollowup){
+    } else if(projectLaunch && !isFollowup && intent==='command'){
       if(!/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile))
         throw new HttpError(422,'PROJECT_PROFILE_REQUIRED','Set the exact Chrome profile directory in this HUKM Project.');
       const destination=url.startsWith('https://chatgpt.com/')
@@ -449,6 +449,8 @@ export class Operator {
     }
     // Project routing is enforced by the relay, not just written into the AI prompt.
     for(const step of result.steps){
+      if(project && ['browser.profile_open','email.inbox_open','email.compose_draft','calendar.event_draft','calendar.save_reviewed'].includes(step.action) && step.args.profile!==project.chromeProfile)
+        throw new HttpError(422,'PROJECT_PROFILE_MISMATCH','Use the selected Project Chrome profile or change the workspace before switching accounts.');
       if((step.action==='calendar.event_draft' || step.action==='calendar.save_reviewed') && step.args.profile!==project?.chromeProfile)
         throw new HttpError(422,'PROJECT_PROFILE_MISMATCH','Calendar must use the selected Project Chrome profile.');
       if(step.action==='browser.profile_open' && String(step.args.url).startsWith('https://chatgpt.com') &&

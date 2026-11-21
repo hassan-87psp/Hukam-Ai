@@ -380,7 +380,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Calendar Save cancelled before execution")
         try:
-            return calendar_draft.save_reviewed(a)
+            return calendar_draft.save_reviewed(a, cancel)
         except calendar_draft.CalendarDraftError as exc:
             raise ActionError("CALENDAR_SAVE_NOT_SAFE", str(exc)) from exc
 
@@ -388,7 +388,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "ChatGPT draft cancelled")
         try:
-            return chatgpt.draft_prompt(a["projectUrl"], a["prompt"])
+            return chatgpt.draft_prompt(a["projectUrl"], a["prompt"], cancel)
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -396,7 +396,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "ChatGPT submit cancelled")
         try:
-            return chatgpt.submit_prompt(a["projectUrl"], a["prompt"])
+            return chatgpt.submit_prompt(a["projectUrl"], a["prompt"], cancel)
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 
