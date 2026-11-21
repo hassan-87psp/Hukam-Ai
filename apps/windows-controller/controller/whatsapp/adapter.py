@@ -133,6 +133,11 @@ def unread_from_desktop_accessibility(window: windows.WindowInfo) -> int | None:
 
 
 def check(mode: str, browser_pref: str) -> dict:
+    if mode == "web":
+        opened = open_whatsapp("web", browser_pref)
+        return {"unreadChats": None, "opened": opened.get("opened"),
+                "source": "web-not-verified", "messagesRead": False,
+                "note": "WhatsApp Web opened, but the installed Desktop unread count cannot be inferred from a Chrome tab."}
     # Native Desktop only: a Chrome/Edge WhatsApp Web tab does not count
     # as the installed Personal WhatsApp Windows app.
     desktop = locator.desktop_windows()
