@@ -444,9 +444,13 @@ export class Relay {
         this.finish(c.id, success ? 'completed' : 'failed', safeResult, success ? null : {
           code: !resultVerified ? 'UNVERIFIABLE' : String(msg.error?.code ?? 'FAILED').slice(0, 40),
           message: !countVerified
-            ? 'WhatsApp unread count could not be verified on this Windows app. This is unknown, NOT zero. Open WhatsApp Desktop and try HUKM diagnostics.'
+            ? (typeof msg.error?.message==='string' && msg.error.message.trim()
+              ? msg.error.message.slice(0,500)
+              : 'Personal WhatsApp Desktop did not expose a verified unread count. Unknown is NOT zero; try an approved visible unread sender scan.')
             : !sendersVerified
-              ? 'WhatsApp did not expose readable unread sender names. No names were verified.'
+              ? (typeof msg.error?.message==='string' && msg.error.message.trim()
+                ? msg.error.message.slice(0,500)
+                : 'Personal WhatsApp Desktop did not expose verified unread sender names. Run HUKM diagnostics.')
               : String(msg.error?.message ?? 'failed').slice(0, 500),
         }, typeof msg.durationMs === 'number' ? Math.round(msg.durationMs) : null);
         this.audit(userId, 'device', success ? 'command.completed' : 'command.failed', { commandId: c.id, action: c.action }, deviceId);
