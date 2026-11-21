@@ -409,7 +409,9 @@ export default function CommandCard({ c, deviceName }: { c: Command; deviceName?
       {c.error && c.status !== 'cancelled' && <p className="mt-3 rounded-lg bg-bad/10 px-3 py-2 text-xs text-bad ring-1 ring-bad/20">{c.error.code}: {c.error.message}</p>}
       {c.status === 'completed' && whatsappResultUnverified(c.action,c.result) &&
         <p className="mt-3 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
-          WhatsApp unread result could not be verified. An older Controller incorrectly marked this check as Completed. The unread count is unknown, not zero.
+          {c.action === 'whatsapp.send_reviewed'
+            ? 'WhatsApp Send may have happened, but delivery was not verified. Check the chat before doing anything else. Do NOT retry automatically.'
+            : 'WhatsApp unread result could not be verified. An older Controller incorrectly marked this check as Completed. The unread count is unknown, not zero.'}
         </p>}
       {c.status === 'completed' && <div className="mt-3"><CommandResult c={c} /></div>}
     </div>
