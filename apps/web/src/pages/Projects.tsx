@@ -44,7 +44,10 @@ export default function Projects(){
     ||(taskFilter==='active'?['queued','running','awaiting_approval'].includes(t.status)
       :['completed','unverified','failed','cancelled','interrupted'].includes(t.status))),[tasks,taskFilter]);
   const activeTasks=tasks.filter(t=>['queued','running','awaiting_approval'].includes(t.status)).length;
-  useEffect(()=>{ void get<Project[]>('/api/projects').then(data=>setItems(data)).catch(e=>setError(errMsg(e)));},[]);
+  useEffect(()=>{ void get<Project[]>('/api/projects').then(data=>{
+    setItems(data);
+    setSelected(current=>current??data[0]?.id??null);
+  }).catch(e=>setError(errMsg(e)));},[]);
   useEffect(()=>{
     if (!project){setEdit({...empty});setMessages([]);setNotes([]);setTasks([]);return;}
     // Drop the old project's visible data immediately; slow API responses
