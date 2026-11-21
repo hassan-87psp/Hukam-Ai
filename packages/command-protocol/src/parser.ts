@@ -265,6 +265,11 @@ export function parseCommand(input: string): ParseResult {
       /^(?:send|write|draft)\s+(?:a\s+)?(?:whatsapp\s+)?(?:message|msg|text)\s+to\s+[a-z\p{L}][a-z\p{L}\s'.-]{0,45}$/iu.test(t))
     return { kind: 'clarify', topic: 'message-body', normalized: t };
 
+  // A complete simple request already identifies a read-only operation.
+  // Compound instructions still go through reviewed planning.
+  if (/^(?:please\s+)?(?:mera\s+|mere\s+)?whatsapp(?:\s+desktop)?\s+(?:check|dekho|dekh|dakho)(?:\s+(?:karo|kar do))?$/.test(t))
+    return cmd('whatsapp.unread_senders', {}, 'whatsapp-direct-read');
+
   // Sender names need a separate, explicitly approved laptop read.
   // Do not mistake "kis ka message" for the simpler numeric unread check.
   if (/\b(whatsapp|messages?|msgs?|chats?)\b/.test(t) &&

@@ -124,6 +124,16 @@ def _safe_foreground(hwnd: int) -> None:
         )
 
 
+def _check_capture_owner(hwnd,left,top,width,height):
+    """Reject sampled regions obscured by another top-level window."""
+    import win32gui
+    for dx,dy in ((25,30),(width//2,30),(width-25,30),
+                  (25,height//2),(width//2,height//2),(width-25,height//2)):
+        hit=win32gui.WindowFromPoint((left+dx,top+dy))
+        if not hit or win32gui.GetAncestor(hit,2)!=hwnd:
+            raise VisualUnreadUnavailable("WhatsApp capture area is overlapped by another window")
+
+
 def _capture_left(hwnd: int):
     """Return screenshot of ONLY native WhatsApp's left chat/sidebar pane."""
     import win32gui
@@ -146,11 +156,13 @@ def _capture_left(hwnd: int):
             )
         width = min(520, int(window_width * 0.57))
         height = min(920, window_height - 12)
+        _check_capture_owner(hwnd,left,top,width,height)
         raw = screen.grab({"left": left, "top": top,
                            "width": width, "height": height})
         _safe_foreground(hwnd)
         if win32gui.GetWindowRect(hwnd) != rect:
-            raise VisualUnreadUnavailable("WhatsApp moved during capture. Maximize it on one monitor and retry.")
+            raise VisualUnreadUnavailable("WhatsApp moved during capture.")
+        _check_capture_owner(hwnd,left,top,width,height)
         image = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
     return image, left, top
 
@@ -335,13 +347,16 @@ def _recover_before_click(hwnd,image,left,top,words,cancel):
     """One native probe and one different, fresh local OCR attempt, no click."""
     _header_diagnostics(words,image,"initial-miss")
     native=_probe_native(hwnd,cancel)
+    import win32gui
+    current=win32gui.GetWindowRect(hwnd)
+    if native.get("windowRect")!=list(current) or current[:2]!=(left,top):
+        native={}
     chip=_chip_from_probe(native,left,top,image)
     if chip is not None:
         log.info("WhatsApp recognition path=bounded-native-accessibility")
         return image,left,top,words,chip,native
     _ensure_not_cancelled(cancel)
     _safe_foreground(hwnd)
-    import win32gui
     import win32con
     if not win32gui.IsZoomed(hwnd):
         # An owner-approved read can restore/maximize its verified app.
@@ -487,7 +502,16 @@ def _capture_for_scan(hwnd,cancel):
         return _capture_left(hwnd)
     except VisualUnreadUnavailable as exc:
         if "too small" not in str(exc):
-            raise
+            # One pre-click recovery of the SAME native window. Never retry
+            # a click or accept a newly selected unrelated app.
+            if not any(reason in str(exc) for reason in ("overlapped","foreground","moved during capture")):
+                raise
+            _ensure_not_cancelled(cancel)
+            recovered=locator.focus_whatsapp()
+            if recovered is None or recovered.hwnd!=hwnd:
+                raise
+            _ensure_not_cancelled(cancel)
+            return _capture_left(hwnd)
     _ensure_not_cancelled(cancel)
     _safe_foreground(hwnd)
     import win32gui
@@ -684,6 +708,8 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     native_after={}
     if selected_chip is None or native:
         native_after=_probe_native(active_hwnd,cancel)
+        if native_after.get("windowRect")!=list(win32gui.GetWindowRect(active_hwnd)):
+            native_after={}
         selected_chip=selected_chip or _chip_from_probe(native_after,left,top,after_image)
     if selected_chip is None:
         raise VisualUnreadUnavailable(

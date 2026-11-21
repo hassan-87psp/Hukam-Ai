@@ -181,7 +181,7 @@ describe('system', () => {
 });
 
 describe('whatsapp', () => {
-  it('check', () => expect(c('WhatsApp check karo.').action).toBe('whatsapp.check'));
+  it('check', () => expect(c('WhatsApp check karo.').action).toBe('whatsapp.unread_senders'));
   it('unread', () => expect(c('WhatsApp par unread messages batao.').action).toBe('whatsapp.unread_senders'));
   it('contact unread → check', () => expect(c('Ali ke naye messages batao.').action).toBe('whatsapp.check'));
   for (const t of ['WhatsApp kholo', 'WhatsApp khol do.', 'Open WhatsApp', 'whatsapp']) {

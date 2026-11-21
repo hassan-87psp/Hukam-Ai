@@ -15,6 +15,13 @@ def inspect_native(hwnd):
     from . import unread_filter
     import uiautomation as auto
     import win32gui
+    # UIA bounding rectangles use physical screen coordinates. Ensure
+    # this disposable process does not compare them to virtualized bounds.
+    import ctypes
+    try:
+        ctypes.windll.user32.SetThreadDpiAwarenessContext(ctypes.c_void_p(-4))
+    except (AttributeError,OSError):
+        pass
     _safe_foreground(hwnd)
     root=auto.ControlFromHandle(hwnd)
     w=win32gui.GetWindowRect(hwnd)
@@ -31,7 +38,13 @@ def inspect_native(hwnd):
     import re
     name=" ".join(str(choice.control.Name or "").split())
     count=re.fullmatch(r"unread(?:\s+chats)?\s*[:(]?\s*(\d{1,3})\)?",name,re.I)
+    if win32gui.GetWindowRect(hwnd)!=w:
+        return {"status":"window-moved"}
+    hit=win32gui.WindowFromPoint((round(choice.cx),round(choice.cy)))
+    if not hit or win32gui.GetAncestor(hit,2)!=hwnd:
+        return {"status":"obscured"}
     return {"status":"unique","bounds":[choice.left,choice.top,choice.right,choice.bottom],
+            "windowRect":list(w),
             "selected":_unread_filter_selected(choice.control),
             "count":int(count.group(1)) if count else None}
 
@@ -79,8 +92,11 @@ def probe(hwnd,cancel=None):
         if not isinstance(bounds,list) or len(bounds)!=4 or not all(
                 type(n) in (int,float) and -100000<=n<=100000 for n in bounds):
             return {"status":"invalid"}
+        rect=result.get("windowRect")
+        if not isinstance(rect,list) or len(rect)!=4 or not all(type(n) in (int,float) and -100000<=n<=100000 for n in rect):
+            return {"status":"invalid"}
         count=result.get("count")
-        return {"status":"unique","bounds":bounds,
+        return {"status":"unique","bounds":bounds,"windowRect":rect,
                 "selected":result.get("selected") if type(result.get("selected")) is bool else None,
                 "count":count if type(count) is int and 0<=count<=999 else None}
     except (OSError,ValueError,TypeError):

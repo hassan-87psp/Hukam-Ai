@@ -261,6 +261,7 @@ def test_capture_initializes_dpi_context_before_window_rect(monkeypatch):
     monkeypatch.setattr(mss,"mss",Screen)
     monkeypatch.setattr(win32gui,"GetWindowRect",rect)
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
+    monkeypatch.setattr(vu,"_check_capture_owner",lambda *a:None)
     image,left,top=vu._capture_left(120)
     assert (left,top)==(-1920,0)
     assert image.size==(520,920)
@@ -277,6 +278,7 @@ def test_capture_rejects_window_motion_before_any_ocr(monkeypatch):
     monkeypatch.setattr(mss,"mss",Screen)
     monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:next(rectangles))
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
+    monkeypatch.setattr(vu,"_check_capture_owner",lambda *a:None)
     with pytest.raises(vu.VisualUnreadUnavailable,match="moved during capture"):
         vu._capture_left(120)
 
@@ -353,3 +355,22 @@ def test_green_explicit_count_associates_with_one_title_row():
     assert rows==[{"name":"Sample Contact","unreadMessages":3}]
     empty=Image.new("RGB",(520,920),(20,20,20))
     assert vu._conversation_counts(empty,x,["Sample Contact"],vu.Word("Unread",163,183,72,19))[0]["unreadMessages"] is None
+
+def test_capture_rejects_obscured_native_window(monkeypatch):
+    import win32gui
+    monkeypatch.setattr(win32gui,"WindowFromPoint",lambda point:810)
+    monkeypatch.setattr(win32gui,"GetAncestor",lambda hwnd,flag:810)
+    with pytest.raises(vu.VisualUnreadUnavailable,match="overlapped"):
+        vu._check_capture_owner(120,0,0,520,920)
+
+def test_recovery_uses_native_candidate_without_repeating_ocr(monkeypatch):
+    from PIL import Image
+    import win32gui
+    im=Image.new("RGB",(520,920))
+    native={"status":"unique","bounds":[130,110,200,145],
+            "windowRect":[0,0,1000,1000],"selected":True,"count":2}
+    monkeypatch.setattr(vu,"_probe_native",lambda hwnd,cancel:native)
+    monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(0,0,1000,1000))
+    monkeypatch.setattr(vu,"_ocr_enlarged",lambda *a:pytest.fail("unnecessary duplicate OCR"))
+    result=vu._recover_before_click(120,im,0,0,[],None)
+    assert result[4] is not None and result[5]["selected"] is True
