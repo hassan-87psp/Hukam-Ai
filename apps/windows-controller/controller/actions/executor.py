@@ -15,6 +15,7 @@ from ..config import Config
 from ..files import search as files
 from ..screen import capture as screen
 from ..screen import accessibility
+from ..system import desktop_input
 from ..security import validation as v
 from ..system import apps, info, known_folders, launcher, windows, diagnostics
 from ..whatsapp import adapter as wa
@@ -288,6 +289,16 @@ class Executor:
             return accessibility.activate(a["label"])
         except accessibility.AccessibilityError as exc:
             raise ActionError("ACCESSIBILITY_UNAVAILABLE", str(exc)) from exc
+
+    def do_desktop_control(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Desktop input cancelled before execution")
+        try:
+            return desktop_input.control(a)
+        except desktop_input.DesktopInputError as exc:
+            raise ActionError("DESKTOP_INPUT_REFUSED", str(exc)) from exc
+        except RuntimeError as exc:
+            raise ActionError("DESKTOP_INPUT_REFUSED", str(exc)) from exc
 
     def do_calendar_event_draft(self, a, cancel):
         if cancel.is_set():
