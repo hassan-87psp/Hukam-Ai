@@ -5,9 +5,25 @@ import {
 import { useState } from 'react';
 import type { ActionName, Command } from '../../../../../packages/shared-types/src/index';
 import { Badge, cx, Modal, Spinner } from '../../components/ui';
-import { ACTION_LABEL, bytes, clock, describeArgs, duration, STATUS_LABEL, STATUS_TONE, whatsappResultUnverified } from '../../lib/format';
+import { ACTION_LABEL, bytes, clock, describeArgs, duration, STATUS_LABEL, STATUS_TONE, actionResultUnverified } from '../../lib/format';
 import { useStore } from '../../services/store';
 import { post } from '../../services/api';
+
+function unverifiedReason(action: ActionName): string {
+  switch(action) {
+    case 'whatsapp.send_reviewed':
+    case 'whatsapp.send_attachment_reviewed':
+      return 'WhatsApp Send may have happened, but delivery was NOT verified. Check the correct chat before doing anything else. Never retry automatically.';
+    case 'calendar.save_reviewed':
+      return 'Calendar Save may have happened, but event creation and invitations were NOT verified. Check the calendar first. Never retry automatically.';
+    case 'chatgpt.submit_prompt':
+      return 'ChatGPT prompt was submitted or attempted, but a generated response has not been verified. Check the selected Project tab.';
+    case 'chatgpt.download_visible':
+      return 'A complete new ChatGPT file was NOT verified in Downloads. Check Chrome downloads and the saved Project tab.';
+    default:
+      return 'WhatsApp unread count or sender names could not be verified. This does NOT mean zero unread.';
+  }
+}
 
 export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'app.open': AppWindow, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
@@ -33,7 +49,7 @@ export function ActionIcon({ action, className }: { action: ActionName; classNam
 }
 
 export function StatusChip({ c }: { c: Command }) {
-  const unknown = c.status === 'completed' && whatsappResultUnverified(c.action,c.result);
+  const unknown = c.status === 'completed' && actionResultUnverified(c.action,c.result);
   const tone = unknown ? 'warn' : STATUS_TONE[c.status];
   return (
     <Badge tone={tone} dot>
@@ -44,7 +60,7 @@ export function StatusChip({ c }: { c: Command }) {
 }
 
 export function StatusIcon({ c }: { c: Command }) {
-  if (c.status === 'completed' && whatsappResultUnverified(c.action,c.result))
+  if (c.status === 'completed' && actionResultUnverified(c.action,c.result))
     return <ShieldAlert className="h-4 w-4 text-warn" />;
   switch (c.status) {
     case 'completed': return <CheckCircle2 className="h-4 w-4 text-ok" />;
@@ -426,11 +442,9 @@ export default function CommandCard({ c, deviceName }: { c: Command; deviceName?
       )}
       {c.status === 'awaiting_approval' && <div className="mt-3"><ApprovalBox c={c} /></div>}
       {c.error && c.status !== 'cancelled' && <p className="mt-3 rounded-lg bg-bad/10 px-3 py-2 text-xs text-bad ring-1 ring-bad/20">{c.error.code}: {c.error.message}</p>}
-      {c.status === 'completed' && whatsappResultUnverified(c.action,c.result) &&
+      {c.status === 'completed' && actionResultUnverified(c.action,c.result) &&
         <p className="mt-3 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
-          {c.action === 'whatsapp.send_reviewed'
-            ? 'WhatsApp Send may have happened, but delivery was not verified. Check the chat before doing anything else. Do NOT retry automatically.'
-            : 'WhatsApp unread result could not be verified. An older Controller incorrectly marked this check as Completed. The unread count is unknown, not zero.'}
+          {unverifiedReason(c.action)}
         </p>}
       {c.status === 'completed' && <div className="mt-3"><CommandResult c={c} /></div>}
     </div>
