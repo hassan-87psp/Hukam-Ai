@@ -121,5 +121,9 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     expect(plannerRequests.at(-1)).toContain('User replied: Ali');
     expect((await api('GET','/api/operator/pending')).data).toBe(null);
     expect((await api('GET','/api/ai/history')).data).toHaveLength(4);
+    // Clear history must also remove the old deterministic follow-up slot.
+    expect((await api('DELETE','/api/ai/history')).status).toBe(200);
+    expect((await api('GET','/api/dialogue/pending')).data).toBe(null);
+    expect((await api('GET','/api/ai/history')).data).toHaveLength(0);
   });
 });
