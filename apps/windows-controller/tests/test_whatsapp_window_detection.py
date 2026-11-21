@@ -65,7 +65,8 @@ def test_chrome_whatsapp_tab_is_not_mistaken_for_desktop_count(monkeypatch):
     result = adapter.check("desktop", "default")
     assert result["unreadChats"] is None
     assert result["source"] == "not-detected"
-    assert ("open_uri", "whatsapp:") in launcher.simulated_calls
+    assert ("launch_whatsapp_native", "WhatsApp Desktop") in launcher.simulated_calls
+    assert not any(kind == "open_url" for kind, _ in launcher.simulated_calls)
 
 
 def test_no_unread_count_remains_a_failure_even_when_app_opened(monkeypatch):
