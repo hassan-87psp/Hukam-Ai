@@ -94,6 +94,10 @@ def test_whatsapp_read_and_draft_are_explicit_and_not_sent(sandbox):
     r = run("whatsapp.draft_reply", args)
     assert r.ok and r.result["sent"] is False
     assert r.result["draftEntered"] is True
+    result = run("whatsapp.send_reviewed", v.validate("whatsapp.send_reviewed", args))
+    assert result.ok and result.result["sendAttempted"] is True
+    assert result.result["deliveryVerified"] is False
+    assert result.result["verified"] is False
     with pytest.raises(v.ValidationError):
         v.validate("whatsapp.draft_reply", {"contact": "Test", "message": ""})
 
