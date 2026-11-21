@@ -16,7 +16,7 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
     ['Google Calendar mein kal 3 PM meeting add kardo', 'plan'],
     ['ChatGPT Project mein gold banner banao aur download karo', 'plan'],
     ['Screen par buttons dekho', 'plan'],
-    ['scroll kro', 'plan'],
+    ['scroll kro', 'command'],
     ['Kya tum laptop control kar sakte ho?', 'chat'],
     ['Forex trading mein VSA kya hai?', 'chat'],
     ['Hello HUKM', 'chat'],
