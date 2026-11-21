@@ -94,20 +94,19 @@ def read_unread_senders() -> dict:
 
     if not IS_WINDOWS:
         raise UnreadSendersUnavailable("WhatsApp Desktop sender reading requires Windows")
-    active = windows.active_window()
-    if not active or not locator.matches_desktop_window(active):
-        # Explicitly approved: focus a verified native WhatsApp desktop window.
-        # Never pull private chat content from Chrome/Edge WhatsApp Web tabs.
-        active = locator.focus_whatsapp()
-        if active is None:
-            from .adapter import open_whatsapp
-            opened = open_whatsapp("desktop", "default")
-            if opened.get("verified") is True:
-                active = locator.focus_whatsapp()
-        if active is None:
-            raise UnreadSendersUnavailable(
-                "WhatsApp Desktop window not detected or could not be focused. "
-                "Open installed WhatsApp app and run HUKM diagnostics.")
+    # Always resolve the real/main native WhatsApp window, even when the
+    # current foreground is a small WhatsApp helper toast or the full app is
+    # minimized. The locator restores the verified chat window using Windows.
+    active = locator.focus_whatsapp()
+    if active is None:
+        from .adapter import open_whatsapp
+        opened = open_whatsapp("desktop", "default")
+        if opened.get("verified") is True:
+            active = locator.focus_whatsapp()
+    if active is None:
+        raise UnreadSendersUnavailable(
+            "HUKM could not restore and focus the installed Personal WhatsApp "
+            "Desktop main window. No WhatsApp Web tab was opened.")
 
     try:
         import uiautomation as auto
