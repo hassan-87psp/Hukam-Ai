@@ -93,6 +93,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'whatsapp.read_selected': 'Read selected WhatsApp chat',
   'whatsapp.draft_reply': 'Draft WhatsApp reply',
   'whatsapp.send_reviewed': 'Send reviewed WhatsApp message',
+  'whatsapp.send_attachment_reviewed': 'Send reviewed WhatsApp attachment',
   'whatsapp.attach_preview': 'WhatsApp file preview',
   'browser.control': 'Browser input (approval)',
   'notepad.type': 'Type into Notepad (approval)',
