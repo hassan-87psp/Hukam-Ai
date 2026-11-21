@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCommand, routeIntent } from '../src/index';
+import { parseCommand, routeIntent, desktopWhatsAppWorkflow } from '../src/index';
 
 describe('one HUKM command brain with explicit owner-selected desktop preferences',()=>{
   const cases: Array<[string, 'plan'|'command'|'chat']> = [
@@ -8,6 +8,10 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
     ['WhatsApp par check karo kitne unread hain', 'command'],
     ['Whatsapp par kis kis ka unread msg aya', 'command'],
     ['WhatsApp Web kholo', 'command'],
+    ['WhatsApp Desktop on laptop and check msg', 'plan'],
+    ['WhatsApp kholo aur msg check kro', 'plan'],
+    ['WhatsApp Desktop open and check how many unread', 'plan'],
+    ['WhatsApp kholo aur messages parho', 'plan'],
     ['Chrome kholo', 'command'],
     ['Notepad kholo aur usmein 1 se 9 tak likho', 'plan'],
     ['Note pad jo abhi open kiya us me 1 se 9 tak likho', 'plan'],
@@ -32,6 +36,13 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
     expect(routeIntent('Rehne do',parseCommand('Rehne do'),true)).toBe('plan');
     expect(routeIntent('Hello HUKM',parseCommand('Hello HUKM'),true)).toBe('chat');
     expect(routeIntent('What is a pip?',parseCommand('What is a pip?'),true)).toBe('chat');
+  });
+  it('compound Desktop WhatsApp tasks preserve both actions and explicit count semantics',()=>{
+    expect(desktopWhatsAppWorkflow('WhatsApp Desktop on laptop and check msg')).toBe('senders');
+    expect(desktopWhatsAppWorkflow('WhatsApp kholo aur msg check kro')).toBe('senders');
+    expect(desktopWhatsAppWorkflow('WhatsApp Desktop open and check how many unread')).toBe('count');
+    expect(desktopWhatsAppWorkflow('WhatsApp Web kholo')).toBe(null);
+    expect(desktopWhatsAppWorkflow('Ali ke WhatsApp message parho')).toBe(null);
   });
   it('default Personal WhatsApp, no accidental browser/profile selection',()=>{
     const a=parseCommand('WhatsApp kholo');
