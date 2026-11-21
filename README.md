@@ -1,12 +1,15 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
-## Current development release — v1.7.1 (21 Nov 2026)
+## Current development release — v1.8.0 (21 Nov 2026)
 
-**v1.7.1 fix:** Explicit Roman Urdu “note pad band kro” uses an owner-approved, exact Notepad window close request instead of incorrectly opening Notepad. Never terminates processes or auto-discards unsaved text. Live Windows confirmation and Render deployment are separate from CI validation.
+**v1.8.0:** Owner-approved website-initiated update action for paired Controllers, restricted official GitHub Release + SHA-256, and mandatory local Windows approval (unsigned installer is NOT unattended). Exact named Personal WhatsApp Desktop reads and follow-up reply drafts without depending on Gemini. Initial v1.8.0 one-time Windows installation is still needed before future website updates. Live WhatsApp UIA acceptance remains pending.
 
 
-**New in v1.7.1:** Owner-clicked live Gemini chat/planner diagnostics on Settings > AI engine, corrected live controller/backend version comparison, and an **experimental one-file HUKM Setup EXE** (CI-built, unsigned) alongside the legacy ZIP. The one-file installer requires a real Windows acceptance check and a trusted direct website download channel before broad release. **Automatic website-managed updates are not implemented yet.**
+**v1.8.0 fix:** Explicit Roman Urdu “note pad band kro” uses an owner-approved, exact Notepad window close request instead of incorrectly opening Notepad. Never terminates processes or auto-discards unsaved text. Live Windows confirmation and Render deployment are separate from CI validation.
+
+
+**New in v1.8.0:** Owner-clicked live Gemini chat/planner diagnostics on Settings > AI engine, corrected live controller/backend version comparison, and an **experimental one-file HUKM Setup EXE** (CI-built, unsigned) alongside the legacy ZIP. The one-file installer requires a real Windows acceptance check and a trusted direct website download channel before broad release. **Automatic website-managed updates are not implemented yet.**
 
 Read [the Gemini + one-time installer audit](docs/v170-gemini-and-one-time-setup-audit.md) for verified vs pending items.
 
@@ -26,7 +29,7 @@ Read [the Gemini + one-time installer audit](docs/v170-gemini-and-one-time-setup
 **Run the app on the HUKM Node relay origin.** GitHub Pages is static hosting: a successful Pages build is **not** evidence that `/api`, authenticated sessions, WebSockets or the laptop controller work. To check an authorized relay deployment without credentials:
 
 ```bash
-npm run check:relay -- --url https://YOUR-RELAY-ORIGIN --expected-version 1.7.1
+npm run check:relay -- --url https://YOUR-RELAY-ORIGIN --expected-version 1.8.0
 ```
 
 This read-only preflight checks public health/auth routes and that owner-only runtime status returns 401 to anonymous users. It intentionally cannot verify Gemini response quality, connected laptop or external actions. For details see [Phase 6 release and deployment audit](docs/phase6-v167-release-audit.md). The historical Version 1 feature table below describes the original architecture and should not be used as current deployment evidence.
