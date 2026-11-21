@@ -9,6 +9,8 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
     ['Whatsapp par kis kis ka unread msg aya', 'command'],
     ['WhatsApp Web kholo', 'command'],
     ['WhatsApp Desktop on laptop and check msg', 'plan'],
+    ['WhatsApp check karo', 'plan'],
+    ['Whatsapp dekho', 'plan'],
     ['WhatsApp kholo aur msg check kro', 'plan'],
     ['WhatsApp Desktop open and check how many unread', 'plan'],
     ['WhatsApp kholo aur messages parho', 'plan'],
@@ -39,6 +41,8 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
   });
   it('compound Desktop WhatsApp tasks preserve both actions and explicit count semantics',()=>{
     expect(desktopWhatsAppWorkflow('WhatsApp Desktop on laptop and check msg')).toBe('senders');
+    expect(desktopWhatsAppWorkflow('WhatsApp check karo')).toBe('senders');
+    expect(desktopWhatsAppWorkflow('Whatsapp dekho')).toBe('senders');
     expect(desktopWhatsAppWorkflow('WhatsApp kholo aur msg check kro')).toBe('senders');
     expect(desktopWhatsAppWorkflow('WhatsApp Desktop open and check how many unread')).toBe('count');
     expect(desktopWhatsAppWorkflow('WhatsApp Web kholo')).toBe(null);
