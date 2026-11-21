@@ -100,6 +100,9 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     const basic=await api('POST','/api/commands',{text:'folder kholo'});
     expect(basic.data.kind).toBe('clarify');
     expect((await api('GET','/api/dialogue/pending')).data.topic).toBe('which-folder');
+    const aside=await api('POST','/api/commands',{text:'What is a pip?'});
+    expect(aside.status).toBe(200);
+    expect((await api('GET','/api/dialogue/pending')).data.topic).toBe('which-folder');
 
     const first=await api('POST','/api/operator/plan',{text:'WhatsApp par ek message bhejo'});
     expect(first.status).toBe(200);
