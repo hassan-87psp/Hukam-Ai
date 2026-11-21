@@ -204,9 +204,15 @@ export function parseCommand(input: string): ParseResult {
   if (click) return cmd('browser.control', { kind: 'click', x: Number(click[1]), y: Number(click[2]) }, 'browser-click');
   const typed = input.trim().match(/^(?:browser\s+)?(?:type|likho)(?:\s+text)?\s*:\s*(.{1,1000})$/is);
   if (typed) return cmd('browser.control', { kind: 'type', text: typed[1].trim() }, 'browser-type');
-  const scroll = t.match(/^(?:browser\s+)?scroll\s+(up|down)(?:\s+(\d))?(?:\s+karo)?$/);
-  if (scroll) return cmd('browser.control',
-    { kind: 'scroll', steps: (scroll[1] === 'up' ? 1 : -1) * Number(scroll[2] ?? 2) }, 'browser-scroll');
+  // "Scroll karo" works in the active Windows app. Only "browser scroll"
+  // is routed to browser-specific input; both need separate approval.
+  const scroll = t.match(/^(?:(browser|laptop|window|app|page)\s+)?scroll(?:\s+(up|down))?(?:\s+(\d))?(?:\s+(?:karo|kar do))?$/);
+  if (scroll) {
+    const steps = (scroll[2] === 'up' ? 1 : -1) * Number(scroll[3] ?? 2);
+    return scroll[1] === 'browser'
+      ? cmd('browser.control', { kind:'scroll',steps }, 'browser-scroll')
+      : cmd('ui.scroll', { steps }, 'active-app-scroll');
+  }
   const press = t.match(/^(?:browser\s+)?press\s+(enter|tab|escape|backspace|home|end|arrowdown|arrowup|ctrl\+l|ctrl\+a)$/);
   if (press) return cmd('browser.control', { kind: 'key', key: press[1] }, 'browser-key');
 
