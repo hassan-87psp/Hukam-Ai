@@ -259,3 +259,54 @@ def test_cancelled_before_first_capture_never_interacts(monkeypatch):
     with pytest.raises(vu.VisualUnreadUnavailable,match="cancelled"):
         vu.visual_scan_unread(120,cancel=cancelled)
     assert mouse==[]
+
+
+# Geometry transcribed from the owner's successful 96-DPI diagnostic.
+def diagnostic_words():
+    return [
+        vu.Word("Chats", 77, 56, 50, 15),
+        vu.Word("Search", 120, 107, 39, 10),
+        vu.Word("All", 88, 149, 16, 10),
+        vu.Word("Unread", 135, 149, 40, 10),
+        vu.Word("Favourites", 217, 149, 59, 10),
+        vu.Word("Groups", 308, 150, 41, 12),
+    ]
+
+
+def test_actual_diagnostic_ten_pixel_unread():
+    data = diagnostic_words()
+    chip = vu.locate_unread(data, 410, 920)
+    assert chip == data[3]
+    assert (1920 + round(chip.cx), round(chip.cy)) == (2075, 154)
+    assert vu.locate_unread(data[1:], 410, 920) is None
+    assert vu.locate_unread(data + [vu.Word("Unread", 180, 149, 40, 10)], 410, 920) is None
+
+
+def test_second_monitor_clips_maximized_border_without_changing_click_coordinates():
+    monitors = [
+        {"left": 0, "top": 0, "width": 1920, "height": 1080},
+        {"left": 1920, "top": 0, "width": 1920, "height": 1080},
+    ]
+    region = vu._capture_region((1912, -8, 3848, 1048), monitors, 410)
+    assert region == (1920, 0, 410, 920)
+    negative = [{"left": -1920, "top": -1080, "width": 1920, "height": 1080}]
+    assert vu._capture_region((-1928, -1088, 8, -32), negative, 410) == (-1920, -1080, 410, 920)
+    with pytest.raises(vu.VisualUnreadUnavailable, match="clipped"):
+        vu._capture_region((1700, 0, 3700, 1000), monitors, 410)
+
+
+def test_location_count_requires_explicit_observed_number():
+    data = diagnostic_words()
+    chip = data[3]
+    assert vu._unread_count(data, chip) is None
+    assert vu._unread_count(data + [vu.Word("9", 180, 149, 7, 10)], chip) == 9
+    assert vu._unread_count(data + [vu.Word("9", 180, 190, 7, 10)], chip) is None
+    assert vu._unread_count(data + [vu.Word("9", 180, 149, 7, 10),
+                                    vu.Word("8", 190, 149, 7, 10)], chip) is None
+    assert vu._unread_count([], vu.Word("Unread 9", 135, 149, 55, 10)) == 9
+
+
+def test_header_crop_matches_diagnostic_and_preserves_origin():
+    from PIL import Image
+    assert vu._header_image(Image.new("RGB", (410, 920))).size == (410, 240)
+    assert vu._header_image(Image.new("RGB", (615, 920))).size == (615, 360)
