@@ -278,3 +278,31 @@ def test_capture_rejects_window_motion_before_any_ocr(monkeypatch):
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
     with pytest.raises(vu.VisualUnreadUnavailable,match="moved during capture"):
         vu._capture_left(120)
+
+def compact_words():
+    return [vu.Word("Chats",25,5,35,12),vu.Word("Search",29,32,29,9),
+            vu.Word("unread",62,32,34,9),vu.Word("chats",98,32,24,9),
+            vu.Word("All",33,62,14,10),vu.Word("Unread",65,62,33,10),
+            vu.Word("9",101,62,6,10),vu.Word("Favourites",121,62,51,10)]
+
+def test_compact_chip_row_with_search_unread_placeholder():
+    x=compact_words()
+    chip=vu.locate_unread(x,520,920)
+    assert chip is not None and chip.x==65 and chip.y==62
+    assert vu._search_header(x,chip)=="search unread chats"
+    assert vu.locate_unread([w for w in x if w.text!="Chats"],520,920) is None
+    assert vu.locate_unread(x+[vu.Word("Unread",75,62,33,10)],520,920) is None
+
+def test_existing_unread_selection_does_not_click(monkeypatch):
+    from PIL import Image
+    import win32api
+    x=compact_words()
+    # The compact test fixture represents a real selection, not real contacts.
+    monkeypatch.setattr(vu,"_capture_left",lambda hwnd:(Image.new("RGB",(520,920)),0,0))
+    monkeypatch.setattr(vu,"_ocr_words",lambda image,cancel=None:x)
+    monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
+    monkeypatch.setattr(vu,"_visible_titles_for_layout",lambda *a:["Synthetic contact"])
+    monkeypatch.setattr(win32api,"mouse_event",lambda *a:pytest.fail("already selected: no click"))
+    result=vu.visual_scan_unread(120)
+    assert result["filterSelectedVerified"] is True
+    assert result["filterClickAttempted"] is False

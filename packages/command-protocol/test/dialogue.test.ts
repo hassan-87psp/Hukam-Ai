@@ -140,3 +140,11 @@ describe('contextual follow-up', () => {
     expect(dialogueChoices('message-body')).toEqual([]);
   });
 });
+
+// New complete commands keep their explicit verbs, even with an old dialogue.
+describe('fresh explicit file commands',()=>{
+  it('does not reinterpret a PDF search as an old file-open answer',()=>{
+    const result=resolveDialogue({topic:'which-file',intent:'file.open'},'Downloads folder mein PDF files search karo',[]);
+    expect(result.handled).toBe(false);
+  });
+});

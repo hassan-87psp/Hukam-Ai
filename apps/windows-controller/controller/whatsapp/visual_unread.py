@@ -155,7 +155,7 @@ def _capture_left(hwnd: int):
     return image, left, top
 
 
-def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
+def _legacy_unread(words: list[Word], width: int, height: int) -> Word | None:
     """Locate a uniquely supported chip; fail closed on conflicting anchors."""
     def text(w: Word) -> str:
         return re.sub(r"\s+", " ", w.text.strip()).casefold()
@@ -204,6 +204,84 @@ def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
         return None
     return candidate
 
+
+def _text(w: Word) -> str:
+    return " ".join(w.text.casefold().split())
+
+
+def _search_header(words, chip):
+    """Read only known search-placeholder anchors above the actual chip row."""
+    row = [w for w in words if chip.cy - max(100,chip.height*8) <= w.cy < chip.cy-chip.height
+           and 0 <= w.x < chip.x+chip.height*7]
+    for anchor in row:
+        if not _text(anchor).startswith("search"):
+            continue
+        nearby=sorted((w for w in row if w.x >= anchor.x and
+                       abs(w.cy-anchor.cy) <= max(4,anchor.height*.45)),key=lambda w:w.x)
+        phrase=" ".join(_text(w) for w in nearby)
+        if phrase in ("search unread chats","search all chats","search or start a new chat","search chats","search"):
+            return phrase
+    return None
+
+
+def _compact_unread(words,width,height):
+    # Proportional geometry, plus independent Chats and search anchors.
+    # No click on an isolated Unread label or arbitrary chat row.
+    header=[w for w in words if 0<=w.x and w.x+w.width<=width and
+            18<=w.cy<=min(300,height*.34) and 7<=w.height<=48]
+    hits=[]
+    for chip in header:
+        if not re.fullmatch(r"unread(?:\s*\d{1,3})?",_text(chip)):
+            continue
+        h=chip.height
+        if not 2*h <= chip.width <= 10*h or not _search_header(words,chip):
+            continue
+        aligned=[w for w in header if abs(w.cy-chip.cy)<=max(5,.55*h)]
+        alls=[w for w in aligned if _text(w)=="all" and
+              h*.3<=w.width<=4*h and
+              0<=chip.x-(w.x+w.width)<=5*h]
+        right=[w for w in aligned if _text(w) in ("favourites","favorites") and
+               0<=w.x-(chip.x+chip.width)<=10*h]
+        headings=[w for w in header if _text(w)=="chats" and
+                  2*h<=chip.cy-w.cy<=18*h and w.x<=chip.x and
+                  w.x>=max(0,chip.x-12*h)]
+        if len(alls)==len(right)==len(headings)==1:
+            hits.append(chip)
+    return hits[0] if len(hits)==1 else None
+
+
+def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
+    old=_legacy_unread(words,width,height)
+    compact=_compact_unread(words,width,height)
+    if old is not None and compact is not None and old!=compact:
+        return None
+    return old if old is not None else compact
+
+
+def _visible_titles_for_layout(words, width, chip):
+    # Keep established full-size row recognition. Compact font layouts use
+    # scale-normalized geometry; require corroborated header and a distinct
+    # right timestamp column with at least two matching rows.
+    regular=visible_sender_titles(words,width,chip.y+chip.height)
+    if regular or not _search_header(words,chip):
+        return regular
+    factor=19/max(7,chip.height)
+    if factor<=1.12 or factor>2.8:
+        return []
+    scaled=[Word(w.text,w.x*factor,w.y*factor,w.width*factor,w.height*factor) for w in words]
+    moments=[w for w in scaled if w.cy>(chip.y+chip.height)*factor+65 and
+             w.cx>=width*factor*.50 and _DATE.fullmatch(w.text.strip())]
+    # Right edge rather than timestamp length: "Yesterday" and clock times
+    # differ in width but share the same right-aligned chat column.
+    clusters=[[v for v in moments if abs((v.x+v.width)-(w.x+w.width))<=24] for w in moments]
+    usable=[group for group in clusters if len(group)>=2]
+    if not usable:
+        return []
+    group=max(usable,key=len)
+    if any(len(g)==len(group) and g!=group for g in usable):
+        return []
+    edge=max(w.x+w.width for w in group)
+    return visible_sender_titles(scaled,min(round(width*factor),round(edge+20)),(chip.y+chip.height)*factor)
 
 _SKIP = {
     "all", "unread", "favourites", "favorites", "chats", "archived",
@@ -299,8 +377,21 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     if chip is None:
         raise VisualUnreadUnavailable(
             "Windows UIA and local visual OCR could not uniquely identify "
-            "a unique Unread chip with independent header anchors. No mouse click was attempted."
+            "an unambiguous Unread chip with independent header anchors. No mouse click was attempted. "
+            "Keep Chats, Search, All, Unread and Favourites visible; layout not confirmed."
         )
+
+    if _search_header(words,chip)=="search unread chats":
+        senders=_visible_titles_for_layout(words,image.width,chip)
+        _ensure_not_cancelled(cancel)
+        _safe_foreground(active_hwnd)
+        if not senders:
+            raise VisualUnreadUnavailable("Unread filter is visible but sender rows could not be verified. No names guessed.")
+        return {"supported":True,"senders":senders,"visibleChatCount":len(senders),
+                "totalUnreadChats":None,"visibleOnly":True,"messagesRead":False,
+                "filterClickAttempted":False,"filterSelectedVerified":True,
+                "source":"Local Windows visual OCR of existing Personal WhatsApp Unread filter",
+                "note":"Existing Unread search placeholder confirms the visible filter; no additional click."}
 
     x, y = left + round(chip.cx), top + round(chip.cy)
     # Client-area/foreground check, not a guessed screen coordinate.
@@ -363,16 +454,16 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
             "Unread was clicked but the filter row could not be reverified visually."
         )
     after = _chip_background(after_image, selected_chip)
-    selection_verified = before >= 0 and after >= before + 7
+    selection_verified = (_search_header(second_words,selected_chip)=="search unread chats" or
+                          (before >= 0 and after >= before + 7))
     # If the chip already appeared selected, a click could have changed it.
     # Never label names 'verified unread' without positive visual evidence.
-    if after >= 0 and before >= 0 and after + 7 < before:
+    if _search_header(second_words,selected_chip)!="search unread chats" and after >= 0 and before >= 0 and after + 7 < before:
         raise VisualUnreadUnavailable(
             "Unread filter appears to have switched off; no unread sender names reported."
         )
 
-    senders = visible_sender_titles(second_words, after_image.width,
-                                   selected_chip.y + selected_chip.height)
+    senders = _visible_titles_for_layout(second_words,after_image.width,selected_chip)
     if not senders:
         raise VisualUnreadUnavailable(
             "Unread filter was clicked but local OCR could not confirm any "
