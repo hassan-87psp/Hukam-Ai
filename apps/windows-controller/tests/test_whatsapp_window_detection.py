@@ -25,6 +25,8 @@ def test_native_whatsapp_detected_with_non_whatsapp_title():
     assert matches[0].process == "WhatsApp.exe"
     assert locator.matches_desktop_window(_w("WhatsAppDesktop.exe", "Inbox"))
     assert locator.matches_desktop_window(_w("WhatsAppBeta.exe", "Messenger"))
+    assert locator.matches_desktop_window(_w("WhatsApp.Root.exe", "Chats"))
+    assert "whatsapp.root.exe" in locator.NATIVE_PROCESSES
 
 
 def test_webview_host_requires_explicit_whatsapp_top_level_title():
@@ -34,6 +36,12 @@ def test_webview_host_requires_explicit_whatsapp_top_level_title():
     assert not locator.matches_desktop_window(_w("ApplicationFrameHost.exe", "Settings"))
     assert not locator.matches_desktop_window(_w("chrome.exe", "WhatsApp"))
     assert not locator.matches_desktop_window(_w("msedge.exe", "WhatsApp"))
+
+
+def test_webview2_window_belongs_to_whatsapp_root_only_if_parent_confirmed(monkeypatch):
+    monkeypatch.setattr(locator, "_has_whatsapp_parent", lambda pid: pid == 99)
+    assert locator.matches_desktop_window(WindowInfo(10, "Chats", "msedgewebview2.exe", 99))
+    assert not locator.matches_desktop_window(WindowInfo(11, "Chats", "msedgewebview2.exe", 100))
 
 
 def test_whatsapp_check_finds_native_window_without_title(monkeypatch):
