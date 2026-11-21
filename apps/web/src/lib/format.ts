@@ -89,6 +89,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'chatgpt.download_visible': 'Download visible ChatGPT file',
   'whatsapp.read_selected': 'Read selected WhatsApp chat',
   'whatsapp.draft_reply': 'Draft WhatsApp reply',
+  'whatsapp.send_reviewed': 'Send reviewed WhatsApp message',
   'whatsapp.attach_preview': 'WhatsApp file preview',
   'browser.control': 'Browser input (approval)',
   'notepad.type': 'Type into Notepad (approval)',
