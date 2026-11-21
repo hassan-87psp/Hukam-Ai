@@ -129,6 +129,29 @@ def test_whatsapp_attachment_only_allowed_path_and_preview(sandbox, tmp_path):
     assert not run("whatsapp.attach_preview", {"contact": "Test Contact", "path": str(executable)}).ok
 
 
+def test_stale_whatsapp_attachment_authorization_is_invalidated_on_new_preview(sandbox):
+    # Even if a new preview fails, it must never leave the older file/send
+    # authorized for a different or accidentally retried attachment.
+    desktop_ops._pending_attachment = {
+        "contact": "Previous Contact", "path": "C:\\old\\report.pdf",
+        "hwnd": 123, "createdAt": 0, "sha256": "old", "size": 5,
+    }
+    result = desktop_ops.attach_preview("Ali", "C:\\Users\\Test\\Downloads\\new.pdf")
+    assert result["simulated"] is True
+    assert desktop_ops._pending_attachment is None
+
+
+def test_chatgpt_completed_file_snapshot_requires_known_type_and_size(tmp_path):
+    target = tmp_path / "new-banner.png"
+    target.write_bytes(b"12345")
+    (tmp_path / "image.png.crdownload").write_bytes(b"partial")
+    (tmp_path / "readme.exe").write_bytes(b"danger")
+    files = chatgpt._files(tmp_path)
+    assert files["new-banner.png"][1] == 5
+    assert "image.png.crdownload" not in files
+    assert "readme.exe" not in files
+
+
 def test_chatgpt_project_url_and_draft_constraints(sandbox):
     url = "https://chatgpt.com/g/g-p-project123"
     assert chatgpt.matches_project(url, url)
