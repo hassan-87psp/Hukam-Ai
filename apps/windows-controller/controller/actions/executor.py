@@ -267,6 +267,14 @@ class Executor:
         return diagnostics.probe()
 
     # -- approved screen and browser observation ------------------------
+    def do_ui_scroll(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Scroll cancelled")
+        try:
+            return accessibility.scroll_active(a["steps"])
+        except accessibility.AccessibilityError as exc:
+            raise ActionError("ACCESSIBILITY_UNAVAILABLE", str(exc)) from exc
+
     def do_ui_inspect(self, _a, _c):
         try:
             return accessibility.inspect()

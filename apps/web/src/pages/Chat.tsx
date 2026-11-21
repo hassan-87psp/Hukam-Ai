@@ -20,7 +20,7 @@ function AgentBubble({ m }: { m: Extract<ChatMessage, { kind: 'agent' }> }) {
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue/15 ring-1 ring-ice/25"><BrainMark className="h-5 w-5" /></span>
       <div className={cx('glass max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 ring-1', tone)}>
         {m.provider === 'gemini' && <span className="mb-1 inline-block text-[10px] font-medium tracking-wide text-ice">GEMINI AI</span>}
-        <p className={cx('whitespace-pre-wrap break-words text-[15px] leading-relaxed', settings.responseLang === 'ur' && m.provider !== 'gemini' && 'urdu text-right')} lang={settings.responseLang === 'ur' && m.provider !== 'gemini' ? 'ur' : undefined}>{text}</p>
+        <p className={cx('whitespace-pre-wrap break-words text-[15px] leading-relaxed', settings.responseLang === 'ur' && 'urdu text-right')} lang={settings.responseLang === 'ur' ? 'ur' : undefined}>{text}</p>
         <div className="mt-1 flex items-center justify-between gap-3">
           <span className="text-[10px] text-ink2">{clock(m.at)}</span>
           <button onClick={() => say(m.msg, true)} className="text-ink2 hover:text-ice" aria-label="Speak this reply"><Volume2 className="h-3.5 w-3.5" /></button>
@@ -42,15 +42,24 @@ function UserBubble({ m }: { m: Extract<ChatMessage, { kind: 'user' }> }) {
 }
 
 export default function Chat() {
-  const { chat, commandMap, devices, clearChat, pendingDialogueTopic, runText } = useStore();
+  const { chat, commandMap, devices, clearChat, pendingDialogueTopic, restoreOperatorPending, runText } = useStore();
   const end = useRef<HTMLDivElement>(null);
   const [searchParams,setSearchParams] = useSearchParams();
   const [projects,setProjects] = useState<{id:string;name:string}[]>([]);
   const activeProject = searchParams.get('projectId') ?? '';
+  const visibleChat = chat.filter(m => (m.projectId ?? null) === (activeProject || null));
   useEffect(()=>{void get<{id:string;name:string}[]>('/api/projects').then(setProjects).catch(()=>{});},[]);
+  useEffect(()=>{
+    let active=true;
+    const query=activeProject?'?projectId='+encodeURIComponent(activeProject):'';
+    void get<{question:string;topic:string}|null>('/api/operator/pending'+query)
+      .then(p=>{if(active)restoreOperatorPending(!!p);})
+      .catch(()=>{});
+    return ()=>{active=false;};
+  },[activeProject,restoreOperatorPending]);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [chat.length]);
+  }, [visibleChat.length, activeProject]);
   const name = (id: string | null) => devices.find((d) => d.id === id)?.name;
 
   return (
@@ -60,8 +69,8 @@ export default function Chat() {
           <h1 className="font-display text-xl font-bold">AI Chat</h1>
           <p className="text-xs text-ink2">Chat naturally. Compound computer requests generate a reviewed action plan; HUKM's Windows controller performs approved steps.</p>
         </div>
-        {chat.length > 0 && (
-          <button className="btn-ghost px-3 py-2 text-xs" onClick={clearChat}><Trash2 className="h-4 w-4" /> Clear</button>
+        {visibleChat.length > 0 && (
+          <button className="btn-ghost px-3 py-2 text-xs" onClick={()=>clearChat(activeProject || null)}><Trash2 className="h-4 w-4" /> Clear</button>
         )}
       </div>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
@@ -74,10 +83,10 @@ export default function Chat() {
         <Link to="/projects" className="text-ice hover:underline">Manage instructions &amp; memory</Link>
       </div>
       <div className="flex-1 space-y-3 pb-4">
-        {chat.length === 0 && (
+        {visibleChat.length === 0 && (
           <EmptyState icon={<Bot className="h-5 w-5" />} title="Ask HUKM AI anything" body="Roman Urdu mein message likhein, jaise 'Aaj kya seekhoon?' Ya laptop command: 'Notepad kholo'." />
         )}
-        {chat.map((m) => {
+        {visibleChat.map((m) => {
           if (m.kind === 'user') return <UserBubble key={m.id} m={m} />;
           if (m.kind === 'agent') return <AgentBubble key={m.id} m={m} />;
           if (m.kind === 'plan') return <div key={m.id} className="pl-2 sm:pl-10"><OperatorPlanCard plan={m.plan}/></div>;

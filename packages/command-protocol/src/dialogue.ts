@@ -128,7 +128,7 @@ export function resolveDialogue(
   }
 
   if (state.topic === 'which-app') {
-    if (parsed.kind === 'command' && parsed.action === 'app.open')
+    if (parsed.kind === 'command' && (parsed.action === 'app.open' || parsed.action === 'whatsapp.open'))
       return { handled: true, result: parsed };
     if (parsed.kind === 'clarify' && parsed.topic === 'whatsapp-choice')
       return { handled: true, result: parsed, next: { topic: 'whatsapp-choice' } };

@@ -24,7 +24,7 @@ from .communication.client import ControllerClient
 from .communication.pairing import PairingError, claim
 from .config import IS_WINDOWS, Config, data_dir
 from .security import credentials
-from .system import autostart
+from .system import autostart, single_instance
 
 BANNER = r"""
   ╦ ╦╦ ╦╦╔═╔╦╗  ╔═╗╦
@@ -76,40 +76,48 @@ def do_pair(server: str, code: str) -> int:
 
 
 def do_run() -> int:
-    dev = credentials.load_device()
-    cfg = Config.load()
-    if not dev:
-        print("This laptop is not paired yet. Run:  hukm-controller pair --server <relay URL> --code <code>")
-        return 1
-    cfg.server_url = dev["server_url"]
-    setup_logging(cfg.log_level)
-    print(BANNER.format(v=VERSION))
-    print(f"  Relay:   {cfg.server_url}")
-    print(f"  Device:  {dev.get('name') or dev['device_id']}")
-    print(f"  Config:  {Config.path()}")
-    print("  Remote control is ACTIVE while this window is open. Close it (or press Ctrl+C) to stop.\n")
-
-    def on_status(s: str) -> None:
-        set_title(f"HUKM AI Controller — {s.upper()}")
-
-    client = ControllerClient(cfg, dev["token"], on_status=on_status)
-
-    async def main() -> None:
-        loop = asyncio.get_running_loop()
-        try:
-            loop.add_signal_handler(signal.SIGINT, client.stop)
-            loop.add_signal_handler(signal.SIGTERM, client.stop)
-        except NotImplementedError:
-            pass  # Windows: KeyboardInterrupt handles Ctrl+C
-        await client.run_forever()
-
+    guard = single_instance.acquire()
+    if guard is None:
+        print("HUKM AI is already running on this Windows session. "
+              "Close the existing ONLINE Controller before starting another copy.")
+        return 2
     try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        pass
-    print("\nController stopped. Remote control is OFF.")
-    return 0
+        dev = credentials.load_device()
+        cfg = Config.load()
+        if not dev:
+            print("This laptop is not paired yet. Run:  hukm-controller pair --server <relay URL> --code <code>")
+            return 1
+        cfg.server_url = dev["server_url"]
+        setup_logging(cfg.log_level)
+        print(BANNER.format(v=VERSION))
+        print(f"  Relay:   {cfg.server_url}")
+        print(f"  Device:  {dev.get('name') or dev['device_id']}")
+        print(f"  Config:  {Config.path()}")
+        print("  Remote control is ACTIVE while this window is open. Close it (or press Ctrl+C) to stop.\n")
 
+        def on_status(s: str) -> None:
+            set_title(f"HUKM AI Controller — {s.upper()}")
+
+        client = ControllerClient(cfg, dev["token"], on_status=on_status)
+
+        async def main() -> None:
+            loop = asyncio.get_running_loop()
+            try:
+                loop.add_signal_handler(signal.SIGINT, client.stop)
+                loop.add_signal_handler(signal.SIGTERM, client.stop)
+            except NotImplementedError:
+                pass  # Windows: KeyboardInterrupt handles Ctrl+C
+            await client.run_forever()
+
+        try:
+            asyncio.run(main())
+        except KeyboardInterrupt:
+            pass
+        print("\nController stopped. Remote control is OFF.")
+        return 0
+
+    finally:
+        single_instance.release(guard)
 
 def interactive_first_run() -> int:
     print(BANNER.format(v=VERSION))

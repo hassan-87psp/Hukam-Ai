@@ -204,9 +204,15 @@ export function parseCommand(input: string): ParseResult {
   if (click) return cmd('browser.control', { kind: 'click', x: Number(click[1]), y: Number(click[2]) }, 'browser-click');
   const typed = input.trim().match(/^(?:browser\s+)?(?:type|likho)(?:\s+text)?\s*:\s*(.{1,1000})$/is);
   if (typed) return cmd('browser.control', { kind: 'type', text: typed[1].trim() }, 'browser-type');
-  const scroll = t.match(/^(?:browser\s+)?scroll\s+(up|down)(?:\s+(\d))?(?:\s+karo)?$/);
-  if (scroll) return cmd('browser.control',
-    { kind: 'scroll', steps: (scroll[1] === 'up' ? 1 : -1) * Number(scroll[2] ?? 2) }, 'browser-scroll');
+  // "Scroll karo" works in the active Windows app. Only "browser scroll"
+  // is routed to browser-specific input; both need separate approval.
+  const scroll = t.match(/^(?:(browser|laptop|window|app|page)\s+)?scroll(?:\s+(up|down))?(?:\s+(\d))?(?:\s+(?:karo|kar do))?$/);
+  if (scroll) {
+    const steps = (scroll[2] === 'up' ? 1 : -1) * Number(scroll[3] ?? 2);
+    return scroll[1] === 'browser'
+      ? cmd('browser.control', { kind:'scroll',steps }, 'browser-scroll')
+      : cmd('ui.scroll', { steps }, 'active-app-scroll');
+  }
   const press = t.match(/^(?:browser\s+)?press\s+(enter|tab|escape|backspace|home|end|arrowdown|arrowup|ctrl\+l|ctrl\+a)$/);
   if (press) return cmd('browser.control', { kind: 'key', key: press[1] }, 'browser-key');
 
@@ -238,17 +244,21 @@ export function parseCommand(input: string): ParseResult {
   // "<name> ke naye messages batao" — reads unread-chat counts only.
   if (/\b(unread|naye|nayi|new) (messages|message|chats)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-unread');
 
-  // An ambiguous WhatsApp launch should ASK which app, not silently choose.
-  // Explicit "WhatsApp Desktop/Web kholo" remains a single-step command.
+  // Owner preference: installed PERSONAL WhatsApp Desktop is the default.
+  // "Desktop web WhatsApp" is a contradictory phrase, not authorization to
+  // silently open WhatsApp Web. Desktop always wins if both are mentioned.
+  // Only an explicit "WhatsApp Web kholo" request selects a browser tab.
   if (/\bwhatsapp\b/.test(t)) {
-    const mode = /\b(web|browser|chrome)\b/.test(t) ? 'web' : 'desktop';
-    if (/\b(unread|naye|nayi|messages|message|check|dekho|dekh|batao|dikhao|kitne|koi)\b/.test(t)) return cmd('whatsapp.check', { mode }, 'whatsapp-check');
+    const desktopMentioned = /\b(desktop|installed|application|laptop|pc|windows app|personal)\b/.test(t);
+    const explicitWeb = /\bwhatsapp\s+web\b|\bweb\s+whatsapp\b/.test(t);
+    const mode = explicitWeb && !desktopMentioned ? 'web' : 'desktop';
+    if (/\b(unread|naye|nayi|messages|message|msg|msgs|check|dekho|dekh|batao|dikhao|kitne|koi)\b/.test(t))
+      return cmd('whatsapp.check', { mode }, 'whatsapp-check');
     if (OPEN.test(t) || t === 'whatsapp' || t === 'whatsapp desktop' || t === 'whatsapp web') {
-      if (/\b(web|browser|chrome)\b/.test(t)) return cmd('web.open', { url: 'https://web.whatsapp.com/' }, 'whatsapp-web-open');
-      if (/\b(desktop|app|application|installed|install|laptop)\b/.test(t)) return cmd('whatsapp.open', { mode: 'desktop' }, 'whatsapp-desktop-open');
-      return { kind: 'clarify', topic: 'whatsapp-choice', normalized: t };
+      if (mode === 'web') return cmd('web.open', { url: 'https://web.whatsapp.com/' }, 'explicit-whatsapp-web-open');
+      return cmd('whatsapp.open', { mode: 'desktop' }, 'personal-whatsapp-desktop-default');
     }
-    return cmd('whatsapp.check', { mode }, 'whatsapp-default');
+    return cmd('whatsapp.check', { mode }, 'personal-whatsapp-default');
   }
 
   // YouTube homepage: treat common Roman Urdu "open kro/mro" typo as

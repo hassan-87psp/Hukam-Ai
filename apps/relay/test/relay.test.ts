@@ -245,6 +245,83 @@ describe('supervised AI computer operator', () => {
     expect(()=>validatePlanShape({summary:'click',steps:[{action:'browser.control',args:{kind:'click',x:100,y:200}}]})).toThrow();
     expect(()=>validatePlanShape({summary:'delete',steps:[{action:'file.delete',args:{path:'C:/x'}}]})).toThrow();
   });
+  it('always honors saved Chrome profile and ChatGPT URL for selected Projects',async()=>{
+    const p=await api('POST','/api/projects',{
+      name:'Gold Banner Project',
+      chromeProfile:'Profile 16',
+      chatgptProjectUrl:'https://chatgpt.com/g/g-p-private-hukm-project',
+      instructions:'Use this saved Chrome profile for every ChatGPT banner.',
+    });
+    expect(p.status).toBe(200);
+    try {
+      const chatgpt=await api('POST','/api/operator/plan',{
+        text:'ChatGPT kholo',projectId:p.data.id,
+      });
+      expect(chatgpt.status).toBe(200);
+      expect(chatgpt.data.steps).toEqual([{
+        action:'browser.profile_open',args:{
+          profile:'Profile 16',url:'https://chatgpt.com/g/g-p-private-hukm-project',
+        },
+      }]);
+      const calendar=await api('POST','/api/operator/plan',{
+        text:'Google Calendar kholo',projectId:p.data.id,
+      });
+      expect(calendar.status).toBe(200);
+      expect(calendar.data.steps[0]).toMatchObject({
+        action:'browser.profile_open',args:{profile:'Profile 16'},
+      });
+    }finally{
+      await api('DELETE','/api/projects/'+p.data.id);
+    }
+  });
+
+  it('asks natural WhatsApp follow-ups, persists slots and never sends without a plan review',async()=>{
+    const originalFetch=globalThis.fetch;
+    const oldKey=process.env.GEMINI_API_KEY;
+    process.env.GEMINI_API_KEY='HUKM_TEST_KEY';
+    const outputs=[
+      {question:'WhatsApp par kis contact ko reply draft karna hai?',steps:[]},
+      {question:'Ali ko kya message likhna hai?',steps:[]},
+      {summary:'Open Personal WhatsApp Desktop and draft reply for Ali, do not send.',
+       steps:[{action:'whatsapp.open',args:{mode:'desktop'}},
+         {action:'whatsapp.draft_reply',args:{contact:'Ali',message:'Kal 3 PM milte hain'}}]},
+    ];
+    let calls=0;
+    const seenRequests:string[]=[];
+    try{
+      globalThis.fetch=((input:any,init?:any)=>{
+        if(String(input).startsWith('https://generativelanguage.googleapis.com/')){
+          const body=JSON.parse(String(init?.body));
+          seenRequests.push(body.contents[0].parts[0].text);
+          return Promise.resolve(new Response(JSON.stringify({candidates:[{content:{parts:[{
+            text:JSON.stringify(outputs[calls++])
+          }]}}]}),{status:200}));
+        }
+        return originalFetch(input,init);
+      }) as typeof fetch;
+      const before=(h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands').get() as any).n;
+      const first=await api('POST','/api/operator/plan',{text:'WhatsApp par message bhejo'});
+      expect(first.data).toMatchObject({kind:'clarify',topic:'operator-followup'});
+      expect((await api('GET','/api/operator/pending')).data.question).toContain('kis contact');
+      const next=await api('POST','/api/operator/plan',{text:'Ali'});
+      expect(next.data).toMatchObject({kind:'clarify'});
+      expect((await api('GET','/api/operator/pending')).data.question).toContain('kya message');
+      const plan=await api('POST','/api/operator/plan',{text:'Kal 3 PM milte hain'});
+      expect(plan.data.steps.map((x:any)=>x.action)).toEqual(['whatsapp.open','whatsapp.draft_reply']);
+      expect(seenRequests[1]).toContain('WhatsApp par message bhejo');
+      expect(seenRequests[2]).toContain('Ali');
+      expect((await api('GET','/api/operator/pending')).data).toBeNull();
+      expect((h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands').get() as any).n).toBe(before);
+      expect(calls).toBe(3);
+      const cancelled=await api('POST','/api/operator/plan',{text:'Rehne do'});
+      expect(cancelled.data.kind).toBe('cancelled');
+    }finally{
+      globalThis.fetch=originalFetch;
+      if(oldKey===undefined)delete process.env.GEMINI_API_KEY;
+      else process.env.GEMINI_API_KEY=oldKey;
+    }
+  });
+
   it('generates an owner-reviewed multi-step task, then executes with audited status', async () => {
     const originalFetch=globalThis.fetch;
     const oldKey=process.env.GEMINI_API_KEY;
@@ -384,40 +461,32 @@ describe('commands', () => {
     expect(c.status).toBe('cancelled');
     expect(device.inbox.some((m) => m.type === 'command' && m.command.id === r.data.command.id)).toBe(false);
   });
-  it('asks which WhatsApp without executing anything until the user chooses', async () => {
-    device.auto = () => ({ ok: true, result: { opened: 'desktop' } });
-    const before = device.inbox.filter((m) => m.type === 'command').length;
-    const asked = await api('POST', '/api/commands', { text: 'WhatsApp kholo', source: 'voice' });
-    expect(asked.data).toMatchObject({ kind: 'clarify', topic: 'whatsapp-choice' });
-    expect(device.inbox.filter((m) => m.type === 'command')).toHaveLength(before);
-    const vague = await api('POST', '/api/commands', { text: 'Haan', source: 'voice' });
-    expect(vague.data).toMatchObject({ kind: 'clarify', topic: 'whatsapp-choice' });
-    expect(device.inbox.filter((m) => m.type === 'command')).toHaveLength(before);
-    const answer = await api('POST', '/api/commands', { text: 'Desktop wala', source: 'voice' });
-    expect(answer.data).toMatchObject({ kind: 'command', command: { action: 'whatsapp.open', args: { mode: 'desktop' } } });
-    await waitStatus(answer.data.command.id, ['completed']);
-    expect(device.inbox.filter((m) => m.type === 'command')).toHaveLength(before + 1);
+  it("opens Personal WhatsApp Desktop by default with no unnecessary question", async () => {
+    device.auto=()=>({ok:true,result:{opened:'desktop',verified:true}});
+    const opened=await api('POST','/api/commands',{text:'WhatsApp kholo',source:'voice'});
+    expect(opened.data).toMatchObject({kind:'command',command:{action:'whatsapp.open',args:{mode:'desktop'}}});
+    await waitStatus(opened.data.command.id,['completed']);
+    const contradictory=await api('POST','/api/commands',{text:'desktop web WhatsApp kholo',source:'voice'});
+    expect(contradictory.data).toMatchObject({kind:'command',command:{action:'whatsapp.open',args:{mode:'desktop'}}});
+    await waitStatus(contradictory.data.command.id,['completed']);
   });
-
-  it('understands WhatsApp Web follow-up and independent new commands', async () => {
-    device.auto = () => ({ ok: true, result: {} });
-    expect((await api('POST', '/api/commands', { text: 'WhatsApp kholo' })).data.kind).toBe('clarify');
-    const web = await api('POST', '/api/commands', { text: 'Web wala' });
-    expect(web.data).toMatchObject({ kind: 'command', command: { action: 'web.open', args: { url: 'https://web.whatsapp.com/' } } });
-    await waitStatus(web.data.command.id, ['completed']);
-    expect((await api('POST', '/api/commands', { text: 'WhatsApp kholo' })).data.kind).toBe('clarify');
-    const changed = await api('POST', '/api/commands', { text: 'Notepad kholo' });
-    expect(changed.data.command.action).toBe('app.open');
-    await waitStatus(changed.data.command.id, ['completed']);
-    expect((await api('POST', '/api/commands', { text: 'Desktop wala' })).data.kind).toBe('unsupported');
+  it('WhatsApp Web only opens when explicitly requested', async () => {
+    device.auto=()=>({ok:true,result:{url:'https://web.whatsapp.com/',verified:false}});
+    const web=await api('POST','/api/commands',{text:'WhatsApp Web kholo'});
+    expect(web.data).toMatchObject({kind:'command',command:{action:'web.open',args:{url:'https://web.whatsapp.com/'}}});
+    await waitStatus(web.data.command.id,['completed']);
+    const notepad=await api('POST','/api/commands',{text:'Notepad kholo'});
+    expect(notepad.data.command.action).toBe('app.open');
+    await waitStatus(notepad.data.command.id,['completed']);
+    expect((await api('POST','/api/commands',{text:'Desktop wala'})).data.kind).toBe('unsupported');
   });
-
-  it('cancels the WhatsApp choice without opening anything', async () => {
-    const before = device.inbox.filter((m) => m.type === 'command').length;
-    expect((await api('POST', '/api/commands', { text: 'WhatsApp kholo' })).data.kind).toBe('clarify');
-    const cancelled = await api('POST', '/api/commands', { text: 'Rehne do' });
-    expect(cancelled.data).toMatchObject({ kind: 'reply', topic: 'whatsapp-cancelled' });
-    expect(device.inbox.filter((m) => m.type === 'command')).toHaveLength(before);
+  it('incomplete WhatsApp message still asks for contact/content, never sends', async () => {
+    const before=device.inbox.filter((m)=>m.type==='command').length;
+    const missing=await api('POST','/api/commands',{text:'Message bhejo'});
+    expect(missing.data).toMatchObject({kind:'clarify',topic:'message-contact'});
+    expect(device.inbox.filter((m)=>m.type==='command')).toHaveLength(before);
+    const cancelled=await api('POST','/api/commands',{text:'Rehne do'});
+    expect(cancelled.data).toMatchObject({kind:'reply',topic:'conversation-cancelled'});
   });
 
   it('whatsapp compose needs a saved contact and always needs approval', async () => {

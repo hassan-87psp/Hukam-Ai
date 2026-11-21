@@ -6,7 +6,7 @@
  * credential reading, or model-generated screen coordinates. No action may
  * be reported as verified solely because Windows accepted an input event.
  */
-import { ACTIONS, parseCommand, validateCommand } from '../../../packages/command-protocol/src/index';
+import { ACTIONS, parseCommand, routeIntent, validateCommand } from '../../../packages/command-protocol/src/index';
 import type { ActionName, CommandStatus } from '../../../packages/shared-types/src/index';
 import { HttpError, Relay } from './core';
 import { all, one, run, type DB, type Row } from './db';
@@ -15,6 +15,9 @@ import type { Projects } from './projects';
 import { addMs, newId, nowIso } from './util';
 
 type Step = {action:ActionName;args:Record<string,unknown>};
+type Proposal = {summary:string;steps:Step[]} | {question:string};
+type Clarification = {kind:'clarify';topic:'operator-followup';question:string};
+type Cancelled = {kind:'cancelled';message:string};
 type Plan = {id:string; summary:string; request:string; projectId:string|null; steps:Step[]; expiresAt:string; createdAt:string};
 type TaskRun = {id:string; planId:string|null; deviceId:string|null; status:string; currentStep:number; totalSteps:number; commandIds:string[]; error:string|null; createdAt:string; updatedAt:string};
 
@@ -24,7 +27,7 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
   'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply',
-  'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'calendar.event_draft',
+  'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft',
   'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
@@ -69,7 +72,7 @@ function restoreJson(text:string):unknown{
   try {return JSON.parse(cleaned);}catch {throw new HttpError(422,'AI_PLAN_INVALID','Gemini did not return a valid structured plan');}
 }
 
-async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=fetch):Promise<{summary:string;steps:Step[]}> {
+async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=fetch):Promise<Proposal> {
   const key=process.env.GEMINI_API_KEY?.trim();
   if(!key)throw new HttpError(503,'AI_NOT_CONFIGURED','Gemini planner is unavailable');
   const model=process.env.GEMINI_MODEL??'gemini-3.5-flash-lite';
@@ -79,16 +82,19 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
   const timeout=setTimeout(()=>controller.abort(),20000);
   const policy=[
     'You are the COMMAND UNDERSTANDING PLANNER for HUKM, a remotely paired Windows PC.',
-    'Return ONLY a JSON object with summary string and steps array (1-5) of {action,args}.',
+    'Return ONLY a JSON object. For an executable task: {"summary":"what will be done","steps":[{"action":"name","args":{}}]}.',
+    'For an incomplete task: {"question":"one concise Roman Urdu follow-up question","steps":[]}.',
+    'Ask ONLY the one necessary missing detail, and retain the rest from context. Never invent contacts, files, dates, titles or Chrome profiles.',
+    'Answer follow-up messages using the original request and most recent answer supplied. Do not ask the same question twice if its answer is present.',
     'Only use these precise action names: app.open, folder.open, folder.list, file.search, file.open, file.reveal,',
     'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
-    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, calendar.event_draft,',
+    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, calendar.event_draft,',
     'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
     'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.attach_preview.',
     'Never use arbitrary shell, file deletion, payments, password/OTP reading or WhatsApp Send. Do not pretend a draft was sent.',
     'calendar.event_draft opens a prefilled Google/Outlook editor only, not a saved event or invitations. Return an honest draft summary.',
     'For creating a meeting, use calendar.event_draft only with explicit provider, title, startUtc, endUtc, timeZone and saved Chrome profile.',
-    'If time, date, calendar provider, or selected recipient is unknown, return {"summary":"Details needed","steps":[]} instead of guessing.',
+    'If time, date, calendar provider, or selected recipient is unknown, ask one question and set steps:[]. Never guess.',
     'WhatsApp is PERSONAL DESKTOP only. whatsapp.read_selected reads visible chat after separate owner approval, do not send contents to Gemini.',
     'whatsapp.draft_reply needs exact selected contact and reply text, types only; never sends.',
     'whatsapp.attach_preview needs exact selected contact and fully qualified local file path in an allowed folder; does not send.',
@@ -101,7 +107,7 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'For "Notepad kholo aur 1 se 9 likho": steps app.open args {"app":"notepad"},',
     'then notepad.type args {"text":"1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9"}.',
     'For "YouTube kholo": use web.open args {"url":"https://www.youtube.com/"} not youtube.search.',
-    'For "scroll karo": use browser.control with {"kind":"scroll","steps":-2}.',
+    'For "scroll karo": use ui.scroll with {"steps":-2}; never invent screen coordinates.',
     'For "WhatsApp kis ka message aaya": use whatsapp.unread_senders with {}.',
     'For "WhatsApp ki selected chat parh ke batao": use whatsapp.read_selected with {}.',
     'For "screen par kya buttons hain": use ui.inspect with {}. ui.activate needs exact label.',
@@ -130,9 +136,15 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     const text=parsed?.candidates?.[0]?.content?.parts?.map((p:any)=>String(p.text??'')).join('')??'';
     if(!text)throw new HttpError(422,'AI_PLAN_INVALID','Gemini returned no plan');
     const json=restoreJson(text);
-    // Empty steps are not executed or turned into a fictitious success.
-    if(json && typeof json==='object' && Array.isArray((json as any).steps) && !(json as any).steps.length)
-      throw new HttpError(422,'NOT_SUPPORTED','This workflow needs an integration HUKM does not have yet');
+    // Empty steps are questions ONLY if the model supplied a genuine question.
+    // Unsupported tasks still fail; never turn a non-action into "Completed".
+    if(json && typeof json==='object' && Array.isArray((json as any).steps) && !(json as any).steps.length){
+      const question=(json as any).question;
+      if(typeof question==='string' && question.trim().length>=5 && question.length<=300 &&
+         !/password|otp|api key|recovery code/i.test(question))
+        return {question:question.trim()};
+      throw new HttpError(422,'NOT_SUPPORTED','This request needs an integration HUKM does not yet have');
+    }
     return validatePlanShape(json);
   }catch(e){
     if(e instanceof HttpError)throw e;
@@ -159,10 +171,49 @@ export class Operator {
     if(!row)throw new HttpError(404,'RUN_NOT_FOUND','Task run not found');
     return runRow(row);
   }
-  async plan(userId:string,text:unknown,projectId:unknown):Promise<Plan> {
+  private dialogueKey(projectId:unknown):string {
+    return typeof projectId==='string' && projectId.trim() ? projectId.trim() : 'general';
+  }
+  pending(userId:string,projectId:unknown):{question:string;topic:string}|null{
+    const key=this.dialogueKey(projectId);
+    const row=one(this.db,'SELECT * FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
+    if(!row)return null;
+    if(Date.parse(row.expires_at)<Date.now()){
+      this.clearPending(userId,key);
+      return null;
+    }
+    return {question:row.question,topic:row.topic};
+  }
+  private clearPending(userId:string,key:string){
+    run(this.db,'DELETE FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
+  }
+  private savePending(userId:string,key:string,request:string,question:string){
+    const stamp=nowIso();
+    run(this.db,`INSERT INTO operator_dialogues(user_id,project_key,request,question,topic,created_at,updated_at,expires_at)
+      VALUES(?,?,?,?,'operator-followup',?,?,?)
+      ON CONFLICT(user_id,project_key) DO UPDATE SET request=excluded.request,
+        question=excluded.question,updated_at=excluded.updated_at,expires_at=excluded.expires_at`,
+      userId,key,request.slice(0,1800),question,stamp,stamp,addMs(10*60_000));
+  }
+  async plan(userId:string,text:unknown,projectId:unknown):Promise<Plan|Clarification|Cancelled> {
     if(typeof text!=='string'||text.trim().length<2||text.length>1200)
       throw new HttpError(400,'BAD_COMMAND','Write a command from 2 to 1200 characters');
-    const request=text.trim();
+    const key=this.dialogueKey(projectId);
+    const answer=text.trim();
+    if(/^(?:rehne do|rehnay do|cancel|choro|stop|never mind)$/i.test(answer)){
+      this.clearPending(userId,key);
+      return {kind:'cancelled',message:'Theek hai, task cancel kar diya. Koi laptop action nahi hua.'};
+    }
+    const last=one(this.db,'SELECT * FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
+    let request=answer;
+    if(last){
+      this.clearPending(userId,key);
+      if(Date.parse(last.expires_at)>=Date.now()){
+        // A fresh explicit app command overrides an old unanswered question.
+        const fresh=/^(?:whatsapp|chrome|notepad|youtube|calendar|google|outlook|browser|open|khol|new task)\b.*\b(?:kholo|open|start|check|karo)$/i.test(answer);
+        if(!fresh)request=(String(last.request).slice(0,1200)+'\nUser follow-up answer: '+answer).slice(0,1800);
+      }
+    }
     // Draft and preview workflows are allowed; sending, invitations, and
     // end-to-end creative generation still require real verified integrations.
     const project=projectId==null?null:this.projects.get(userId,String(projectId));
@@ -183,16 +234,35 @@ export class Operator {
     const context=project?
       [project.name,project.description,project.instructions,project.chromeProfile?'Preferred Chrome profile label: '+project.chromeProfile:'',
         ...notes.map(n=>n.title+': '+n.content.slice(0,300))].join('\n').slice(0,4500):'';
-    let result:{summary:string;steps:Step[]};
+    let result:Proposal;
     // A single clearly parsed action works without Gemini. Complex/unknown
     // commands need model classification; no automatic fallback to web search.
     const parsed=parseCommand(request);
-    const compound=/\b(?:aur|phir|then|after that|us\s*me|likho.*notepad|notepad.*likho|meeting.*add|schedule.*meeting)\b/i.test(request);
-    if(!compound && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
+    // The relay must use the SAME intention gate as the website. Otherwise
+    // a WhatsApp reply can be misclassified as a "check" action and silently
+    // bypass the model's missing-contact question.
+    const intent=routeIntent(request,parsed);
+    const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
+    const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/.test(url);
+    if(projectLaunch){
+      if(!/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile))
+        throw new HttpError(422,'PROJECT_PROFILE_REQUIRED','Set the exact Chrome profile directory in this HUKM Project.');
+      const destination=url.startsWith('https://chatgpt.com/')
+        ? project.chatgptProjectUrl : url;
+      if(!destination)
+        throw new HttpError(422,'PROJECT_URL_REQUIRED','Save the ChatGPT Project URL before opening it.');
+      result={summary:'Open selected HUKM Project in the configured Chrome profile',
+        steps:[validateStep({action:'browser.profile_open',
+          args:{profile:project.chromeProfile,url:destination}})]};
+    } else if(intent==='command' && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
       result={summary:ACTIONS[parsed.action].label,steps:[validateStep({action:parsed.action,args:parsed.args})]};
     }else{
       if(!geminiConfigured())throw new HttpError(503,'AI_NOT_CONFIGURED','Natural-language planner requires Gemini');
       result=await askGeminiPlan(request,context);
+    }
+    if('question' in result){
+      this.savePending(userId,key,request,result.question);
+      return {kind:'clarify',topic:'operator-followup',question:result.question};
     }
     // Project routing is enforced by the relay, not just written into the AI prompt.
     for(const step of result.steps){
@@ -211,6 +281,7 @@ export class Operator {
     const id=newId('plan_'),created=nowIso(),expires=addMs(10*60_000);
     run(this.db,'INSERT INTO operator_plans(id,user_id,project_id,request,summary,steps,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?)',
       id,userId,project?.id??null,request,result.summary,JSON.stringify(result.steps),created,expires);
+    this.clearPending(userId,key);
     return this.getPlan(userId,id);
   }
   start(userId:string,id:string,deviceId:unknown):TaskRun{

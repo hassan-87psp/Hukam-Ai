@@ -15,7 +15,7 @@ import { analyzeScreenshot } from './vision';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
-export const VERSION = '1.4.0';
+export const VERSION = '1.5.0';
 const COOKIE = 'hukm_session';
 const MAX_BODY = 64 * 1024;
 
@@ -170,7 +170,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     if (!aiLimit.take('gemini:' + c.user!.id) || !aiDailyLimit.take('gemini:' + c.user!.id))
       throw new HttpError(429, 'AI_RATE_LIMIT', 'AI chat limit reached. Please try again later.');
     try {
-      return await chatWithGemini(c.body?.message, c.body?.history);
+      return await chatWithGemini(c.body?.message, c.body?.history,
+        {responseLang:['roman','ur','en'].includes(c.body?.responseLang) ? c.body.responseLang : 'roman'});
     } catch (e) {
       if (e instanceof GeminiError) throw new HttpError(e.status, e.code, e.message);
       throw new HttpError(502, 'AI_UNAVAILABLE', 'Gemini is temporarily unavailable.');
@@ -219,6 +220,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
       throw new HttpError(429,'AI_RATE_LIMIT','AI planner limit reached');
     return operator.plan(c.user!.id, c.body?.text, c.body?.projectId);
   });
+  add('GET', '/api/operator/pending', true, (c) =>
+    operator.pending(c.user!.id, new URL(c.req.url??'/', 'http://localhost').searchParams.get('projectId')));
   add('GET', '/api/operator/plans/:id', true, (c) => operator.getPlan(c.user!.id, c.params.id));
   add('POST', '/api/operator/plans/:id/run', true, (c) => operator.start(c.user!.id,c.params.id,c.body?.deviceId));
   add('GET', '/api/operator/runs', true, (c) => operator.listRuns(c.user!.id));

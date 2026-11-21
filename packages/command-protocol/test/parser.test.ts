@@ -33,7 +33,12 @@ describe('approved browser control', () => {
     expect(c('type: Sir Sajid, kal meeting 9 PM')).toMatchObject({ action: 'browser.control', args: { kind: 'type', text: 'Sir Sajid, kal meeting 9 PM' } });
   });
   it('parses scroll and browser key', () => {
-    expect(c('scroll down 2').args).toEqual({ kind: 'scroll', steps: -2 });
+    expect(c('scroll down 2')).toMatchObject({action:'ui.scroll',args:{steps:-2}});
+    expect(c('scroll karo')).toMatchObject({action:'ui.scroll',args:{steps:-2}});
+    expect(c('browser scroll down 2').args).toEqual({kind:'scroll',steps:-2});
+    expect(requiresApproval('ui.scroll')).toBe(true);
+    expect(validateCommand('ui.scroll',{steps:0}).ok).toBe(false);
+    expect(validateCommand('ui.scroll',{steps:6}).ok).toBe(false);
     expect(c('press ctrl+l').args).toEqual({ kind: 'key', key: 'ctrl+l' });
   });
   it('requires approval and refuses unsafe input', () => {
@@ -149,7 +154,8 @@ describe('whatsapp', () => {
   it('unread', () => expect(c('WhatsApp par unread messages batao.').action).toBe('whatsapp.check'));
   it('contact unread → check', () => expect(c('Ali ke naye messages batao.').action).toBe('whatsapp.check'));
   for (const t of ['WhatsApp kholo', 'WhatsApp khol do.', 'Open WhatsApp', 'whatsapp']) {
-    it('clarifies ambiguous ' + t, () => expect(parseCommand(t)).toMatchObject({ kind: 'clarify', topic: 'whatsapp-choice' }));
+    it("defaults to Personal WhatsApp Desktop: " + t, () =>
+      expect(parseCommand(t)).toMatchObject({kind:'command',action:'whatsapp.open',args:{mode:'desktop'}}));
   }
   it('asks a natural bilingual question', () => expect(clarifyMessage('whatsapp-choice').roman).toContain('Desktop app kholoon ya WhatsApp Web'));
   for (const t of ['desktop', 'desktop wala', 'installed app', 'pehla wala', '1']) {

@@ -14,7 +14,6 @@ const answer = (topic: DialogueState['topic'], text: string, extra: Partial<Dial
 
 describe('dialogue intents: ask only when information is missing', () => {
   for (const [text, topic] of [
-    ['WhatsApp kholo', 'whatsapp-choice'],
     ['YouTube kholo', 'youtube-choice'],
     ['YouTube par video play karo', 'youtube-query'],
     ['App kholo', 'which-app'],
@@ -35,6 +34,7 @@ describe('dialogue intents: ask only when information is missing', () => {
     ['Browser mein gold forecast search karo', 'web.search'],
     ['YouTube par gold analysis play karo', 'youtube.play'],
     ['WhatsApp Desktop kholo', 'whatsapp.open'],
+    ['WhatsApp kholo', 'whatsapp.open'],
   ] as const) it('clear instruction does not ask: ' + text, () =>
     expect(parseCommand(text)).toMatchObject({ kind: 'command', action }));
 });
@@ -75,7 +75,9 @@ describe('contextual follow-up', () => {
     expect(answer('which-app', 'Chrome')).toMatchObject({ result: { action: 'app.open', args: { app: 'chrome' } } });
     expect(answer('which-folder', 'Downloads')).toMatchObject({ result: { action: 'folder.open', args: { folder: 'downloads' } } });
     expect(answer('which-website', 'Google')).toMatchObject({ result: { action: 'web.open', args: { url: 'https://www.google.com/' } } });
-    expect(answer('which-app', 'WhatsApp')).toMatchObject({ next: { topic: 'whatsapp-choice' } });
+    expect(answer('which-app', 'WhatsApp')).toMatchObject({
+      result: {kind:'command',action:'whatsapp.open',args:{mode:'desktop'}},
+    });
     expect(answer('which-app', 'cmd.exe')).toMatchObject({ result: { kind: 'clarify' } });
   });
 

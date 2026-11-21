@@ -4,6 +4,7 @@ import {
   clarifyMessage,
   failureMessage,
   parseCommand,
+  routeIntent,
   pick,
   replyMessage,
   STATUS_MESSAGES,
@@ -35,11 +36,12 @@ export interface User {
 
 export type OperatorPlan = {id:string;summary:string;request:string;steps:{action:ActionName;args:Record<string,unknown>}[];expiresAt:string};
 
-export type ChatMessage =
+export type ChatMessage = (
   | { id: string; kind: 'user'; text: string; source: CommandSource; at: string; aiChat?: boolean }
   | { id: string; kind: 'agent'; msg: Localized; at: string; tone?: 'info' | 'ok' | 'warn' | 'bad'; provider?: 'gemini' }
   | { id: string; kind: 'command'; commandId: string; at: string }
-  | { id: string; kind: 'plan'; plan: OperatorPlan; at: string };
+  | { id: string; kind: 'plan'; plan: OperatorPlan; at: string }
+) & { projectId?: string | null };
 
 export interface Toast {
   id: string;
@@ -71,6 +73,7 @@ interface Store {
   submitting: boolean;
   pendingWhatsAppChoice: boolean;
   pendingDialogueTopic: string | null;
+  restoreOperatorPending(pending:boolean): void;
   activeDevice: Device | null;
   // actions
   setup(email: string, name: string, password: string, setupCode: string): Promise<void>;
@@ -87,7 +90,7 @@ interface Store {
   setAutomations(a: Automation[]): void;
   toast(t: Omit<Toast, 'id'>): void;
   dismissToast(id: string): void;
-  clearChat(): void;
+  clearChat(projectId?: string | null): void;
   setListening(v: boolean): void;
   setAudioLevel(v: number): void;
   say(m: Localized, force?: boolean): void;
@@ -181,7 +184,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // The cloud service is free/unofficial and can be rate-limited. If it fails
     // or takes too long, the browser immediately uses an available local voice.
     // Selecting a device voice opts out of the experimental cloud synthesis.
-    const cloudUrdu = !s.voiceURI && s.responseLang !== 'en' ? m.ur : undefined;
+    // The Urdu neural voice expects Urdu script, NOT Roman letters.
+    // A Gemini reply with only Roman text falls back to device speech.
+    const cloudUrdu = !s.voiceURI && s.responseLang !== 'en' &&
+      /[\u0600-\u06ff]/.test(m.ur) ? m.ur : undefined;
     speak(
       textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume,
       setSpeaking, cloudUrdu,
@@ -197,7 +203,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, [toast]);
 
-  const addChat = useCallback((m: ChatMessage) => setChat((c) => [...c, m]), []);
+  const addChat = useCallback((m: ChatMessage) => {
+    const projectId = m.projectId !== undefined ? m.projectId :
+      new URLSearchParams(window.location.search).get('projectId');
+    setChat((c) => [...c, {...m,projectId}]);
+  }, []);
   const agent = useCallback(
     (msg: Localized, tone: 'info' | 'ok' | 'warn' | 'bad' = 'info', speakIt = true, provider?: 'gemini') => {
       addChat({ id: uid(), kind: 'agent', msg, at: new Date().toISOString(), tone, provider });
@@ -389,18 +399,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (text: string, source: CommandSource = 'text') => {
       const t = text.trim();
       if (!t || submitting) return;
-      // Gemini is chat-only. A normal message does not require the laptop to
-      // be connected, and no command/device data is automatically sent to Google.
+      // A single intent gateway replaces conflicting keyword detectors.
+      // Gemini chat has no authority to operate the laptop; supervised plans
+      // are validated and require explicit owner review before execution.
       const local = parseCommand(t);
-      const taskWords = /\b(?:karo|krdo|kerdo|khol|open|add|schedule|likh|type|scroll|check|bhejo|send|create|download|whatsapp|calendar|notepad|note\s+pad|chrome|browser|youtube|file)\b/i.test(t);
-      const compound = /\b(?:aur|phir|then|after that|usme|us\s+me|likho.*notepad|notepad.*likho|meeting.*add|schedule.*meeting)\b|(?:notepad|note\s*pad).*?(?:likho|type)/i.test(t);
-      // Complex desktop workflows must reach the reviewed AI planner even
-      // when the legacy keyword parser incorrectly recognizes a basic action.
-      const taskWorkflow = /(?:calendar|calender|meeting).*(?:add|create|schedule|set|bana|invite)|(?:add|create|schedule|set).*(?:calendar|meeting)|(?:whatsapp|chat).*(?:reply|attach|file|message read|messages parh|msg parh)|(?:chatgpt|banner|image|script).*(?:bana|create|generate|draft|download|save)|(?:screen|window).*(?:dekho|observe|inspect|button)/i.test(t);
-      const shouldPlan = !pendingDialogueTopic && (taskWorkflow || (taskWords &&
-        ((local.kind === 'unsupported' || local.kind === 'reply') || compound)));
-      const maybeAi = !shouldPlan && !pendingDialogueTopic && (local.kind === 'unsupported' || local.kind === 'reply');
+      const route = routeIntent(t, local, pendingDialogueTopic === 'operator-followup');
+      const selectedProjectId = new URLSearchParams(window.location.search).get('projectId');
+      const projectBrowserLaunch = !!selectedProjectId && local.kind === 'command' &&
+        local.action === 'web.open' &&
+        /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/i.test(String(local.args.url ?? ''));
+      const shouldPlan = route === 'plan' || projectBrowserLaunch;
+      const maybeAi = route === 'chat' && !pendingDialogueTopic;
+      // Never send Project A's conversation history into Project B's Gemini chat.
       const history = chat
+        .filter(m => (m.projectId ?? null) === (selectedProjectId ?? null))
         .flatMap<{ role: 'user' | 'assistant'; text: string }>((m) => m.kind === 'user' && m.aiChat
           ? [{ role: 'user' as const, text: m.text.slice(0, 700) }]
           : m.kind === 'agent' && m.provider === 'gemini'
@@ -426,13 +438,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (!hasDevice) { agent(STATUS_MESSAGES.noDevice,'warn'); return; }
           try {
             const projectId = new URLSearchParams(window.location.search).get('projectId');
-            const plan = await post<OperatorPlan>('/api/operator/plan', {
+            const planned = await post<OperatorPlan | {kind:'clarify'; question:string; questionUrdu?:string; topic:string} |
+              {kind:'cancelled';message:string}>('/api/operator/plan', {
               text:t, projectId:projectId||undefined,
             });
-            addChat({id:uid(),kind:'plan',plan,at:new Date().toISOString()});
-            agent({roman:'Task plan ready hai. Actions review karke Run karein.',
-              ur:'ٹاسک پلان تیار ہے۔ جائزہ لے کر شروع کریں.',
-              en:'Task plan ready. Review each action before starting.'},'info',false);
+            if('kind' in planned && planned.kind==='cancelled'){
+              setPendingDialogueTopic(null);
+              agent({roman:planned.message,ur:'ٹھیک ہے، کام منسوخ ہو گیا۔ کوئی کارروائی نہیں ہوئی۔',
+                en:'Okay, task cancelled. No laptop action was taken.'},'info',false);
+            } else if('kind' in planned && planned.kind==='clarify') {
+              setPendingDialogueTopic('operator-followup');
+              agent({roman:planned.question,ur:planned.questionUrdu||planned.question,
+                en:planned.question},'info',source==='voice');
+            } else {
+              const plan=planned as OperatorPlan;
+              setPendingDialogueTopic(null);
+              addChat({id:uid(),kind:'plan',plan,at:new Date().toISOString()});
+              agent({roman:'Samajh gaya. Ye steps hain — dekh kar Run press karein. Har sensitive step ki alag approval hogi.',
+                ur:'سمجھ گیا۔ مراحل دیکھ کر رن دبائیں، اہم اقدامات کی الگ اجازت ہوگی۔',
+                en:'Plan ready. Review the steps before running. Sensitive actions need individual approval.'},'info',false);
+            }
           } catch (ex) {
             const reason = ex instanceof Error ? ex.message : 'This task is not supported safely.';
             agent({roman:reason,ur:reason,en:reason},'warn',false);
@@ -448,10 +473,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // A private message-only AI call, never a tool invocation.
           // No cloud AI connection is needed for laptop actions themselves.
           try {
-            const ai = await post<{ kind: 'ai'; provider: 'gemini'; reply: string }>(
-              '/api/ai/chat', { message: t, history },
+            const ai = await post<{ kind: 'ai'; provider: 'gemini'; reply: string; spokenUrdu?: string }>(
+              '/api/ai/chat', { message: t, history, responseLang:settingsRef.current.responseLang },
             );
-            const msg: Localized = { roman: ai.reply, ur: ai.reply, en: ai.reply };
+            const msg: Localized = { roman: ai.reply, ur: ai.spokenUrdu || ai.reply, en: ai.reply };
             agent(msg, 'info', source === 'voice', 'gemini');
           } catch (aiError) {
             if (aiError instanceof ApiError && aiError.code === 'AI_NOT_CONFIGURED') {
@@ -561,11 +586,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return 'idle';
   }, [listening, commands, submitting, flash, devices]);
 
+  const restoreOperatorPending = useCallback((pending:boolean)=>{
+    setPendingDialogueTopic((topic)=>pending?'operator-followup':topic==='operator-followup'?null:topic);
+  },[]);
+
   const value: Store = {
     auth, user, settings, devices, commands, commandMap, approvals, automations, chat, toasts, realtime, brain, listening, speaking,
     audioLevel, submitting, pendingWhatsAppChoice, pendingDialogueTopic, activeDevice,
     setup, login, logout, refresh, runText, runAction, approve, reject, cancel, saveSettings, setDevices, setAutomations, toast,
-    dismissToast, clearChat: () => { setChat([]); setPendingWhatsAppChoice(false); setPendingDialogueTopic(null); }, setListening, setAudioLevel, say, loadMoreCommands, setUser,
+    restoreOperatorPending,
+    dismissToast, clearChat: (projectId?:string|null) => {
+      setChat((items)=>projectId===undefined?[]:items.filter(m=>(m.projectId??null)!==projectId));
+      setPendingWhatsAppChoice(false); setPendingDialogueTopic(null);
+    }, setListening, setAudioLevel, say, loadMoreCommands, setUser,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
