@@ -38,6 +38,21 @@ export function findSavedContact(value: string, contacts: readonly WhatsAppConta
   return contacts.find((c) => normalize(c.name) === name) ?? null;
 }
 
+/** A native WhatsApp chat can be selected by exact displayed contact name.
+
+    A saved phone number is not a prerequisite. Restrict candidate replies to
+    plausible *names*, never accept an arbitrary command or long paragraph
+    as a recipient. The Windows Controller verifies the exact chat header.
+*/
+function plausibleContactName(value: string): string | null {
+  const candidate=value.trim().replace(/\s+(?:ko|wala|wali)$/i,'').trim();
+  if(!candidate || candidate.length>60 ||
+    !/^[\p{L}\p{M}\p{N} .'+()-]+$/u.test(candidate) ||
+    /^(?:haan|yes|ok|okay|nahi|no|message|msg|text|reply|karo|kholo|send)$/i.test(candidate))
+    return null;
+  return candidate;
+}
+
 /** For "Ali ko message bhejo", keep the recipient and ask only for content. */
 function recipientFromInitial(text: string): string | null {
   const t = normalize(text);
@@ -63,11 +78,12 @@ export function beginDialogue(topic: string, input: string, contacts: readonly W
   if (topic === 'message-body') {
     const wanted = recipientFromInitial(input);
     const saved = wanted && findSavedContact(wanted, contacts);
-    if (!saved) return {
+    const contact = saved?.name ?? (wanted ? plausibleContactName(wanted) : null);
+    if (!contact) return {
       state: null,
-      clarification: { kind: 'clarify', topic: 'contact-unknown', normalized: normalize(input) },
+      clarification: { kind: 'clarify', topic: 'message-contact', normalized: normalize(input) },
     };
-    result.contact = saved.name;
+    result.contact = contact;
   }
   return { state: result };
 }
@@ -159,14 +175,11 @@ export function resolveDialogue(
   }
 
   if (state.topic === 'message-contact') {
-    const contact = findSavedContact(text, contacts);
+    if (fullNewAction) return { handled: false };
+    const contact = findSavedContact(text, contacts)?.name ?? plausibleContactName(text);
     if (contact)
       return { handled: true, result: question('message-body', t),
-        next: { topic: 'message-body', contact: contact.name } };
-    if (fullNewAction) return { handled: false };
-    if (isShort(t)) return { handled: true, result: {
-      kind: 'clarify', topic: 'contact-unknown', normalized: t,
-    }, next: state };
+        next: { topic: 'message-body', contact } };
     return { handled: true, result: question('message-contact', t), next: state };
   }
 
@@ -175,8 +188,8 @@ export function resolveDialogue(
     const message = text.replace(bodyPrefix, '').trim();
     if (!message || message.length > 900 || /^(?:haan|yes|ok|okay|theek|theek hai)$/.test(t))
       return { handled: true, result: question('message-body', t), next: state };
-    if (!state.contact || !findSavedContact(state.contact, contacts))
-      return { handled: true, result: question('contact-unknown', t) };
+    if (!state.contact || !plausibleContactName(state.contact))
+      return { handled: true, result: question('message-contact', t) };
     return { handled: true,
       result: command('whatsapp.compose', { contact: state.contact, message }, t) };
   }
