@@ -63,12 +63,22 @@ export function startCloudBackup(db: DB, dataDir: string) {
     }
     if (!dirty) return;
     dirty = false;
-    // One SQLite writer; checkpoint WAL before reading snapshot bytes.
-    db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
-    const bytes = readFileSync(join(dataDir, 'hukm.db'));
-    if (bytes.length < 100 || bytes.length > MAX_BYTES || !bytes.subarray(0,16).equals(HEADER)) {
+    let bytes: Buffer;
+    try {
+      // Never upload a main-file snapshot if SQLite could not checkpoint
+      // every WAL frame. Preserve dirty state for a later retry on ANY error.
+      const checkpoint = db.prepare('PRAGMA wal_checkpoint(TRUNCATE)').get() as
+        { busy: number; log: number; checkpointed: number } | undefined;
+      if (!checkpoint || checkpoint.busy !== 0 || checkpoint.log !== checkpoint.checkpointed) {
+        throw new Error('SQLite snapshot checkpoint incomplete');
+      }
+      bytes = readFileSync(join(dataDir, 'hukm.db'));
+      if (bytes.length < 100 || bytes.length > MAX_BYTES || !bytes.subarray(0,16).equals(HEADER)) {
+        throw new Error('SQLite snapshot validation failed');
+      }
+    } catch (e) {
       dirty = true;
-      throw new Error('SQLite snapshot validation failed');
+      throw e;
     }
     pending = (async () => {
       const response = await fetch(auth.url, {

@@ -31,3 +31,8 @@ Status: integration candidate; do not treat this as a release or completed audit
 - Confirm live backup/isolated restore before any data-affecting deployment; do not infer backup merely from source branch.
 - No automatic merge or v1.8.4 asset replacement. Release separately with new version and successful real Windows acceptance.
 - No paid service or API activated. Keep cloud-first design and lightweight controller.
+
+## Follow-up — combined checks and snapshot failure fix
+- Combined stabilization commit 38f4421d0036a5e1a313b090348d0a683d772ffc: GitHub workflow #279 (44930313374) passed both web/relay and Windows simulated/package jobs; official release skipped. Vercel preview status succeeded. No production deploy or real-device acceptance established.
+- Source-level finding: clearing dirty before checkpoint/read could lose a retry after a local exception; ignoring WAL checkpoint row could upload an incomplete main-file snapshot. Candidate now rejects busy/incomplete checkpoint and restores dirty on any local snapshot preparation error. Five isolated mock regression cases added; new combined CI must pass. These do not prove live backup integrity, snapshot freshness, restore or retention.
+- Render workspace is not selected; live deployment and backup configuration remain unverified. No production credentials or personal data accessed. No other application data modified.
