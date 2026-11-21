@@ -36,11 +36,12 @@ export interface User {
 
 export type OperatorPlan = {id:string;summary:string;request:string;steps:{action:ActionName;args:Record<string,unknown>}[];expiresAt:string};
 
-export type ChatMessage =
+export type ChatMessage = (
   | { id: string; kind: 'user'; text: string; source: CommandSource; at: string; aiChat?: boolean }
   | { id: string; kind: 'agent'; msg: Localized; at: string; tone?: 'info' | 'ok' | 'warn' | 'bad'; provider?: 'gemini' }
   | { id: string; kind: 'command'; commandId: string; at: string }
-  | { id: string; kind: 'plan'; plan: OperatorPlan; at: string };
+  | { id: string; kind: 'plan'; plan: OperatorPlan; at: string }
+) & { projectId?: string | null };
 
 export interface Toast {
   id: string;
@@ -89,7 +90,7 @@ interface Store {
   setAutomations(a: Automation[]): void;
   toast(t: Omit<Toast, 'id'>): void;
   dismissToast(id: string): void;
-  clearChat(): void;
+  clearChat(projectId?: string | null): void;
   setListening(v: boolean): void;
   setAudioLevel(v: number): void;
   say(m: Localized, force?: boolean): void;
@@ -202,7 +203,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
   }, [toast]);
 
-  const addChat = useCallback((m: ChatMessage) => setChat((c) => [...c, m]), []);
+  const addChat = useCallback((m: ChatMessage) => {
+    const projectId = m.projectId !== undefined ? m.projectId :
+      new URLSearchParams(window.location.search).get('projectId');
+    setChat((c) => [...c, {...m,projectId}]);
+  }, []);
   const agent = useCallback(
     (msg: Localized, tone: 'info' | 'ok' | 'warn' | 'bad' = 'info', speakIt = true, provider?: 'gemini') => {
       addChat({ id: uid(), kind: 'agent', msg, at: new Date().toISOString(), tone, provider });
@@ -405,7 +410,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/i.test(String(local.args.url ?? ''));
       const shouldPlan = route === 'plan' || projectBrowserLaunch;
       const maybeAi = route === 'chat' && !pendingDialogueTopic;
+      // Never send Project A's conversation history into Project B's Gemini chat.
       const history = chat
+        .filter(m => (m.projectId ?? null) === (selectedProjectId ?? null))
         .flatMap<{ role: 'user' | 'assistant'; text: string }>((m) => m.kind === 'user' && m.aiChat
           ? [{ role: 'user' as const, text: m.text.slice(0, 700) }]
           : m.kind === 'agent' && m.provider === 'gemini'
@@ -588,7 +595,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     audioLevel, submitting, pendingWhatsAppChoice, pendingDialogueTopic, activeDevice,
     setup, login, logout, refresh, runText, runAction, approve, reject, cancel, saveSettings, setDevices, setAutomations, toast,
     restoreOperatorPending,
-    dismissToast, clearChat: () => { setChat([]); setPendingWhatsAppChoice(false); setPendingDialogueTopic(null); }, setListening, setAudioLevel, say, loadMoreCommands, setUser,
+    dismissToast, clearChat: (projectId?:string|null) => {
+      setChat((items)=>projectId===undefined?[]:items.filter(m=>(m.projectId??null)!==projectId));
+      setPendingWhatsAppChoice(false); setPendingDialogueTopic(null);
+    }, setListening, setAudioLevel, say, loadMoreCommands, setUser,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
