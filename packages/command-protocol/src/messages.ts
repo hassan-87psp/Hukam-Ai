@@ -233,6 +233,23 @@ export function failureMessage(error: CommandError | null): Localized {
   switch (error?.code) {
     case 'DEVICE_OFFLINE':
       return L('Laptop offline hai. Controller start karein.', 'لیپ ٹاپ آف لائن ہے۔ کنٹرولر چلائیں۔', 'The laptop is offline. Start the controller.');
+    case 'UNVERIFIABLE':
+      return /unread sender|sender names|chat-row|unread filter/i.test(msg)
+        ? L('Sir, WhatsApp ki Unread list ke contact names Windows se verify nahi hue. HUKM diagnostics run karein; bina verified names ke koi chat assume nahi karunga.',
+            'واٹس ایپ کی ان ریڈ چیٹس کے نام تصدیق نہیں ہو سکے۔ ڈائگناسٹکس چلائیں۔',
+            'WhatsApp did not expose verifiable unread chat names. Run HUKM diagnostics.')
+        : L('Sir, Personal WhatsApp Desktop ka unread count verify nahi hua. Ye zero nahi hai. Aap "WhatsApp par kis kis ka unread msg aya" bolein; approval ke baad visible names check karunga.',
+            'واٹس ایپ ڈیسک ٹاپ کی ان ریڈ تعداد کی تصدیق نہیں ہوئی۔ یہ صفر نہیں ہے۔',
+            'Personal WhatsApp Desktop unread count is unknown, not zero. Try an approved visible unread sender scan.');
+    case 'WHATSAPP_DESKTOP_UNAVAILABLE':
+    case 'LAUNCH_FAILED':
+      return L('Sir, installed WhatsApp Desktop open/focus nahi ho saka. Windows Start se WhatsApp kholein, phir HUKM diagnostics chalayein. Main WhatsApp Web automatically nahi kholunga.',
+        'واٹس ایپ ڈیسک ٹاپ کھل نہیں سکا۔ ونڈوز اسٹارٹ سے کھول کر ڈائگناسٹکس چلائیں۔',
+        'Native WhatsApp Desktop could not be opened. Open it from Windows Start and run diagnostics; no automatic Web fallback.');
+    case 'WHATSAPP_UI_UNAVAILABLE':
+      return L('Sir, WhatsApp Desktop screen ke required controls accessible nahi hain. Window ko foreground mein la kar HUKM diagnostics chalayein. Main guess karke wrong chat nahi kholunga.',
+        'واٹس ایپ کے کنٹرولز دستیاب نہیں۔ ایپ سامنے لا کر ڈائگناسٹکس چلائیں۔',
+        'WhatsApp Desktop accessibility controls are unavailable. Focus the app and run diagnostics.');
     case 'NOT_ALLOWED':
       return L(`Ye ijazat ke bahar hai: ${msg}`, `یہ اجازت سے باہر ہے: ${msg}`, `Not permitted: ${msg}`);
     case 'NOT_FOUND':
