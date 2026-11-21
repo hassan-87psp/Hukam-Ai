@@ -19,6 +19,10 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       const n = APP_LABELS[args.app as KnownApp] ?? s(args.app);
       return L(`${n} open kar raha hoon.`, `${n} کھول رہا ہوں۔`, `Opening ${n}.`);
     }
+    case 'app.close':
+      return L('Notepad ki selected window band karne ke liye approval chahiye. Unsaved text ko bina poochay discard nahi karunga.',
+        'نوٹ پیڈ کی ونڈو بند کرنے کی اجازت چاہیے۔ غیر محفوظ متن ضائع نہیں کروں گا۔',
+        'Approval required to close Notepad. Unsaved changes will not be discarded automatically.');
     case 'folder.open': {
       const f = args.folder as KnownFolder;
       return L(`${FOLDER_LABELS[f]} folder open kar raha hoon.`, `${FOLDER_UR[f]} فولڈر کھول رہا ہوں۔`, `Opening your ${FOLDER_LABELS[f]} folder.`);
@@ -124,6 +128,12 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
         ? L(`${name} launch kar diya, lekin window abhi tak nazar nahi aayi.`, `${name} چلا دیا، لیکن ونڈو ابھی نظر نہیں آئی۔`, `${name} was launched, but no window was detected yet.`)
         : L(`${name} open ho gaya.`, `${name} کھل گیا۔`, `${name} is open.`);
     }
+    case 'app.close':
+      return r.windowClosed === true && r.verified === true
+        ? L('Notepad ki selected window band ho gayi.', 'نوٹ پیڈ کی منتخب ونڈو بند ہو گئی۔', 'The selected Notepad window was closed.')
+        : L('Notepad ko close karne ki request di, lekin window abhi open hai. Agar Save/Cancel dialogue hai to aap decide karein; maine data discard nahi kiya.',
+          'نوٹ پیڈ بند نہیں ہوا۔ اگر سیو ڈائیلاگ ہے تو آپ خود فیصلہ کریں۔',
+          'Notepad is still open, possibly showing a Save dialog. Please decide; nothing was force-closed.');
     case 'folder.open': {
       const f = args.folder as KnownFolder;
       return L(`${FOLDER_LABELS[f]} folder successfully open ho gaya.`, `${FOLDER_UR[f]} فولڈر کامیابی سے کھل گیا۔`, `${FOLDER_LABELS[f]} folder opened.`);
@@ -275,6 +285,8 @@ export function failureMessage(error: CommandError | null): Localized {
       return L('Sir, WhatsApp Desktop screen ke required controls accessible nahi hain. Window ko foreground mein la kar HUKM diagnostics chalayein. Main guess karke wrong chat nahi kholunga.',
         'واٹس ایپ کے کنٹرولز دستیاب نہیں۔ ایپ سامنے لا کر ڈائگناسٹکس چلائیں۔',
         'WhatsApp Desktop accessibility controls are unavailable. Focus the app and run diagnostics.');
+    case 'CLOSE_NOT_SAFE':
+      return L(`Notepad safely close nahi hua: ${msg}`, `نوٹ پیڈ محفوظ طریقے سے بند نہیں ہوا۔`, `Notepad was not safely closed: ${msg}`);
     case 'NOT_ALLOWED':
       return L(`Ye ijazat ke bahar hai: ${msg}`, `یہ اجازت سے باہر ہے: ${msg}`, `Not permitted: ${msg}`);
     case 'NOT_FOUND':
