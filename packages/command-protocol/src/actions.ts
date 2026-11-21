@@ -321,8 +321,8 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     },
   },
   'chatgpt.download_visible': {
-    name:'chatgpt.download_visible', capability:'browser', label:'Download visible ChatGPT result',
-    timeoutMs:25000, alwaysApprove:true,
+    name:'chatgpt.download_visible', capability:'browser', label:'Wait for and download ChatGPT result',
+    timeoutMs:115000, alwaysApprove:true,
     validate(a) {
       if(typeof a.projectUrl!=='string' || a.projectUrl.length>500) return fail('invalid project URL');
       let u: URL;
