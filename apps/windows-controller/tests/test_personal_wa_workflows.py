@@ -32,6 +32,16 @@ def test_diagnostics_does_not_collect_private_data():
     assert result.result["uiautomationInstalled"] is True
 
 
+def test_approved_foreground_scroll_is_bounded_and_unverified():
+    assert v.validate("ui.scroll", {"steps": -2}) == {"steps": -2}
+    out = run("ui.scroll", {"steps": -2})
+    assert out.ok and out.result["inputDelivered"] is True
+    assert out.result["verified"] is False
+    for bad in [0, 6, -6, 1.5, True]:
+        with pytest.raises(v.ValidationError):
+            v.validate("ui.scroll", {"steps": bad})
+
+
 def test_inspect_controls_never_reads_text_fields():
     controls = [
         ("ButtonControl", "Search"),
