@@ -106,6 +106,14 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
       {action:'whatsapp.open',args:{mode:'desktop'}},
       {action:'whatsapp.unread_senders',args:{}}
     ]);
+    const shorthand=await api('POST','/api/operator/plan',{
+      text:'WhatsApp check karo'
+    });
+    expect(shorthand.status).toBe(200);
+    expect(shorthand.data.steps).toEqual([
+      {action:'whatsapp.open',args:{mode:'desktop'}},
+      {action:'whatsapp.unread_senders',args:{}}
+    ]);
     const count=await api('POST','/api/operator/plan',{
       text:'WhatsApp kholo aur check karo kitne unread msg hain'
     });
