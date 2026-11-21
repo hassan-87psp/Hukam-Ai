@@ -2,7 +2,7 @@ import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest';
 import {mkdtempSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {startRelay, type RelayHandle} from '../src/server';
+import {startRelay, VERSION, type RelayHandle} from '../src/server';
 
 describe('Phase 1: recoverable conversations, project isolation and pending questions',()=>{
   let h:RelayHandle;
@@ -129,7 +129,7 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     ]);
     expect(plannerRequests.length).toBe(before);
     const health=await api('GET','/api/health');
-    expect(health.data.version).toBe('1.8.4');
+    expect(health.data.version).toBe(VERSION);
   });
 
   it('creates a reviewed owner-only desktop input plan without asking Gemini to invent coordinates',async()=>{
