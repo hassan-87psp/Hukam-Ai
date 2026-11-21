@@ -82,7 +82,7 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'Return ONLY a JSON object with summary string and steps array (1-5) of {action,args}.',
     'Only use these precise action names: app.open, folder.open, folder.list, file.search, file.open, file.reveal,',
     'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
-    'browser.control, browser.profile_open, notepad.type, ui.inspect, ui.activate, calendar.event_draft,',
+    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, calendar.event_draft,'
     'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
     'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.attach_preview.',
     'Never use arbitrary shell, file deletion, payments, password/OTP reading or WhatsApp Send. Do not pretend a draft was sent.',
