@@ -1,7 +1,9 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
-## Current development release — v1.8.2 (21 Nov 2026)
+## Current development release — v1.8.3 (21 Nov 2026)
+
+**v1.8.3:** Fix actual user-observed Windows Controller timeout: WhatsApp opened, then Unread scan ran 30 seconds and returned INTERRUPTED_UNVERIFIED. The unread sender action now runs **local visual OCR first**, avoiding a potentially unbounded WhatsApp WinUI accessibility tree traversal. Two on-device OCR passes have separate 22-second bounds and privacy-safe stage logs; the relay grants 90 seconds including cold startup, and cancellation is checked immediately before any mouse action and before reporting names. No automatic retries/sends, screenshot upload or guessed coordinates. Real signed-in WhatsApp acceptance still needs verification.
 
 **v1.8.2:** For WhatsApp versions that hide the Unread chip from Windows UI Automation, the approved Desktop sender check tries in-memory **on-device Windows OCR** of only the left chat pane. A real mouse click is permitted only when OCR uniquely locates an Unread label between All and Favourites; it verifies a fresh screen and pairs visible chat titles with timestamps. It does not upload screenshots, click hardcoded coordinates, or pretend unread names are verified if the filter state is uncertain. Real Windows OCR and WhatsApp account acceptance are pending.
 
