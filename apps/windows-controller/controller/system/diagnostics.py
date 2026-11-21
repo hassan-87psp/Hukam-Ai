@@ -23,6 +23,7 @@ def probe(cfg: Config | None = None) -> dict:
         "automaticWhatsAppWebFallback": False,
         "singleInstanceLockEnabled": True,
         "whatsappCapabilityEnabled": "whatsapp" in cfg.capabilities,
+        "whatsappVisualOcrFallback": "available" if __import__("importlib").util.find_spec("natocr") else "not_installed",
     }
     if launcher.SIMULATE:
         return {
