@@ -64,6 +64,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'window.active': 'Active window',
   'window.focus': 'Focus window',
   'screen.capture': 'Screenshot',
+  'diagnostics.probe': 'Safe laptop diagnostics',
   'ui.inspect': 'Inspect visible controls',
   'ui.activate': 'Activate visible control',
   'calendar.event_draft': 'Calendar event draft',
