@@ -76,26 +76,26 @@ def test_ambiguous_separate_filters_never_choose_one():
     assert choice is None and status=="ambiguous"
 
 
-def test_approved_unread_scan_mouse_clicks_button_and_reads_only_titles(monkeypatch):
-    monkeypatch.setattr(launcher,"SIMULATE",False)
-    monkeypatch.setattr(unread_senders,"IS_WINDOWS",True)
+def test_approved_unread_scan_uses_visual_before_expensive_uia(monkeypatch):
+    monkeypatch.setattr(launcher, "SIMULATE", False)
+    monkeypatch.setattr(unread_senders, "IS_WINDOWS", True)
     native=windows.WindowInfo(120,"Chats","WhatsApp.exe",933)
-    monkeypatch.setattr(windows,"active_window",lambda:native)
-    button=Control("Unread","ButtonControl",(125,114,222,154))
-    text=Control("Unread","TextControl",(141,123,194,140))
-    title=Control("Ali","TextControl",(98,280,181,298))
-    preview=Control("private message text","TextControl",(98,310,320,331))
-    row=Control("","ListItemControl",(70,264,470,340),children=[title,preview])
-    root=Control("","WindowControl",(0,0,1000,800),children=[button,text,row])
-    install_uia(monkeypatch,root)
-    monkeypatch.setattr(unread_senders.time,"sleep",lambda _seconds:None)
+    monkeypatch.setattr(unread_senders.locator,"focus_whatsapp",lambda:native)
+    import sys
+    # The owner's WhatsApp app hides Unread from UIA. This fake intentionally
+    # fails if the old deep WinUI traversal runs before the visual scanner.
+    monkeypatch.setitem(sys.modules,"uiautomation",None)
+    called=[]
+    def visual(hwnd,cancel=None):
+        called.append(hwnd)
+        return {"senders":["Ali"],"filterSelectedVerified":True,
+                "messagesRead":False,"visibleOnly":True}
+    monkeypatch.setattr(unread_senders.visual_unread,"visual_scan_unread",visual)
     result=unread_senders.read_unread_senders()
-    assert button.clicked==1 and text.clicked==0
+    assert called==[120]
     assert result["senders"]==["Ali"]
     assert result["filterSelectedVerified"] is True
     assert result["messagesRead"] is False
-    assert "private message text" not in str(result)
-
 
 def test_ambiguous_unread_filter_does_not_touch_mouse(monkeypatch):
     monkeypatch.setattr(launcher,"SIMULATE",False)
@@ -107,7 +107,7 @@ def test_ambiguous_unread_filter_does_not_touch_mouse(monkeypatch):
     root=Control("","WindowControl",(0,0,1000,800),children=[a,b])
     install_uia(monkeypatch,root)
     # Ambiguous UIA may attempt independent local OCR, but NEVER a blind click.
-    def no_visual_match(hwnd):
+    def no_visual_match(hwnd,cancel=None):
         raise unread_senders.visual_unread.VisualUnreadUnavailable(
             "No unique All/Unread/Favourites visual row; no mouse click made")
     monkeypatch.setattr(unread_senders.visual_unread,"visual_scan_unread",no_visual_match)
@@ -125,7 +125,7 @@ def test_missing_unread_filter_does_not_blind_click(monkeypatch):
     root=Control("","WindowControl",(0,0,1000,800),children=[all_button])
     install_uia(monkeypatch,root)
     # If neither UIA nor visual anchors can identify Unread, no mouse event.
-    def no_visual_match(hwnd):
+    def no_visual_match(hwnd,cancel=None):
         raise unread_senders.visual_unread.VisualUnreadUnavailable(
             "No unique All/Unread/Favourites visual row; no mouse click made")
     monkeypatch.setattr(unread_senders.visual_unread,"visual_scan_unread",no_visual_match)
