@@ -3,7 +3,7 @@
  * Read-only deployment preflight for a HUKM relay.
  *
  * Usage:
- *   node scripts/check-relay.mjs --url https://your-relay.example.com --expected-version 1.6.8
+ *   node scripts/check-relay.mjs --url https://your-relay.example.com --expected-version 1.6.9
  *
  * No cookies, tokens or user account data are transmitted. Only unauthenticated
  * GET requests are made. This deliberately FAILS on static GitHub Pages or an

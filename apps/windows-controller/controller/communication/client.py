@@ -6,6 +6,7 @@ import json
 import logging
 import random
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import websockets
@@ -39,10 +40,30 @@ class ControllerClient:
         # by Executor.run before it touches the desktop.
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hukm-act")
         self.cancels: dict[str, threading.Event] = {}
+        self.cancelled_early: dict[str, float] = {}
+        self.connection_epoch = 0
+        self.active_commands: set[asyncio.Task] = set()
         self.outbox: dict[str, dict] = {}  # results not yet acknowledged by the relay
         self.ws = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self.stop_event = asyncio.Event()
+
+    def cancel_active(self, reason: str) -> None:
+        """Best-effort stop; actions already delivered to Windows cannot be undone.
+
+        Runs on the event loop thread. Pending single-worker executions see
+        the cancellation flag before they touch the desktop.
+        """
+        count = len(self.cancels)
+        for event in tuple(self.cancels.values()):
+            event.set()
+        if count:
+            log.warning("cancelled %d active/queued laptop action(s): %s", count, reason)
+
+    def invalidate_connection(self, reason: str) -> None:
+        """Invalidate every command from the old socket on the event-loop thread."""
+        self.connection_epoch += 1
+        self.cancel_active(reason)
 
     # ---- protocol ---------------------------------------------------
     def hello(self) -> dict:
@@ -85,16 +106,23 @@ class ControllerClient:
         elif t == "command":
             await self.on_command(msg["command"])
         elif t == "cancel":
-            ev = self.cancels.get(msg.get("commandId", ""))
+            cid = str(msg.get("commandId", ""))
+            ev = self.cancels.get(cid)
             if ev:
                 ev.set()
-                log.info("cancel requested for %s", msg.get("commandId"))
+            elif cid:
+                # A cancel can arrive while the command ACK is still on the
+                # wire, before its cancellation flag exists. Remember it.
+                self.cancelled_early[cid] = time.monotonic()
+                if len(self.cancelled_early) > 256:
+                    oldest = min(self.cancelled_early, key=self.cancelled_early.get)
+                    self.cancelled_early.pop(oldest, None)
+            log.info("cancel requested for %s", cid[:16])
         elif t == "result_ack":
             self.outbox.pop(msg.get("commandId", ""), None)
         elif t == "pause":
             self.paused = True
-            for ev in self.cancels.values():
-                ev.set()
+            self.cancel_active("emergency pause")
             self.on_status("paused")
             log.warning("EMERGENCY STOP — controller paused; no commands will run until resumed from the web app")
         elif t == "resume":
@@ -111,42 +139,78 @@ class ControllerClient:
     async def on_command(self, cmd: dict) -> None:
         cid = str(cmd.get("id", ""))
         action = str(cmd.get("action", ""))
+        epoch = self.connection_epoch
         await self.send({"type": "ack", "commandId": cid})
-        # Atomically claim this command ID before any execution. A separate
-        # seen()/mark_started() pair allows duplicate concurrent WebSocket
-        # deliveries to both pass the initial check.
+        # Atomically claim the ID before any input. A previously claimed ID
+        # is NEVER executed twice, even after a WebSocket reconnect.
         if not self.dedupe.mark_started(cid):
             cached = self.dedupe.get(cid)
             log.info("duplicate delivery of %s ignored", cid)
             if cached:
                 await self.send(cached)
             return
-        if self.paused:
-            out = Outcome(False, error={"code": "PAUSED", "message": "controller is paused"})
-            await self.finish(cid, out)
-            return
-        if action not in CAPABILITY_OF:
-            await self.finish(cid, Outcome(False, error={"code": "NOT_ALLOWED", "message": f"unknown action {action}"}))
-            return
-        await self.send({"type": "started", "commandId": cid})
-        # Never log user-supplied command arguments. WhatsApp content, Calendar
-        # invitations and ChatGPT prompts can contain personal/private data.
-        log.info("▶ action=%s command=%s (arguments redacted)", action, cid[:16])
+
+        # Register the cancellation flag BEFORE the first await after claiming
+        # the command. Otherwise an emergency pause can arrive while "started"
+        # is being sent and miss the action entirely.
         ev = threading.Event()
-        self.cancels[cid] = ev
-        timeout = max(1.0, float(cmd.get("timeoutMs", 30000)) / 1000.0)
-        loop = asyncio.get_running_loop()
-        try:
-            out = await asyncio.wait_for(loop.run_in_executor(self.pool, self.executor.run, action, cmd.get("args") or {}, ev), timeout)
-        except asyncio.TimeoutError:
+        if cid in self.cancelled_early:
             ev.set()
-            out = Outcome(False, error={"code": "TIMEOUT", "message": "action took too long on the laptop"})
+            self.cancelled_early.pop(cid, None)
+        if epoch != self.connection_epoch:
+            ev.set()
+        self.cancels[cid] = ev
+        try:
+            if self.paused:
+                await self.finish(cid, Outcome(False, error={
+                    "code": "PAUSED", "message": "Controller is paused; no new action started",
+                }))
+                return
+            if action not in CAPABILITY_OF:
+                await self.finish(cid, Outcome(False, error={
+                    "code": "NOT_ALLOWED", "message": f"unknown action {action}",
+                }))
+                return
+
+            await self.send({"type": "started", "commandId": cid})
+            if self.paused or epoch != self.connection_epoch:
+                ev.set()
+            if ev.is_set():
+                await self.finish(cid, Outcome(False, error={
+                    "code": "CANCELLED",
+                    "message": "Action stopped before entering the Windows execution worker",
+                }))
+                return
+
+            # Never log private user arguments such as WhatsApp messages,
+            # mail recipient details or ChatGPT prompts.
+            log.info("▶ action=%s command=%s (arguments redacted)", action, cid[:16])
+            timeout = max(1.0, float(cmd.get("timeoutMs", 30000)) / 1000.0)
+            loop = asyncio.get_running_loop()
+            try:
+                out = await asyncio.wait_for(
+                    loop.run_in_executor(self.pool, self.executor.run, action, cmd.get("args") or {}, ev),
+                    timeout,
+                )
+            except asyncio.TimeoutError:
+                ev.set()
+                out = Outcome(False, error={
+                    "code": "TIMEOUT_UNVERIFIED",
+                    "message": "Windows action timed out. It may already have happened; check the target app before retrying.",
+                })
+
+            if ev.is_set():
+                # A click or Send may have been attempted before the Stop,
+                # timeout or connection loss reached Windows. Never claim
+                # completed, cancelled-with-no-side-effect, or auto-retryable.
+                out = Outcome(False, error={
+                    "code": "INTERRUPTED_UNVERIFIED",
+                    "message": "Action interrupted by Stop, timeout or disconnect. It may already have happened; verify manually before another attempt.",
+                })
+            log.info("%s %s %s", "✔" if out.ok else "✖", action, (out.error or {}).get("message", ""))
+            await self.finish(cid, out)
         finally:
             self.cancels.pop(cid, None)
-        if ev.is_set() and out.ok:
-            log.info("command %s finished after cancel was requested", cid)
-        log.info("%s %s %s", "✔" if out.ok else "✖", action, (out.error or {}).get("message", ""))
-        await self.finish(cid, out)
 
     async def finish(self, cid: str, out: Outcome) -> None:
         msg = out.to_message(cid)
@@ -169,6 +233,7 @@ class ControllerClient:
         except TypeError:  # websockets < 14
             conn = websockets.connect(url, extra_headers=headers, max_size=4 * 1024 * 1024, ping_interval=25, ping_timeout=20, open_timeout=15)
         async with conn as ws:
+            self.connection_epoch += 1
             self.ws = ws
             await ws.send(json.dumps(self.hello()))
             hb = asyncio.create_task(self.heartbeat(ws))
@@ -179,10 +244,18 @@ class ControllerClient:
                     except ValueError:
                         continue
                     if msg.get("type") == "command":
-                        asyncio.create_task(self._guard(self.handle(msg)))
+                        task = asyncio.create_task(self._guard(self.handle(msg)))
+                        self.active_commands.add(task)
+                        task.add_done_callback(self.active_commands.discard)
                     else:
                         await self.handle(msg)
             finally:
+                # Any command that has not registered a cancellation Event yet
+                # also fails due to the epoch mismatch on its next await.
+                # The relay may already have timed out/cancelled these
+                # commands. Do not permit old queued actions to execute while
+                # this device is offline or after it reconnects.
+                self.invalidate_connection("WebSocket disconnected")
                 hb.cancel()
                 self.ws = None
 
@@ -219,6 +292,7 @@ class ControllerClient:
 
     def stop(self) -> None:
         if self.loop:
+            self.loop.call_soon_threadsafe(self.invalidate_connection, "controller stopping")
             self.loop.call_soon_threadsafe(self.stop_event.set)
             if self.ws is not None:
                 asyncio.run_coroutine_threadsafe(self.ws.close(), self.loop)

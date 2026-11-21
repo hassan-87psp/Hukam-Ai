@@ -1,7 +1,7 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
-## Current development release — v1.6.8 (21 Nov 2026)
+## Current development release — v1.6.9 (21 Nov 2026)
 
 > **Automated CI is not a real-laptop acceptance test.** This repository contains the verified-at-build-time implementation, not a guarantee that WhatsApp, third-party websites, Gmail or Calendar work end to end on the owner's actual Windows machine.
 
@@ -19,7 +19,7 @@
 **Run the app on the HUKM Node relay origin.** GitHub Pages is static hosting: a successful Pages build is **not** evidence that `/api`, authenticated sessions, WebSockets or the laptop controller work. To check an authorized relay deployment without credentials:
 
 ```bash
-npm run check:relay -- --url https://YOUR-RELAY-ORIGIN --expected-version 1.6.8
+npm run check:relay -- --url https://YOUR-RELAY-ORIGIN --expected-version 1.6.9
 ```
 
 This read-only preflight checks public health/auth routes and that owner-only runtime status returns 401 to anonymous users. It intentionally cannot verify Gemini response quality, connected laptop or external actions. For details see [Phase 6 release and deployment audit](docs/phase6-v167-release-audit.md). The historical Version 1 feature table below describes the original architecture and should not be used as current deployment evidence.
