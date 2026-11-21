@@ -1,6 +1,30 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
+## Current development release — v1.6.7 (21 Nov 2026)
+
+> **Automated CI is not a real-laptop acceptance test.** This repository contains the verified-at-build-time implementation, not a guarantee that WhatsApp, third-party websites, Gmail or Calendar work end to end on the owner's actual Windows machine.
+
+| System | Current scope |
+|---|---|
+| Core Gemini conversation, project memory and reviewed plans | Code implemented, relay tests automated |
+| Windows controller: mouse/keyboard, browser, UIA, screenshots and file handling | Supervised allowlisted actions, EXE build + simulation; **real screen test deferred** |
+| Personal WhatsApp Desktop | App-only best-effort select/read/draft/attachments and separately reviewed Send; **not real-account verified** |
+| Voice | Web Speech API + optional voice output; real Roman Urdu recognition accuracy unbenchmarked |
+| Gmail/Outlook | Inbox-opening and compose links **only**; no verified read, send or saved draft |
+| Google/Outlook Calendar | Reviewed event draft/save UI; no guaranteed provider-side event ID/invitations |
+| Premium Projects dashboard | Isolated messages, notes, instructions, per-project task history and device selection |
+| Final release | GitHub Actions validates web/relay, simulated Windows and ZIP packaging. **Live Render and real-PC testing outstanding** |
+
+**Run the app on the HUKM Node relay origin.** GitHub Pages is static hosting: a successful Pages build is **not** evidence that `/api`, authenticated sessions, WebSockets or the laptop controller work. To check an authorized relay deployment without credentials:
+
+```bash
+npm run check:relay -- --url https://YOUR-RELAY-ORIGIN --expected-version 1.6.7
+```
+
+This read-only preflight checks public health/auth routes and that owner-only runtime status returns 401 to anonymous users. It intentionally cannot verify Gemini response quality, connected laptop or external actions. For details see [Phase 6 release and deployment audit](docs/phase6-v167-release-audit.md). The historical Version 1 feature table below describes the original architecture and should not be used as current deployment evidence.
+
+
 HUKM AI lets you control **your own Windows laptop** from a phone or desktop browser, by text or voice, in **Urdu, Roman Urdu or English**.
 
 ```
@@ -15,7 +39,7 @@ HUKM AI lets you control **your own Windows laptop** from a phone or desktop bro
 |---|---|
 | <img src="docs/screenshots/mobile-dashboard.jpg" width="300"> | <img src="docs/screenshots/approval.jpg" width="520"> |
 
-## What works in Version 1
+## Original Version 1 feature notes (historical)
 
 | Area | Status |
 |---|---|

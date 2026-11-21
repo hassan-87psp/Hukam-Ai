@@ -18,6 +18,8 @@
     "test": "vitest run",
     "test:controller": "python -m pytest -q apps/windows-controller/tests",
     "test:all": "npm run build && npm test && npm run test:controller",
+    "check:release": "node scripts/check-release-version.mjs",
+    "check:relay": "node scripts/check-relay.mjs",
     "typecheck": "tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/relay/tsconfig.json --noEmit",
     "prebuild": "node --version"
   },

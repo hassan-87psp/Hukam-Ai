@@ -1,34 +1,40 @@
-HUKM AI Windows Controller v1.6.6 — Local Install & Safety
+HUKM AI Windows Controller v1.6.7 — Local Install & Safety
 ======================================================
 
 This is a Windows controller that lets your own authorised HUKM AI account
 run a fixed set of safe laptop commands. Pairing credentials live under
 %APPDATA%\HUKM AI and are reused after installing a new version.
 
-INSTALL / UPDATE (user action required):
-This version fixes the frozen EXE startup error: attempted relative import with no known parent package.
-1. On your own laptop, close the old HUKM Controller black window.
-2. Extract this ZIP. Double-click hukm-controller.exe. If prompted by
-   Windows SmartScreen, verify you trust the file from your own HUKM project.
-3. Keep the visible Controller window open to allow remote control.
-4. In HUKM AI > Devices, confirm the controller version is 1.6.6.
-5. If not paired, go to Devices > Pair and follow on-screen instructions.
-   NEVER share your device token or Windows login password.
+INSTALL / UPDATE (user action required; live laptop tests deferred):
+1. In the GitHub Actions artifact, compare SHA256SUMS file
+   HUKM-Windows-Controller-v1.6.7.zip.sha256 against PowerShell:
+   Get-FileHash .\HUKM-Windows-Controller-v1.6.7.zip -Algorithm SHA256
+2. Extract the INNER HUKM-Windows-Controller-v1.6.7.zip completely.
+3. Close all old HUKM Controller processes manually, then run
+   INSTALL_OR_UPDATE.cmd. This copies the EXE to a stable folder, preserves
+   device pairing and backs up the previous EXE for rollback.
+4. Run VERIFY_HUKM.cmd to confirm the installed EXE version/status.
+5. Only when ready for real laptop tests, run START_HUKM.cmd and check the
+   live authenticated Node relay dashboard for the connected Windows device.
+6. Only after real acceptance tests should you enable Windows Autostart.
 
-AUTOSTART (opt-in, only on your laptop):
-- With the source installer, run enable-autostart.bat (after pairing).
-- With the packaged executable, open Command Prompt in this ZIP folder and run:
-  hukm-controller.exe autostart on
-- To disable: hukm-controller.exe autostart off
-- The Startup entry is per Windows user; no administrator privileges or
-  hidden system service is installed.
+IMPORTANT: GitHub Pages is static hosting; it cannot replace the HUKM
+relay's /api endpoints, owner account or WebSocket controller connection.
+Do not delete old HUKM data, credentials, local folders or .env during
+controller updates.
+
+AUTOSTART (owner opt-in; do not activate before live tests):
+- Run ENABLE_AUTOSTART.cmd from the consolidated package when approved.
+- Run DISABLE_AUTOSTART.cmd to disable. HUKM never silently autostarts.
+- The Windows Startup entry belongs to the current user; no hidden Windows
+  service or administrative Windows login credentials are required.
 
 BROWSER OPERATOR (EXPERIMENTAL - APPROVAL REQUIRED EVERY TIME):
 - The owner may issue commands on the website chat: "browser click 450 300", "type: Hello", "scroll down 2", "press tab", or "press ctrl+l".
-- Only the foreground Chrome, Edge or Firefox window accepts this bounded input. Windows desktop, terminal and other apps are not directly controlled through this action.
+- Browser actions target visible Chrome, Edge or Firefox. Separately approved desktop.control supports bounded mouse/keyboard in allowed foreground Explorer, Notepad, Office and Paint windows; never hidden/system/terminal/WhatsApp Send dialogs.
 - HUKM shows exactly what will be typed/clicked and waits for explicit approval. Screenshot approval remains separate.
 - Successful delivery is not proof a website task finished. The user verifies results, and third-party services may restrict automation.
-- On a laptop, close the old Controller process before opening v1.6.6; existing encrypted device pairing is preserved.
+- On a laptop, close the old Controller process before opening v1.6.7; existing encrypted device pairing is preserved.
 - Don't type passwords or recovery codes in remote HUKM chat.
 - This is groundwork, not yet an autonomous visual agent or calendar/WhatsApp end-to-end workflow.
 
