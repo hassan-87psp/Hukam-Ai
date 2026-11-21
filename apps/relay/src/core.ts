@@ -388,11 +388,29 @@ export class Relay {
         const json = JSON.stringify(result);
         const safeResult = json.length > 200_000 ? { truncated: true } : result;
         if (screenshotId) run(this.db, 'UPDATE commands SET screenshot_id = ? WHERE id = ?', screenshotId, c.id);
-        this.finish(c.id, msg.ok ? 'completed' : 'failed', safeResult, msg.ok ? null : {
-          code: String(msg.error?.code ?? 'FAILED').slice(0, 40),
-          message: String(msg.error?.message ?? 'failed').slice(0, 500),
+        // The relay is the final source of truth for result integrity.
+        // Older Windows Controllers may send ok:true even though WhatsApp
+        // returned unreadChats:null. That is *not* a successful unread check.
+        // Check it here so already-installed clients cannot show green
+        // "Completed" for a count that was never established.
+        const countVerified = c.action !== 'whatsapp.check' ||
+          (typeof result.unreadChats === 'number' && Number.isInteger(result.unreadChats) &&
+           result.unreadChats >= 0 && result.unreadChats <= 999 &&
+           (result.source === 'WhatsApp Desktop Unread filter' || result.source === 'window title'));
+        const sendersVerified = c.action !== 'whatsapp.unread_senders' ||
+          (Array.isArray(result.senders) && result.senders.length > 0 &&
+           result.senders.every((s: unknown) => typeof s === 'string' && s.trim().length > 0));
+        const resultVerified = countVerified && sendersVerified;
+        const success = msg.ok === true && resultVerified;
+        this.finish(c.id, success ? 'completed' : 'failed', safeResult, success ? null : {
+          code: !resultVerified ? 'UNVERIFIABLE' : String(msg.error?.code ?? 'FAILED').slice(0, 40),
+          message: !countVerified
+            ? 'WhatsApp unread count could not be verified on this Windows app. This is unknown, NOT zero. Open WhatsApp Desktop and try HUKM diagnostics.'
+            : !sendersVerified
+              ? 'WhatsApp did not expose readable unread sender names. No names were verified.'
+              : String(msg.error?.message ?? 'failed').slice(0, 500),
         }, typeof msg.durationMs === 'number' ? Math.round(msg.durationMs) : null);
-        this.audit(userId, 'device', msg.ok ? 'command.completed' : 'command.failed', { commandId: c.id, action: c.action }, deviceId);
+        this.audit(userId, 'device', success ? 'command.completed' : 'command.failed', { commandId: c.id, action: c.action }, deviceId);
         break;
       }
     }
