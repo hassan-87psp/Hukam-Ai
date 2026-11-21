@@ -27,7 +27,7 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
   'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed',
-  'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft',
+  'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft', 'calendar.save_reviewed',
   'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
