@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict
+from pathlib import Path
 
 MAX_IMAGE = 16 * 1024 * 1024
 MAX_WORDS = 6000
@@ -49,8 +50,10 @@ def recognize_isolated(image, cancel=None):
     raw=buffer.getvalue()
     if len(raw)>MAX_IMAGE:
         raise VisualUnreadUnavailable("OCR image exceeds safe byte limit")
+    # Pytest adds its source root only to the parent's sys.path. The
+    # child cannot rely on cwd or inheriting that in-memory mutation.
     cmd=([sys.executable] if getattr(sys,"frozen",False) else
-         [sys.executable,"-m","controller"]) + ["--local-ocr-worker"]
+         [sys.executable,str(Path(__file__).resolve().parents[2]/"hukm_entry.py")]) + ["--local-ocr-worker"]
     process=None
     try:
         deadline=time.monotonic()+DEADLINE_SECONDS
@@ -71,7 +74,7 @@ def recognize_isolated(image, cancel=None):
         if cancel is not None and cancel.is_set():
             raise VisualUnreadUnavailable("OCR cancelled; no result returned")
         if process.returncode!=0 or len(output)>MAX_OUTPUT:
-            raise VisualUnreadUnavailable("Windows OCR worker could not read the image")
+            raise VisualUnreadUnavailable(f"Windows OCR worker could not read the image (exit {process.returncode})")
         rows=json.loads(output)
         if not isinstance(rows,list) or len(rows)>MAX_WORDS:
             raise ValueError("Invalid OCR result")

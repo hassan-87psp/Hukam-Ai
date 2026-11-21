@@ -83,6 +83,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Frozen EXE --help failed" }
           & .\dist\hukm-controller.exe status | Out-Null
           if ($LASTEXITCODE -ne 0) { throw "Frozen EXE status failed" }
+      - name: Smoke test frozen read-only OCR child on synthetic image
+        working-directory: apps/windows-controller
+        run: python tests/smoke_frozen_ocr.py
       - name: Publish ONE consolidated Windows installer ZIP
         shell: pwsh
         run: |
