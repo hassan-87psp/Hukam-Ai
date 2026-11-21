@@ -327,6 +327,22 @@ export class Operator {
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|mail\.google\.com|outlook\.office\.com)\/)/.test(url);
     const nativeWhatsAppWorkflow = !isFollowup ? desktopWhatsAppWorkflow(answer) : null;
     const selectedWhatsAppContact = !isFollowup ? namedWhatsAppRead(answer) : null;
+    // After an approved read the user may simply say "reply likho: ...".
+    // Exact contact is recovered from the scoped, expiring verified-read
+    // dialogue, not guessed from Gemini or arbitrary message text.
+    const previousRequest=isFollowup && last ? String(last.request) : '';
+    const recentVerifiedContact=previousRequest.startsWith('HUKM_VERIFIED_WHATSAPP_CONTACT:')
+      ? previousRequest.slice('HUKM_VERIFIED_WHATSAPP_CONTACT:'.length).split('\n')[0].trim()
+      : '';
+    const afterUnreadNames=isFollowup && previousRequest.startsWith(
+      'The owner opened Personal WhatsApp Desktop and reviewed visible unread chat names.');
+    const namedFollowup=afterUnreadNames ?
+      answer.replace(/\s+(?:ka|ke|ki)$/i,'').trim() : '';
+    const safeName=(value:string)=>/^[\p{L}\p{M}0-9 .'+()\-]{1,80}$/u.test(value) &&
+      !/^(?:yes|haan|nahi|no|ok|okay|send|bhejo)$/i.test(value);
+    const replyDraft=recentVerifiedContact && safeName(recentVerifiedContact)
+      ? answer.replace(/^(?:isko\s+)?(?:reply|jawab|message|msg)\s*(?:likho|karo|do|kar do|draft)?\s*(?:[:\-]|ke)?\s*/i,'').trim()
+      : '';
     if(!isFollowup && parsed.kind==='command' && parsed.action==='app.close'){
       // A model must never reverse "band kro" into "app.open".
       result = {summary:'Close the selected verified Notepad window (never discard unsaved changes)',
@@ -346,6 +362,19 @@ export class Operator {
           validateStep({action:inspectAction,args: nativeWhatsAppWorkflow==='count'?{mode:'desktop'}:{}}),
         ],
       };
+    } else if(recentVerifiedContact && safeName(recentVerifiedContact)){
+      if(!replyDraft || /^(?:haan|yes|ok|okay|send|bhej\w*|nahi|no)$/i.test(replyDraft))
+        return {kind:'clarify',topic:'operator-followup',
+          question:'Sir, '+recentVerifiedContact+' ko kya reply likhna hai? Exact message batayein; Send approval alag hogi.'};
+      result={summary:'Draft a reply to verified Personal WhatsApp contact '+recentVerifiedContact+' (do not Send)',
+        steps:[validateStep({action:'whatsapp.draft_reply',
+          args:{contact:recentVerifiedContact,message:replyDraft}})]};
+    } else if(namedFollowup && safeName(namedFollowup)){
+      result={summary:'Select and read visible Personal WhatsApp Desktop messages for '+namedFollowup,
+        steps:[
+          validateStep({action:'whatsapp.select_chat',args:{contact:namedFollowup}}),
+          validateStep({action:'whatsapp.read_selected',args:{contact:namedFollowup}}),
+        ]};
     } else if(selectedWhatsAppContact){
       result={
         summary:'Select and verify '+selectedWhatsAppContact+' in Personal WhatsApp Desktop, then read only the visible messages',
