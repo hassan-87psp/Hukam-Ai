@@ -128,6 +128,13 @@ def validate(action: str, args: dict) -> dict:
     if not isinstance(args, dict):
         raise ValidationError("args must be an object")
     a = args
+    if action == "screen.capture":
+        if not a:
+            return {}
+        monitor = a.get("monitor")
+        if set(a) != {"monitor"} or type(monitor) is not int or not 1 <= monitor <= 16:
+            raise ValidationError("Select one physical monitor numbered 1–16")
+        return {"monitor": monitor}
     if action == "controller.update":
         if a:
             raise ValidationError("HUKM updater accepts no URL, executable path or arguments")

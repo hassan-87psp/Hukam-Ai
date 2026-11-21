@@ -397,11 +397,12 @@ class Executor:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 
     # -- screen ---------------------------------------------------------
-    def do_screen_capture(self, _a, _c):
+    def do_screen_capture(self, a, cancel):
         if not self.cfg.screen_capture:
             raise ActionError("NOT_ALLOWED", "screen capture is disabled in this laptop's controller config")
-        shot = screen.capture()
-        return {"width": shot["width"], "height": shot["height"], "bytes": shot["bytes"], "_screenshot": shot}
+        shot = screen.capture(monitor=a.get("monitor", 1), cancel=cancel)
+        return {**{k: shot[k] for k in ("width", "height", "bytes", "monitor", "monitorCount", "sourceBounds", "simulated")},
+                "_screenshot": shot}
 
     # -- whatsapp -------------------------------------------------------
     def do_whatsapp_open(self, a, _c):

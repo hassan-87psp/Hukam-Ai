@@ -238,9 +238,9 @@ describe('validation & approval', () => {
   it('rejects exe filter', () => expect(validateCommand('file.search', { query: 'x', ext: ['exe'] }).ok).toBe(false));
   it('normalises URL', () => expect(validateCommand('web.open', { url: 'google.com' })).toMatchObject({ ok: true, args: { url: 'https://google.com/' } }));
   it('compose always needs approval even if user disables', () => expect(requiresApproval('whatsapp.compose', { 'whatsapp.compose': false })).toBe(true));
-  it('screen capture default approval, user can relax', () => {
+  it('screen capture always requires approval', () => {
     expect(requiresApproval('screen.capture')).toBe(true);
-    expect(requiresApproval('screen.capture', { 'screen.capture': false })).toBe(false);
+    expect(requiresApproval('screen.capture', { 'screen.capture': false })).toBe(true);
   });
   it('every parsed command validates', () => {
     const samples = ['Chrome kholo', 'Downloads folder kholo', 'Invoice PDF search karo', 'YouTube par Gold analysis play karo', 'Browser mein Forex news search karo', 'Desktop par jo PDF hai woh kholo'];
@@ -260,5 +260,17 @@ describe('messages', () => {
   });
   it('youtube fallback is honest', () => {
     expect(successMessage('youtube.play', { query: 'x' }, { mode: 'search' }).en).toContain("Couldn't");
+  });
+});
+
+describe('single physical monitor capture',()=>{
+  it('selects a numbered monitor without guessing',()=>{
+    expect(c('monitor 2 ka screenshot lo')).toMatchObject({action:'screen.capture',args:{monitor:2}});
+    expect(validateCommand('screen.capture',{monitor:2})).toMatchObject({ok:true,args:{monitor:2}});
+  });
+  it('rejects virtual desktop, out-of-range and non-integer selectors',()=>{
+    for(const monitor of [0,17,1.5,'2',true,null])
+      expect(validateCommand('screen.capture',{monitor}).ok).toBe(false);
+    expect(validateCommand('screen.capture',{monitor:2,all:true}).ok).toBe(false);
   });
 });

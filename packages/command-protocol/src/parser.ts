@@ -315,8 +315,14 @@ export function parseCommand(input: string): ParseResult {
   }
 
   // screen
-  if (/\b(screen|screenshot)\b/.test(t) && (SHOW.test(t) || /\b(capture|lo|le|take|grab|bhejo|send)\b/.test(t) || /^screenshot$/.test(t)))
+  if (/\b(screen|screenshot|monitor)\b/.test(t) && (SHOW.test(t) || /\b(capture|lo|le|take|grab|bhejo|send)\b/.test(t) || /^screenshot$/.test(t))) {
+    // Invalid or ambiguous multi-display requests must not capture another display.
+    const requested = t.match(/\b(?:monitor|screen)\s+(\d+)\b/);
+    if (/\b(?:all|sab|sare|saare|every|multiple|second|third|doosra|dusra)\b/.test(t))
+      return {kind:'clarify',topic:'unknown',normalized:t};
+    if (requested) return cmd('screen.capture', {monitor:Number(requested[1])}, 'screen-monitor');
     return cmd('screen.capture', {}, 'screen');
+  }
 
   // lock
   if (/\block\b/.test(t) && /\b(laptop|computer|pc|screen|system|windows)\b/.test(t)) return cmd('system.lock', {}, 'lock');

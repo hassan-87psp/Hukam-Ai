@@ -32,7 +32,7 @@ type AiDiagnostic = {
   noLaptopActions:boolean;accuracyVerified:false;
 };
 
-const OPTIONAL_APPROVAL: ActionName[] = ['screen.capture', 'file.open', 'app.open', 'web.open', 'folder.open', 'youtube.play', 'whatsapp.open', 'whatsapp.check'];
+const OPTIONAL_APPROVAL: ActionName[] = ['file.open', 'app.open', 'web.open', 'folder.open', 'youtube.play', 'whatsapp.open', 'whatsapp.check'];
 
 export default function Settings() {
   const { user, setUser, settings, saveSettings, devices, toast } = useStore();
@@ -118,7 +118,7 @@ export default function Settings() {
           </Section>
 
           <Section id="screens" icon={<ImageIcon className="h-5 w-5" />} title="Screenshot sharing">
-            <Toggle checked={settings.approvalRequired['screen.capture'] !== false} onChange={(v) => saveSettings({ approvalRequired: { ...settings.approvalRequired, 'screen.capture': v } })} label="Ask before every screenshot" description="Recommended. Screenshots are only ever taken on request — never continuously." />
+            <p className="text-sm text-ink2">Every screenshot requires explicit approval. Capture selects one physical monitor only, never continuous recording.</p>
             <Slider label="Keep screenshots for" min={1} max={168} step={1} value={settings.screenshotRetentionHours} fmt={(v) => (v < 24 ? `${v} h` : `${Math.round(v / 24)} day(s)`)} onChange={(v) => saveSettings({ screenshotRetentionHours: v })} />
             <p className="mt-4 label">Stored screenshots ({shots.length})</p>
             <ul className="space-y-1">
