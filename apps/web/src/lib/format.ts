@@ -32,7 +32,7 @@ export function duration(ms: number | null | undefined): string {
  * This UI guard prevents the green badge from lying about those old results.
  */
 export function whatsappResultUnverified(action: ActionName, result: unknown): boolean {
-  if(action !== 'whatsapp.check' && action !== 'whatsapp.unread_senders' && action !== 'whatsapp.send_reviewed') return false;
+  if(action !== 'whatsapp.check' && action !== 'whatsapp.unread_senders' && action !== 'whatsapp.send_reviewed' && action !== 'whatsapp.send_attachment_reviewed') return false;
   const r = result && typeof result === 'object' && !Array.isArray(result)
     ? result as Record<string, unknown> : {};
   if(action === 'whatsapp.send_reviewed')
