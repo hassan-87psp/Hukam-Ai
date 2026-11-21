@@ -242,7 +242,10 @@ def _compact_unread(words,width,height):
               0<=chip.x-(w.x+w.width)<=5*h]
         right=[w for w in aligned if _text(w) in ("favourites","favorites") and
                0<=w.x-(chip.x+chip.width)<=10*h]
-        headings=[w for w in header if _text(w)=="chats" and
+        # The Chats title can start at the very top of a compact window.
+        # Chip-row bounds must not also exclude that independent heading.
+        headings=[w for w in words if _text(w)=="chats" and
+                  0<=w.y and 7<=w.height<=48 and w.x+w.width<=width and
                   2*h<=chip.cy-w.cy<=18*h and w.x<=chip.x and
                   w.x>=max(0,chip.x-12*h)]
         if len(alls)==len(right)==len(headings)==1:
@@ -270,7 +273,7 @@ def _visible_titles_for_layout(words, width, chip):
         return []
     scaled=[Word(w.text,w.x*factor,w.y*factor,w.width*factor,w.height*factor) for w in words]
     moments=[w for w in scaled if w.cy>(chip.y+chip.height)*factor+65 and
-             w.cx>=width*factor*.50 and _DATE.fullmatch(w.text.strip())]
+             w.cx>=max(chip.x+chip.width+chip.height*5, width*.32)*factor and _DATE.fullmatch(w.text.strip())]
     # Right edge rather than timestamp length: "Yesterday" and clock times
     # differ in width but share the same right-aligned chat column.
     clusters=[[v for v in moments if abs((v.x+v.width)-(w.x+w.width))<=24] for w in moments]

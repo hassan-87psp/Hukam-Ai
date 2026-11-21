@@ -306,3 +306,14 @@ def test_existing_unread_selection_does_not_click(monkeypatch):
     result=vu.visual_scan_unread(120)
     assert result["filterSelectedVerified"] is True
     assert result["filterClickAttempted"] is False
+
+
+def test_compact_layout_extracts_actual_sender_rows_without_mock():
+    x=compact_words()+[
+        vu.Word("Sample",69,156,40,11),vu.Word("One",113,156,19,11),
+        vu.Word("Yesterday",185,156,45,10),vu.Word("Preview",69,172,42,10),
+        vu.Word("Sample",69,213,40,11),vu.Word("Two",113,213,19,11),
+        vu.Word("Yesterday",185,213,45,10)]
+    chip=vu.locate_unread(x,520,920)
+    assert chip is not None
+    assert vu._visible_titles_for_layout(x,520,chip)==["Sample One","Sample Two"]
