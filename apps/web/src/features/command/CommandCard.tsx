@@ -327,6 +327,15 @@ function ApprovalBox({ c }: { c: Command }) {
           <dt className="text-ink2">Local file</dt><dd className="break-all">{String(a.path)}</dd>
           <dt className="text-ink2">Effect</dt><dd>Opens attachment preview only. Sending requires separate manual confirmation.</dd>
         </>)}
+        {c.action === 'calendar.save_reviewed' && (<>
+          <dt className="text-ink2">FINAL CALENDAR SAVE APPROVAL</dt><dd>{String(a.provider)}</dd>
+          <dt className="text-ink2">Exact title</dt><dd>{String(a.title)}</dd>
+          <dt className="text-ink2">Time</dt><dd>{String(a.startUtc)} – {String(a.endUtc)} ({String(a.timeZone)})</dd>
+          <dt className="text-ink2">Chrome profile</dt><dd>{String(a.profile)}</dd>
+          <dt className="text-ink2">Effect</dt><dd>
+            May create a real event. Opens/clicks Save only if the visible editor URL and title match. Invitations and event ID cannot be guaranteed. Never retry automatically.
+          </dd>
+        </>)}
         {c.action === 'calendar.event_draft' && (<>
           <dt className="text-ink2">Calendar</dt><dd>{String(a.provider)}</dd>
           <dt className="text-ink2">Title</dt><dd>{String(a.title)}</dd>
