@@ -56,6 +56,7 @@ export type ActionName =
   | 'ui.inspect'
   | 'ui.activate'
   | 'ui.scroll'
+  | 'desktop.control'
   | 'calendar.event_draft'
   | 'calendar.save_reviewed'
   | 'chatgpt.prompt_draft'

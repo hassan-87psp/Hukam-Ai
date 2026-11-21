@@ -199,6 +199,24 @@ export function parseCommand(input: string): ParseResult {
 
   // The first operator foundation: explicit, one-step browser controls.
   // No model-generated coordinates and no implicit website submissions.
+  // Explicit manual desktop actions; never inferred from vague model plans.
+  // All input goes through the owner's normal per-command approval, and the
+  // Windows controller further limits it to visible, allowed foreground apps.
+  const desktopDrag = t.match(/^(?:mouse|desktop|laptop)\s+drag\s+(-?\d{1,5})[\s,]+(-?\d{1,5})\s+(?:to|se)\s+(-?\d{1,5})[\s,]+(-?\d{1,5})(?:\s+(?:karo|kar do))?$/);
+  if (desktopDrag) return cmd('desktop.control', {
+    kind:'drag',x:Number(desktopDrag[1]),y:Number(desktopDrag[2]),
+    toX:Number(desktopDrag[3]),toY:Number(desktopDrag[4]),
+  },'desktop-drag');
+  const desktopClick = t.match(/^(?:mouse|desktop|laptop)\s+(?:(double|right)\s+)?click\s+(-?\d{1,5})[\s,]+(-?\d{1,5})(?:\s+(?:karo|kar do))?$/);
+  if (desktopClick) return cmd('desktop.control',{
+    kind:desktopClick[1]==='double'?'double_click':desktopClick[1]==='right'?'right_click':'click',
+    x:Number(desktopClick[2]),y:Number(desktopClick[3]),
+  },'desktop-click');
+  const desktopType = input.trim().match(/^(?:keyboard|desktop|laptop)\s+(?:type|likho)(?:\s+text)?\s*:\s*(.{1,1000})$/is);
+  if (desktopType) return cmd('desktop.control',{kind:'type',text:desktopType[1].trim()},'desktop-type');
+  const desktopKey = t.match(/^(?:keyboard|desktop|laptop)\s+(?:press|dabao)\s+(enter|tab|shift\+tab|escape|backspace|home|end|arrowdown|arrowup|arrowleft|arrowright|ctrl\+[acvzs])$/);
+  if (desktopKey) return cmd('desktop.control',{kind:'key',key:desktopKey[1]},'desktop-key');
+
   // The relay requires a separate owner approval for every browser input.
   const click = t.match(/^(?:browser\s+)?(?:click|tap)\s+(?:at\s+)?(\d{1,4})[\s,]+(\d{1,4})(?:\s+(?:karo|kar do))?$/);
   if (click) return cmd('browser.control', { kind: 'click', x: Number(click[1]), y: Number(click[2]) }, 'browser-click');
