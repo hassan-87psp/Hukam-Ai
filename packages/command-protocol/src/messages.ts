@@ -63,6 +63,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('Active app ko scroll karne se pehle approval chahiye.', 'فعال ایپ اسکرول کرنے کے لیے اجازت چاہیے۔', 'Approval required to scroll the foreground application.');
     case 'calendar.event_draft':
       return L('Calendar event ka draft browser mein kholne ke liye approval chahiye.', 'کیلنڈر ایونٹ ڈرافٹ کی اجازت چاہیے۔', 'Approval required to open the Calendar event draft.');
+    case 'calendar.save_reviewed':
+      return L('Calendar event ke exact title/date review karke final Save approval chahiye.', 'کیلنڈر میں محفوظ کرنے کی آخری اجازت چاہیے۔', 'Final approval required before clicking Save in the reviewed Calendar event editor.');
     case 'chatgpt.prompt_draft':
       return L('ChatGPT Project mein prompt type karne ke liye approval chahiye.', 'چیٹ جی پی ٹی میں پرامپٹ لکھنے کی اجازت چاہیے۔', 'Approval required to draft the prompt in ChatGPT.');
     case 'chatgpt.submit_prompt':
