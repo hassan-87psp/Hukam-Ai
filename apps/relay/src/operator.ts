@@ -27,7 +27,7 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
   'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed',
-  'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft', 'calendar.save_reviewed',
+  'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft', 'calendar.save_reviewed',
   'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
@@ -102,8 +102,8 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
     'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, calendar.event_draft, calendar.save_reviewed,',
     'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
-    'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.send_reviewed, whatsapp.attach_preview.',
-    'Never use arbitrary shell, file deletion, payments, password/OTP reading or WhatsApp Send. Do not pretend a draft was sent.',
+    'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.send_reviewed, whatsapp.attach_preview, whatsapp.send_attachment_reviewed.',
+    'Never use arbitrary shell, file deletion, payments, password/OTP reading or UNREVIEWED WhatsApp Send. Do not pretend a draft was sent.',
     'calendar.event_draft opens a prefilled Google/Outlook editor only, not a saved event or invitations. Return an honest draft summary.',
     'calendar.save_reviewed can be used only after the owner explicitly asks to SAVE the exact reviewed Calendar event in the correct Chrome profile.',
     'It requires separate final approval; the action tries visible Save but never claims API event ID, attendance invites or successful creation without provider verification.',
@@ -113,6 +113,8 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'whatsapp.draft_reply needs exact selected contact and reply text, types only; never sends.',
     'whatsapp.send_reviewed is allowed only after an explicit user instruction to send a precise message to the exact selected contact.',
     'It requires separate final approval. Never auto-retry an uncertain WhatsApp send.',
+    'whatsapp.send_attachment_reviewed needs an exact matching attachment preview in the active Personal WhatsApp Desktop,',
+    'an explicit request to send that selected file, and separate final user approval.',
     'whatsapp.attach_preview needs exact selected contact and fully qualified local file path in an allowed folder; does not send.',
     'For ChatGPT image/banner/script tasks in a saved Project, open browser.profile_open to its exact configured ChatGPT URL,',
     'then chatgpt.prompt_draft for the reviewed prompt. chatgpt.submit_prompt needs separate approval.',
@@ -284,7 +286,7 @@ export class Operator {
     // High-impact effects must be supported by the *user's request*, not
     // merely a model suggestion or untrusted project instructions.
     for(const step of result.steps){
-      if(step.action==='whatsapp.send_reviewed' &&
+      if((step.action==='whatsapp.send_reviewed' || step.action==='whatsapp.send_attachment_reviewed') &&
          !/(?:\bsend\b|\bsent\b|\bbhej\w*\b|\breply\s*(?:kar\s*do|kardo|kro|karo)\b)/i.test(request))
         throw new HttpError(422,'WA_SEND_NOT_REQUESTED',
           'HUKM cannot send a WhatsApp message unless the owner explicitly asks to send/reply.');
