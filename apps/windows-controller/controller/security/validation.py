@@ -37,7 +37,7 @@ CAPABILITY_OF = {
     "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.scroll": "input",
     "calendar.event_draft": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
     "chatgpt.download_visible": "browser", "whatsapp.read_selected": "whatsapp",
-    "whatsapp.draft_reply": "whatsapp", "whatsapp.attach_preview": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
+    "whatsapp.draft_reply": "whatsapp", "whatsapp.send_reviewed": "whatsapp", "whatsapp.attach_preview": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
     "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp", "whatsapp.unread_senders": "whatsapp",
 }
 
