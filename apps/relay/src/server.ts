@@ -274,6 +274,11 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   // Read-only catalog and explicit owner teaching. Preview creates a plan, never runs it.
   add('GET','/api/skills',true,c=>skills.list(c.user!.id,c.url.searchParams.get('projectId')));
   add('POST','/api/skills/teach',true,c=>skills.teach(c.user!.id,c.url.searchParams.get('projectId'),c.body));
+  add('GET','/api/skills/demonstrations',true,c=>skills.demonstrations(c.user!.id,c.url.searchParams.get('projectId')));
+  add('POST','/api/skills/teach-workflow',true,c=>{
+    if(!cmdLimit.take('skill-teach:'+c.user!.id))throw new HttpError(429,'RATE_LIMIT','Teaching limit reached');
+    return skills.teachWorkflow(c.user!.id,c.url.searchParams.get('projectId'),c.body);
+  });
   add('DELETE','/api/skills/taught/:id',true,c=>skills.remove(c.user!.id,c.url.searchParams.get('projectId'),c.params.id));
   add('POST','/api/skills/preview',true,c=>{
     if(!cmdLimit.take('skill-preview:'+c.user!.id))throw new HttpError(429,'RATE_LIMIT','Skill preview limit reached');

@@ -4,7 +4,8 @@ import {get,post,del} from '../services/api';
 import type {OperatorPlan} from '../services/store';
 import OperatorPlanCard from '../features/agent/OperatorPlanCard';
 type Recipe={id:string;title:string;category:string;steps:{action:string;args:Record<string,unknown>}[]};
-type Taught={id:string;alias:string;skillId:string};
+type Taught={id:string;alias:string;skillId:string;workflow?:boolean};
+type Demo={id:string;updatedAt:string;steps:Recipe['steps']};
 type Catalog={starter:Recipe[];taught:Taught[]};
 function WorkspaceSkills({projectId}:{projectId:string}){
   const [data,setData]=useState<Catalog>({starter:[],taught:[]});
@@ -12,6 +13,11 @@ function WorkspaceSkills({projectId}:{projectId:string}){
   const [alias,setAlias]=useState('');
   const [skillId,setSkillId]=useState('');
   const [correction,setCorrection]=useState('');
+  const [demos,setDemos]=useState<Demo[]>([]);
+  const [demoId,setDemoId]=useState('');
+  const [demoName,setDemoName]=useState('');
+  const [reviewed,setReviewed]=useState(false);
+  const [loadedDemos,setLoadedDemos]=useState(false);
   const [share,setShare]=useState(false);
   const [plan,setPlan]=useState<OperatorPlan|null>(null);
   const [busy,setBusy]=useState(false);
@@ -37,6 +43,19 @@ function WorkspaceSkills({projectId}:{projectId:string}){
     try{await del('/api/skills/taught/'+id+scope);setData(v=>({...v,taught:v.taught.filter(x=>x.id!==id)}));}
     catch(e){setError(String(e));}finally{setBusy(false);}
   }
+  async function loadDemos(){
+    setBusy(true);setError('');
+    try{setDemos(await get<Demo[]>('/api/skills/demonstrations'+scope));setLoadedDemos(true);setDemoId('');setReviewed(false);}
+    catch(e){setError(String(e));}finally{setBusy(false);}
+  }
+  async function teachDemo(e:FormEvent){
+    e.preventDefault();if(!reviewed||!demoId||busy)return;setBusy(true);setError('');setNotice('');
+    try{
+      const item=await post<Taught>('/api/skills/teach-workflow'+scope,{alias:demoName,runId:demoId,reviewed:true});
+      setData(v=>({...v,taught:[...v.taught,item]}));setDemoName('');setReviewed(false);setDemoId('');
+      setNotice('Reviewed workflow saved. Every future run needs a fresh plan review.');
+    }catch(e){setError(String(e));}finally{setBusy(false);}
+  }
   async function learn(e:FormEvent){
     e.preventDefault();setBusy(true);setError('');setNotice('');
     try{
@@ -56,7 +75,23 @@ function WorkspaceSkills({projectId}:{projectId:string}){
         <select className="field w-full" required value={skillId} onChange={e=>setSkillId(e.target.value)} aria-label="Recipe"><option value="">Choose demonstrated recipe</option>{data.starter.map(s=><option key={s.id} value={s.id}>{s.title}</option>)}</select>
         <button className="btn-primary" disabled={busy||!alias.trim()||!skillId}>Save taught name</button>
       </form>
-      {data.taught.map(t=><div key={t.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-field/50 p-3"><span className="flex-1 text-sm">{t.alias}<span className="block text-xs text-ink2">{data.starter.find(s=>s.id===t.skillId)?.title??t.skillId}</span></span><button className="btn-ghost" disabled={busy} onClick={()=>void preview(t.alias)}>Review</button><button className="btn-ghost text-bad" disabled={busy} onClick={()=>void remove(t.id)}>Remove</button></div>)}
+      {data.taught.map(t=><div key={t.id} className="flex flex-wrap items-center gap-2 rounded-xl bg-field/50 p-3"><span className="flex-1 text-sm">{t.alias}<span className="block text-xs text-ink2">{t.workflow?'Owner-reviewed task workflow':data.starter.find(s=>s.id===t.skillId)?.title??t.skillId}</span></span><button className="btn-ghost" disabled={busy} onClick={()=>void preview(t.alias)}>Review</button><button className="btn-ghost text-bad" disabled={busy} onClick={()=>void remove(t.id)}>Remove</button></div>)}
+    </section>
+    <section className="glass rounded-2xl p-4 space-y-3">
+      <h2 className="font-semibold">Learn from a demonstrated task</h2>
+      <p className="text-xs text-ink2">Run a safe task through HUKM first. Review the actual result yourself, then save its completed steps as a reusable workflow. No background recording, copied results, credentials, arbitrary URLs or sensitive input replay.</p>
+      <button type="button" className="btn-ghost" disabled={busy} onClick={()=>void loadDemos()}>Load eligible finished tasks</button>
+      {loadedDemos&&demos.length===0&&<p className="text-sm text-ink2">No eligible completed workflow in this workspace yet.</p>}
+      {demos.length>0&&<form className="space-y-3" onSubmit={e=>void teachDemo(e)}>
+        <select className="field w-full" required aria-label="Demonstrated task" value={demoId} onChange={e=>{setDemoId(e.target.value);setReviewed(false);}}>
+          <option value="">Select a finished task</option>
+          {demos.map(d=><option key={d.id} value={d.id}>{d.steps.map(s=>s.action).join(' → ')} · {new Date(d.updatedAt).toLocaleString()}</option>)}
+        </select>
+        {demos.find(d=>d.id===demoId)?.steps.map((s,i)=><div key={i} className="rounded-xl bg-field/50 p-3 text-sm"><strong>{i+1}. {s.action}</strong><p className="break-words text-xs text-ink2">{JSON.stringify(s.args)}</p></div>)}
+        <input className="field w-full" maxLength={80} required placeholder="Name your demonstrated workflow" aria-label="Workflow name" value={demoName} onChange={e=>setDemoName(e.target.value)}/>
+        <label className="flex gap-2 text-xs"><input type="checkbox" checked={reviewed} onChange={e=>setReviewed(e.target.checked)} disabled={!demoId}/> I reviewed these exact steps and confirmed the actual result on my laptop.</label>
+        <button className="btn-primary" disabled={busy||!reviewed||!demoId||!demoName.trim()}>Save reviewed workflow</button>
+      </form>}
     </section>
     <section className="glass rounded-2xl p-4 space-y-3">
       <h2 className="font-semibold">Learn from a correction</h2>
