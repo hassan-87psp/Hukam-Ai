@@ -1,5 +1,5 @@
-<!-- Historical v1 status. Updated v1.3.0 audit: docs/audit-20261121.md -->
-> This file describes the original V1 and is not the current feature checklist. Read [Current operator audit](audit-20261121.md) for new Projects, Gemini planning, v1.3.0 and remaining limitations.
+<!-- Historical V1 status, not the current operational checklist. -->
+> This file documents the original Version 1 only. **Current code release is v1.6.7**: read [Phase 6 release and deployment audit](phase6-v167-release-audit.md), [the operator audit](audit-20261121.md) and Phase 3–5 updates. Build success is not real laptop or live Render verification.
 
 # Integration status & feature checklist
 
