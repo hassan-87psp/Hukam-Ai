@@ -82,6 +82,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'diagnostics.probe': 'Safe laptop diagnostics',
   'ui.inspect': 'Inspect visible controls',
   'ui.activate': 'Activate visible control',
+  'ui.scroll': 'Scroll active app (approved)',
   'calendar.event_draft': 'Calendar event draft',
   'chatgpt.prompt_draft': 'ChatGPT prompt draft',
   'chatgpt.submit_prompt': 'Submit ChatGPT prompt',
