@@ -19,16 +19,16 @@ export type DesktopWhatsAppWorkflow = 'count' | 'senders' | null;
 
 export function desktopWhatsAppWorkflow(text: string): DesktopWhatsAppWorkflow {
   const t = text.trim().toLowerCase();
-  if (!/\\b(?:whats\\s?app|wa)\\b/.test(t)) return null;
-  const explicitWeb = /\\b(?:whatsapp\\s+web|web\\s+whatsapp)\\b/.test(t);
-  if (explicitWeb && !/\\b(?:personal|desktop|installed|windows\\s+app)\\b/.test(t)) return null;
-  const opening = /\\b(?:open|kholo|khol|kholen|start|launch|chalao)\\b/.test(t) ||
-    /\\bdesktop\\s+(?:on|in)\\s+(?:my\\s+)?laptop\\b/.test(t) ||
-    (/\\bdesktop\\b/.test(t) && /\\b(?:check|dekho|dekh|dakho)\\b/.test(t));
-  const reviewing = /\\b(?:check|dekho|dekh|dakho|parho|read|batao|dikhao)\\b/.test(t);
-  const messages = /\\b(?:msgs?|messages?|chats?|unread)\\b/.test(t);
+  if (!/\b(?:whats\s?app|wa)\b/.test(t)) return null;
+  const explicitWeb = /\b(?:whatsapp\s+web|web\s+whatsapp)\b/.test(t);
+  if (explicitWeb && !/\b(?:personal|desktop|installed|windows\s+app)\b/.test(t)) return null;
+  const opening = /\b(?:open|kholo|khol|kholen|start|launch|chalao)\b/.test(t) ||
+    /\bdesktop\s+(?:on|in)\s+(?:my\s+)?laptop\b/.test(t) ||
+    (/\bdesktop\b/.test(t) && /\b(?:check|dekho|dekh|dakho)\b/.test(t));
+  const reviewing = /\b(?:check|dekho|dekh|dakho|parho|read|batao|dikhao)\b/.test(t);
+  const messages = /\b(?:msgs?|messages?|chats?|unread)\b/.test(t);
   if (!opening || !reviewing || !messages) return null;
-  if (/\\b(?:kitne|kitni|count|how\\s+many|number|total)\\b/.test(t)) return 'count';
+  if (/\b(?:kitne|kitni|count|how\s+many|number|total)\b/.test(t)) return 'count';
   return 'senders';
 }
 
