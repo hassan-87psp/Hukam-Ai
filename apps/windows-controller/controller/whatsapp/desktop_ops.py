@@ -206,3 +206,79 @@ def attach_preview(expected_contact: str, path: str) -> dict:
         raise
     except Exception as exc:
         raise DesktopWhatsAppError("WhatsApp attachment controls differ on this app version") from exc
+
+
+def send_reviewed(expected_contact: str, expected_message: str) -> dict:
+    """One approved WhatsApp Send attempt, guarded by exact draft and chat.
+
+    This action is deliberately separate from draft_reply. The relay must have
+    authenticated the owner and displayed the exact recipient and message in a
+    dedicated approval card. Never issue Enter or a generic app-level Send.
+    """
+    if launcher.SIMULATE:
+        launcher._record("whatsapp.send_reviewed", "recipient and text (redacted)")
+        return {"sendAttempted": True, "sentUiConfirmed": True,
+                "deliveryVerified": False, "verified": False, "simulated": True,
+                "note": "SIMULATED Send only; no WhatsApp delivery occurred."}
+    try:
+        active, root, rect = _active_root()
+        _check_selected_contact(root, rect, expected_contact)
+        editor = _composer(root, rect)
+        try:
+            current = str(editor.GetValuePattern().Value or "")
+        except Exception as exc:
+            raise DesktopWhatsAppError(
+                "Cannot read existing WhatsApp draft to compare with exact reviewed message; no Send attempted"
+            ) from exc
+        if current != expected_message:
+            raise DesktopWhatsAppError(
+                "WhatsApp draft does not exactly match approved message. Nothing was sent."
+            )
+        left, top, width, height = rect
+        choices = [
+            c for c, name, kind, x, y, right, _bottom in _controls(root)
+            if kind == "ButtonControl" and name.casefold() in ("send", "send message")
+            and (left + width * 0.65 <= x <= left + width)
+            and (top + height * 0.70 <= y <= top + height)
+        ]
+        if len(choices) != 1:
+            raise DesktopWhatsAppError(
+                "Exactly one visible WhatsApp Send button was not found; no Send attempted"
+            )
+        # Double-check app focus and contact after locating the button, never
+        # execute a stale UIA handle if user switches to a different chat/app.
+        if windows.active_window().hwnd != active.hwnd:
+            raise DesktopWhatsAppError("WhatsApp lost foreground focus; no Send attempted")
+        _check_selected_contact(root, rect, expected_contact)
+        if str(editor.GetValuePattern().Value or "") != expected_message:
+            raise DesktopWhatsAppError("WhatsApp draft changed; no Send attempted")
+        # Never auto-retry after this click: the message may have actually sent.
+        choices[0].Click(simulateMove=False)
+    except DesktopWhatsAppError:
+        raise
+    except Exception as exc:
+        raise DesktopWhatsAppError("Could not safely verify the WhatsApp Send button or exact draft") from exc
+
+    # A click may send or queue the message. We cannot prove WhatsApp server
+    # delivery via UI Automation, even if the composer becomes empty.
+    try:
+        import uiautomation as auto
+        for _ in range(12):
+            time.sleep(0.25)
+            if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
+                break
+            root2 = auto.ControlFromHandle(active.hwnd)
+            editor2 = _composer(root2, rect)
+            if not str(editor2.GetValuePattern().Value or "").strip():
+                return {
+                    "sendAttempted": True, "draftCleared": True,
+                    "sentUiConfirmed": False, "deliveryVerified": False,
+                    "verified": False, "contact": expected_contact,
+                    "note": "WhatsApp Send was clicked and composer cleared. Delivery is NOT verified; do not retry automatically or a duplicate may be sent.",
+                }
+    except Exception:
+        pass
+    return {"sendAttempted": True, "draftCleared": False,
+            "sentUiConfirmed": False, "deliveryVerified": False,
+            "verified": False, "contact": expected_contact,
+            "note": "WhatsApp Send button was clicked. The app did not expose proof of delivery. Check the chat on the laptop; NEVER retry automatically."}
