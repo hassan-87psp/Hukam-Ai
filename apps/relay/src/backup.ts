@@ -3,11 +3,12 @@
  * Snapshots live in a separate private bucket in Milvoy Supabase Storage.
  * Does not modify Milvoy application tables.
  */
-import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, statSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import type { DB } from './db';
 import { log } from './util';
+import { readBoundedBytes } from './cloud-transport';
 
 const HEADER = Buffer.from('SQLite format 3\0', 'ascii');
 const MAX_BYTES = 20 * 1024 * 1024;
@@ -41,7 +42,7 @@ export async function restoreCloudSnapshot(dataDir: string): Promise<boolean> {
     return false;
   }
   if (!response.ok) throw new Error('Cloud restore failed: HTTP ' + response.status);
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const bytes = await readBoundedBytes(response,MAX_BYTES);
   if (bytes.length < 100 || bytes.length > MAX_BYTES || !bytes.subarray(0,16).equals(HEADER))
     throw new Error('Invalid cloud SQLite backup; refusing to start');
   mkdirSync(dataDir, { recursive: true });
@@ -58,7 +59,19 @@ export async function restoreCloudSnapshot(dataDir: string): Promise<boolean> {
       if (checks.length !== 1 || checks[0].integrity_check !== 'ok' || !schema)
         throw new Error('Cloud SQLite snapshot integrity or schema check failed');
     } finally { candidate.close(); }
-    renameSync(temp, join(dataDir, 'hukm.db'));
+    const local = join(dataDir,'hukm.db');
+    if(existsSync(local+'-wal') && statSync(local+'-wal').size>0)
+      throw new Error('Local SQLite WAL needs recovery; cloud restore refused');
+    if(existsSync(local+'-journal') && statSync(local+'-journal').size>0)
+      throw new Error('Local SQLite journal needs recovery; cloud restore refused');
+    if(existsSync(local)) {
+      if(statSync(local).size!==bytes.length || !readFileSync(local).equals(bytes))
+        throw new Error('Local and cloud SQLite snapshots differ; preserve both for owner-reviewed recovery');
+      log('info','HUKM local database already matches cloud snapshot');
+      return false;
+    }
+    // Atomic, non-replacing installation in the same filesystem.
+    linkSync(temp,local);
   } finally { rmSync(scratch, { recursive: true, force: true }); }
   log('info', 'HUKM database restored from private Milvoy storage', { bytes: bytes.length });
   return true;

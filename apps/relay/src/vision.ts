@@ -1,3 +1,4 @@
+import { CloudBodyTooLarge, CloudLimitError, geminiRequest } from './cloud-transport';
 /** Explicit, separately consented Gemini screenshot analysis.
 
 A screenshot is first captured by the user's paired controller with its own
@@ -30,7 +31,7 @@ export async function analyzeScreenshot(
   const controller=new AbortController();
   const timer=setTimeout(()=>controller.abort(),25000);
   try{
-    const res=await (options.fetcher??fetch)(
+    const res=await geminiRequest(
       'https://generativelanguage.googleapis.com/v1beta/models/'+model+':generateContent',{
         method:'POST',
         headers:{'content-type':'application/json','x-goog-api-key':key},
@@ -51,9 +52,10 @@ export async function analyzeScreenshot(
           generationConfig:{temperature:0.1,maxOutputTokens:600},
         }),
         signal:controller.signal,
-      });
+      },150000,options.fetcher);
+    if(res.status===429)throw new HttpError(429,'AI_QUOTA','Gemini quota is temporarily unavailable.');
     if(!res.ok)throw new HttpError(502,'VISION_UPSTREAM','Gemini image analysis unavailable');
-    const raw=await res.text();
+    const raw=res.raw;
     if(raw.length>150000)throw new HttpError(502,'VISION_RESPONSE','Oversized Gemini response');
     let parsed:any;
     try{parsed=JSON.parse(raw);}catch{throw new HttpError(502,'VISION_RESPONSE','Invalid Gemini response');}
@@ -63,6 +65,8 @@ export async function analyzeScreenshot(
     return {analysis:analysis.slice(0,2400),imageSharedWith:'Google Gemini',actionsExecuted:false};
   }catch(e){
     if(e instanceof HttpError)throw e;
+    if(e instanceof CloudLimitError)throw new HttpError(429,e.code,e.message);
+    if(e instanceof CloudBodyTooLarge)throw new HttpError(502,'VISION_RESPONSE','Oversized Gemini response');
     if(controller.signal.aborted)throw new HttpError(504,'VISION_TIMEOUT','Gemini vision timed out');
     throw new HttpError(502,'VISION_CONNECTION','Gemini vision request failed');
   }finally{clearTimeout(timer);}

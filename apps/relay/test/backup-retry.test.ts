@@ -162,3 +162,27 @@ describe('restore validation before touching local data', () => {
     }
   });
 });
+
+describe('cloud snapshot conflict protection',()=>{
+  it('preserves divergent local data instead of restoring over it',async()=>{
+    const dir=mkdtempSync(join(tmpdir(),'hukm-restore-conflict-'));
+    const migrations=join(dir,'migrations');mkdirSync(migrations);
+    const local=join(dir,'local'),remote=join(dir,'remote');
+    const mk=(target:string,value:string)=>{
+      const db=openDb(target,migrations);
+      db.exec('CREATE TABLE sample (value TEXT)');
+      db.prepare('INSERT INTO sample VALUES (?)').run(value);
+      db.close();return readFileSync(join(target,'hukm.db'));
+    };
+    const original=mk(local,'local newer'),cloud=mk(remote,'older cloud');
+    vi.stubEnv('HUKM_BACKUP_URL','https://backup.example.test/snapshot');
+    vi.stubEnv('HUKM_BACKUP_TOKEN','test-only');
+    vi.stubGlobal('fetch',async()=>new Response(cloud,{status:200}));
+    try{
+      await expect(restoreCloudSnapshot(local)).rejects.toThrow('snapshots differ');
+      expect(readFileSync(join(local,'hukm.db'))).toEqual(original);
+      expect(await restoreCloudSnapshot(remote)).toBe(false);
+      expect(readFileSync(join(remote,'hukm.db'))).toEqual(cloud);
+    }finally{vi.unstubAllEnvs();vi.unstubAllGlobals();rmSync(dir,{recursive:true,force:true});}
+  });
+});

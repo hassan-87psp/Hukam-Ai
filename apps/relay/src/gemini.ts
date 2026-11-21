@@ -1,3 +1,4 @@
+import { CloudBodyTooLarge, CloudLimitError, geminiRequest } from './cloud-transport';
 /** HUKM's Gemini chat-only adapter.
  * Only explicit chat text and a short chat history are sent to Google.
  * Never receives device tokens, WhatsApp chats, screenshots, or command results.
@@ -85,7 +86,7 @@ export async function chatWithGemini(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 22000);
   try {
-    const response = await (options.fetcher ?? fetch)(
+    const response = await geminiRequest(
       'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent',
       {
         method: 'POST',
@@ -107,7 +108,7 @@ export async function chatWithGemini(
           },
         }),
         signal: controller.signal,
-      },
+      }, 160_000, options.fetcher,
     );
     if (!response.ok) {
       if (response.status === 429)
@@ -121,7 +122,7 @@ export async function chatWithGemini(
       throw new GeminiError(502, 'AI_UPSTREAM', 'Gemini is temporarily unavailable. Please retry.');
     }
     // Cap response size to limit memory use; never propagate raw upstream errors.
-    const raw = await response.text();
+    const raw = response.raw;
     if (raw.length > 160_000)
       throw new GeminiError(502, 'AI_RESPONSE', 'Gemini returned an oversized response.');
     let parsed: any;
@@ -152,6 +153,8 @@ export async function chatWithGemini(
       provider: 'gemini' };
   } catch (err) {
     if (err instanceof GeminiError) throw err;
+    if (err instanceof CloudLimitError) throw new GeminiError(429,err.code,err.message);
+    if (err instanceof CloudBodyTooLarge) throw new GeminiError(502,'AI_RESPONSE','Gemini returned an oversized response.');
     if (controller.signal.aborted)
       throw new GeminiError(504, 'AI_TIMEOUT', 'Gemini took too long to respond. Please try again.');
     throw new GeminiError(502, 'AI_CONNECTION', 'Could not connect to Gemini right now.');
