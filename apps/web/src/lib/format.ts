@@ -52,6 +52,9 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
         typeof r.sizeBytes === 'number' && r.sizeBytes > 0);
     case 'desktop.control':
       return r.verified !== true;
+    case 'email.inbox_open':
+    case 'email.compose_draft':
+      return r.verified !== true;
     case 'whatsapp.check':
       return !(typeof r.unreadChats === 'number' && Number.isInteger(r.unreadChats) &&
         r.unreadChats >= 0 && r.unreadChats <= 999 &&
@@ -106,6 +109,8 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'ui.activate': 'Activate visible control',
   'ui.scroll': 'Scroll active app (approved)',
   'desktop.control': 'Desktop mouse/keyboard (approved)',
+  'email.inbox_open': 'Open email inbox (approval)',
+  'email.compose_draft': 'Prepare email draft (approval)',
   'calendar.event_draft': 'Calendar event draft',
   'calendar.save_reviewed': 'Save reviewed Calendar event',
   'chatgpt.prompt_draft': 'ChatGPT prompt draft',
@@ -149,6 +154,8 @@ export function describeArgs(action: ActionName, args: Record<string, unknown>):
     case 'browser.profile_open': return String(a.profile)+' · '+String(a.url);
     case 'notepad.type': return 'text (' + String(a.text ?? '').length + ' characters)';
     case 'ui.activate': return 'control ' + String(a.label ?? '');
+    case 'email.inbox_open': return String(a.provider ?? '')+' · '+String(a.profile ?? '');
+    case 'email.compose_draft': return String(a.provider ?? '')+' · to '+String(a.to ?? '')+' · '+String(a.subject ?? '')+' · body '+String(a.body ?? '').length+' chars';
     case 'calendar.event_draft': return String(a.provider ?? '') + ' · ' + String(a.title ?? '');
     case 'chatgpt.prompt_draft': return 'prompt (' + String(a.prompt ?? '').length + ' characters)';
     case 'chatgpt.submit_prompt': return 'reviewed prompt (' + String(a.prompt ?? '').length + ' characters)';
