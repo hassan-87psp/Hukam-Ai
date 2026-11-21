@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { DB } from '../src/db';
-import { startCloudBackup } from '../src/backup';
+import { openDb, type DB } from '../src/db';
+import { restoreCloudSnapshot, startCloudBackup } from '../src/backup';
 
 describe('cloud snapshot failure recovery (isolated, no network)', () => {
   let dir: string;
@@ -12,10 +12,14 @@ describe('cloud snapshot failure recovery (isolated, no network)', () => {
   let upload: ReturnType<typeof vi.fn>;
 
   function fixtureBytes() {
-    // Header-format fixture only; this does not test SQLite restore integrity.
-    const bytes = Buffer.alloc(4096);
-    Buffer.from('SQLite format 3\\0', 'ascii').copy(bytes);
-    writeFileSync(join(dir, 'hukm.db'), bytes);
+    // Use a real SQLite file, not handcrafted signature bytes.
+    const migrations = join(dir, 'migrations');
+    mkdirSync(migrations, { recursive: true });
+    const db = openDb(dir, migrations);
+    try {
+      db.exec("CREATE TABLE IF NOT EXISTS sample (value TEXT NOT NULL)");
+      db.exec("INSERT INTO sample VALUES ('test-only')");
+    } finally { db.close(); }
   }
 
   beforeEach(() => {
@@ -83,5 +87,49 @@ describe('cloud snapshot failure recovery (isolated, no network)', () => {
     await backup.flush();
     await backup.flush();
     expect(upload).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('real SQLite snapshot round trip (isolated, mocked transport)', () => {
+  it('checkpoints real WAL writes and restores the exact sample row', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hukm-backup-roundtrip-'));
+    const source = join(dir, 'source');
+    const target = join(dir, 'target');
+    const migrations = join(dir, 'migrations');
+    mkdirSync(migrations);
+    vi.stubEnv('HUKM_BACKUP_URL', 'https://backup.example.test/snapshot');
+    vi.stubEnv('HUKM_BACKUP_TOKEN', 'test-only');
+    let bytes: Uint8Array | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        bytes = new Uint8Array(init.body as Uint8Array);
+        return new Response(null, { status: 200 });
+      }
+      if (!bytes) throw new Error('No test snapshot saved');
+      return new Response(bytes, { status: 200 });
+    }));
+    const db = openDb(source, migrations);
+    const backup = startCloudBackup(db, source);
+    try {
+      db.exec("CREATE TABLE sample (value TEXT NOT NULL)");
+      db.prepare('INSERT INTO sample VALUES (?)').run('isolated-test-row');
+      backup.markDirty();
+      await backup.flush();
+      expect(bytes?.byteLength).toBeGreaterThan(100);
+      expect(await restoreCloudSnapshot(target)).toBe(true);
+      const restored = openDb(target, migrations);
+      try {
+        expect(restored.prepare('SELECT value FROM sample').get()).toEqual({ value: 'isolated-test-row' });
+        expect(restored.prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' });
+      } finally { restored.close(); }
+    } finally {
+      try { await backup.close(); }
+      finally {
+        db.close();
+        vi.unstubAllGlobals();
+        vi.unstubAllEnvs();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
   });
 });
