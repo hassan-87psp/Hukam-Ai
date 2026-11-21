@@ -171,6 +171,10 @@ def _file_fingerprint(path: str) -> tuple[int, str]:
 
 
 def attach_preview(expected_contact: str, path: str) -> dict:
+    global _pending_attachment
+    # A failed new preview must not leave the previous file authorized for
+    # a later Send. Invalidate old state before touching any WhatsApp controls.
+    _pending_attachment = None
     if launcher.SIMULATE:
         launcher._record("whatsapp.attach_preview", "file (redacted)")
         return {"attachmentPreview": True, "sent": False, "verified": False, "simulated": True}
@@ -215,7 +219,6 @@ def attach_preview(expected_contact: str, path: str) -> dict:
         _press_key("enter")
         # Require the exact same local bytes for any subsequent reviewed Send.
         size, digest = _file_fingerprint(path)
-        global _pending_attachment
         _pending_attachment = {"contact": expected_contact, "path": path,
             "hwnd": active.hwnd, "sha256": digest, "size": size,
             "createdAt": time.monotonic()}
