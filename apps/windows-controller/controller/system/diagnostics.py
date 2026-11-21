@@ -18,6 +18,8 @@ def probe() -> dict:
             "whatsappDesktopWindow": True, "whatsappProcessRunning": True,
             "whatsappWindowCount": 1, "whatsappForeground": False,
             "whatsappChromeTabDetected": False,
+            "whatsappAccessibilityTreeReadable": True,
+            "whatsappUnreadBadgeReadable": False,
             "whatsappDiagnosis": "Desktop window available; focus WhatsApp to inspect unread indicators",
             "chromeProfileDirectories": ["Default", "Profile 1"],
             "activeApp": "chrome.exe", "monitorCount": 2,
@@ -30,6 +32,8 @@ def probe() -> dict:
         "whatsappProcessRunning": False,
         "whatsappWindowCount": 0,
         "whatsappForeground": False, "whatsappChromeTabDetected": False,
+        "whatsappAccessibilityTreeReadable": False,
+        "whatsappUnreadBadgeReadable": False,
         "whatsappDiagnosis": "unknown",
         "chromeProfileDirectories": [],
         "activeApp": None,
@@ -59,8 +63,41 @@ def probe() -> dict:
         result["whatsappProcessRunning"] = bool(running) or bool(whatsapp_windows)
         result["whatsappForeground"] = bool(
             active and wa_locator.matches_desktop_window(active))
+        if whatsapp_windows and result["uiautomationInstalled"]:
+            try:
+                import uiautomation as auto
+                native = next((w for w in whatsapp_windows if active and w.hwnd == active.hwnd),
+                              whatsapp_windows[0])
+                root = auto.ControlFromHandle(native.hwnd)
+                # Only check whether the UIA tree is usable: do NOT collect
+                # child Name/Value, contact labels or message contents.
+                count = 0
+                for _control, _depth in auto.WalkControl(root, maxDepth=8):
+                    count += 1
+                    if count >= 12:
+                        break
+                result["whatsappAccessibilityTreeReadable"] = count >= 3
+                if result["whatsappAccessibilityTreeReadable"]:
+                    from ..whatsapp.adapter import unread_from_desktop_accessibility
+                    result["whatsappUnreadBadgeReadable"] = (
+                        unread_from_desktop_accessibility(native) is not None
+                    )
+            except Exception:
+                # No private data or raw UIA exceptions in diagnostic results.
+                pass
         result["whatsappDiagnosis"] = (
-            "WhatsApp Desktop is foreground and visible. Try an unread check."
+            "WhatsApp Desktop was found, but UIA controls are not readable. "
+            "Check the installed app is unlocked, foreground and visible."
+            if result["whatsappDesktopWindow"] and result["uiautomationInstalled"]
+                and not result["whatsappAccessibilityTreeReadable"]
+            else "Windows UI Automation is not installed in the Controller; update the Controller."
+            if result["whatsappDesktopWindow"] and not result["uiautomationInstalled"]
+            else "WhatsApp Desktop is foreground. Unread indicator is not exposed; "
+                 "open its Unread filter or request an approved visible-sender scan."
+            if result["whatsappForeground"] and not result["whatsappUnreadBadgeReadable"]
+            else "WhatsApp Desktop is foreground and a readable Unread indicator is available."
+            if result["whatsappForeground"] and result["whatsappUnreadBadgeReadable"]
+            else "WhatsApp Desktop is foreground and visible. Try an unread check."
             if result["whatsappForeground"]
             else "WhatsApp Desktop window detected in background. Say 'WhatsApp Desktop kholo' to focus it."
             if whatsapp_windows
