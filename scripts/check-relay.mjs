@@ -10,6 +10,8 @@
  * incorrectly routed /api endpoint instead of reporting a false "online".
  */
 import process from 'node:process';
+import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
 
 function fail(message) {
   throw new Error(message);
@@ -82,7 +84,7 @@ export async function checkRelay(base, expectedVersion = null) {
   };
 }
 
-if (process.argv[1] && import.meta.url === new URL('file://' + process.argv[1]).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
     const base = option('--url');
     if (!base) fail('Usage: node scripts/check-relay.mjs --url <relay-origin> [--expected-version x.y.z]');
