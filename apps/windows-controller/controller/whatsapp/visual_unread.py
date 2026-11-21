@@ -191,13 +191,22 @@ def visible_sender_titles(words: list[Word], width: int, chip_bottom: float) -> 
              and _DATE.fullmatch(w.text.strip())]
     result: list[str] = []
     for moment in sorted(times, key=lambda t: t.y):
-        matches = [w for w in rows if 0 <= moment.cx - w.cx
-                   and abs(w.cy - moment.cy) <= 15]
-        if not matches:
+        # Windows OCR returns *words*, not entire sender names. Build one
+        # single-line title from adjacent word rectangles, stopping well
+        # before the separate right-hand timestamp column.
+        candidates = sorted(
+            (w for w in rows if w.x + w.width < moment.x - 16
+             and abs(w.cy - moment.cy) <= 15), key=lambda w: w.x)
+        if not candidates:
             continue
-        candidate = sorted(matches, key=lambda w: (w.x, abs(w.cy-moment.cy)))[0]
-        title = candidate.text.strip()
-        if len(title) < 2 or title.casefold() in _SKIP:
+        parts = [candidates[0]]
+        for word in candidates[1:]:
+            prev = parts[-1]
+            if word.x - (prev.x + prev.width) > 21:
+                break
+            parts.append(word)
+        title = " ".join(part.text for part in parts).strip()
+        if len(title) < 2 or len(title) > 65 or title.casefold() in _SKIP:
             continue
         if title not in result:
             result.append(title)
