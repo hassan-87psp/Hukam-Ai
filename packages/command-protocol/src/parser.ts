@@ -238,17 +238,21 @@ export function parseCommand(input: string): ParseResult {
   // "<name> ke naye messages batao" — reads unread-chat counts only.
   if (/\b(unread|naye|nayi|new) (messages|message|chats)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-unread');
 
-  // An ambiguous WhatsApp launch should ASK which app, not silently choose.
-  // Explicit "WhatsApp Desktop/Web kholo" remains a single-step command.
+  // Owner preference: installed PERSONAL WhatsApp Desktop is the default.
+  // "Desktop web WhatsApp" is a contradictory phrase, not authorization to
+  // silently open WhatsApp Web. Desktop always wins if both are mentioned.
+  // Only an explicit "WhatsApp Web kholo" request selects a browser tab.
   if (/\bwhatsapp\b/.test(t)) {
-    const mode = /\b(web|browser|chrome)\b/.test(t) ? 'web' : 'desktop';
-    if (/\b(unread|naye|nayi|messages|message|check|dekho|dekh|batao|dikhao|kitne|koi)\b/.test(t)) return cmd('whatsapp.check', { mode }, 'whatsapp-check');
+    const desktopMentioned = /\b(desktop|installed|application|laptop|pc|windows app|personal)\b/.test(t);
+    const explicitWeb = /\bwhatsapp\s+web\b|\bweb\s+whatsapp\b/.test(t);
+    const mode = explicitWeb && !desktopMentioned ? 'web' : 'desktop';
+    if (/\b(unread|naye|nayi|messages|message|msg|msgs|check|dekho|dekh|batao|dikhao|kitne|koi)\b/.test(t))
+      return cmd('whatsapp.check', { mode }, 'whatsapp-check');
     if (OPEN.test(t) || t === 'whatsapp' || t === 'whatsapp desktop' || t === 'whatsapp web') {
-      if (/\b(web|browser|chrome)\b/.test(t)) return cmd('web.open', { url: 'https://web.whatsapp.com/' }, 'whatsapp-web-open');
-      if (/\b(desktop|app|application|installed|install|laptop)\b/.test(t)) return cmd('whatsapp.open', { mode: 'desktop' }, 'whatsapp-desktop-open');
-      return { kind: 'clarify', topic: 'whatsapp-choice', normalized: t };
+      if (mode === 'web') return cmd('web.open', { url: 'https://web.whatsapp.com/' }, 'explicit-whatsapp-web-open');
+      return cmd('whatsapp.open', { mode: 'desktop' }, 'personal-whatsapp-desktop-default');
     }
-    return cmd('whatsapp.check', { mode }, 'whatsapp-default');
+    return cmd('whatsapp.check', { mode }, 'personal-whatsapp-default');
   }
 
   // YouTube homepage: treat common Roman Urdu "open kro/mro" typo as
