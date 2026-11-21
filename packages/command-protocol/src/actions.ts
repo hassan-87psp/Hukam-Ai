@@ -296,6 +296,14 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({provider:a.provider, title, profile, startUtc, endUtc, timeZone, details, location});
     },
   },
+  'calendar.save_reviewed': {
+    name:'calendar.save_reviewed', capability:'browser', label:'Save reviewed Calendar event (final approval)',
+    timeoutMs:30000, alwaysApprove:true,
+    validate(a){
+      const v = ACTIONS['calendar.event_draft'].validate(a);
+      return v.ok ? ok(v.args) : v;
+    },
+  },
   'chatgpt.prompt_draft': {
     name:'chatgpt.prompt_draft', capability:'browser', label:'Draft prompt in ChatGPT Project',
     timeoutMs:25000, alwaysApprove:true,
