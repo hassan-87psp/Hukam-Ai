@@ -13,6 +13,7 @@ import { all, one, run, type DB, type Row } from './db';
 import { geminiConfigured } from './gemini';
 import type { Projects } from './projects';
 import { addMs, newId, nowIso } from './util';
+import { agentToolInstruction, isAgentTool } from './agent-tools';
 
 type Step = {action:ActionName;args:Record<string,unknown>};
 type Proposal = {summary:string;steps:Step[]} | {question:string};
@@ -21,15 +22,7 @@ type Cancelled = {kind:'cancelled';message:string};
 type Plan = {id:string; summary:string; request:string; projectId:string|null; steps:Step[]; expiresAt:string; createdAt:string};
 type TaskRun = {id:string; planId:string|null; deviceId:string|null; status:string; currentStep:number; totalSteps:number; commandIds:string[]; error:string|null; createdAt:string; updatedAt:string};
 
-const SAFE_AGENT_ACTIONS = new Set<ActionName>([
-  'app.open','app.close','folder.open','folder.list','file.search','file.open','file.reveal',
-  'web.open','web.search','youtube.search','youtube.play',
-  'device.status','apps.list','window.active','window.focus','diagnostics.probe',
-  'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
-  'whatsapp.unread_senders', 'whatsapp.select_chat', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed',
-  'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed', 'ui.inspect', 'ui.scroll', 'email.inbox_open', 'email.compose_draft', 'calendar.event_draft', 'calendar.save_reviewed',
-  'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
-]);
+
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
 const FINAL_COMMAND = new Set<CommandStatus>(['completed','failed','cancelled','timed_out']);
 
@@ -46,7 +39,7 @@ function runRow(r:Row):TaskRun{
 function validateStep(v:unknown):Step {
   if (!v || typeof v!=='object' || Array.isArray(v))throw new HttpError(400,'BAD_PLAN','Invalid planned action');
   const p=v as Record<string,unknown>;
-  if(typeof p.action!=='string'||!SAFE_AGENT_ACTIONS.has(p.action as ActionName))
+  if(!isAgentTool(p.action))
     throw new HttpError(400,'BAD_PLAN','AI proposed an unsupported or sensitive action');
   const action=p.action as ActionName;
   const a=(p.args && typeof p.args==='object' && !Array.isArray(p.args))?p.args as Record<string,unknown>:{};
@@ -114,11 +107,7 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'For an incomplete task: {"question":"one concise Roman Urdu follow-up question","steps":[]}.',
     'Ask ONLY the one necessary missing detail, and retain the rest from context. Never invent contacts, files, dates, titles or Chrome profiles.',
     'Answer follow-up messages using the original request and most recent answer supplied. Do not ask the same question twice if its answer is present.',
-    'Only use these precise action names: app.open, folder.open, folder.list, file.search, file.open, file.reveal,',
-    'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
-    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, email.inbox_open, email.compose_draft, calendar.event_draft, calendar.save_reviewed,',
-    'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
-    'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.select_chat, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.send_reviewed, whatsapp.attach_preview, whatsapp.send_attachment_reviewed.',
+    agentToolInstruction(),
     'Never use arbitrary shell, file deletion, payments, password/OTP reading or UNREVIEWED WhatsApp Send. Do not pretend a draft was sent.',
     'email.inbox_open opens only Gmail or Outlook mailbox in an explicitly chosen real Chrome profile; it does not read emails or verify the logged-in account.',
     'email.compose_draft requires provider google/outlook, a valid single recipient email, nonempty subject/body and a saved Chrome profile. It opens only a prefilled compose URL; it NEVER SENDS or verifies saved draft.',

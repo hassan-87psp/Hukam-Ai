@@ -262,9 +262,9 @@ class Executor:
         return {"app": "notepad", "inputDelivered": True, "verified": False,
                 "note": "Text delivered to Notepad. Document content is not independently verified."}
 
-    def do_browser_control(self, a, _c):
+    def do_browser_control(self, a, cancel):
         try:
-            return browser_operator.control(a)
+            return browser_operator.control(a, cancel)
         except RuntimeError as exc:
             raise ActionError("NOT_ALLOWED", str(exc)) from exc
 
