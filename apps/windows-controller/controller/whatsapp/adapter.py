@@ -69,7 +69,7 @@ def open_whatsapp(mode: str, browser_pref: str) -> dict:
 def unread_from_titles(titles: list[str]) -> int | None:
     """Plain WhatsApp title is unknown, not zero."""
     counts = [int(m.group(1)) for t in titles if (m := TITLE_RE.search(t))]
-    return max(counts) if counts else None
+    return counts[0] if counts and len(set(counts)) == 1 else None
 
 
 def count_from_accessibility_items(items: list[tuple[str, float, float]]) -> int | None:
@@ -78,12 +78,15 @@ def count_from_accessibility_items(items: list[tuple[str, float, float]]) -> int
     Items are (accessible name, x position, y position) inside only the
     WhatsApp sidebar's top filter area. Names are not logged or returned.
     """
+    explicit = set()
     for raw, _x, _y in items:
         # Unicode bullet is used for some accessible badge descriptions.
         label = " ".join(raw.split()).strip().replace("·", "•")
         match = UNREAD_LABEL_RE.fullmatch(label) or UNREAD_REVERSE_RE.fullmatch(label)
         if match:
-            return int(match.group(1))
+            explicit.add(int(match.group(1)))
+    if explicit:
+        return next(iter(explicit)) if len(explicit) == 1 else None
     # Some WhatsApp releases expose the tab and number as adjacent controls.
     for label, x, y in items:
         if label.strip().casefold() not in ("unread", "unread chats", "unread messages"):

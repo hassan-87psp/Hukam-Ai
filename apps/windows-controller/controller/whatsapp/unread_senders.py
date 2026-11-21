@@ -87,6 +87,8 @@ def _assert_same_native_foreground(expected_hwnd: int) -> None:
 
 
 def read_unread_senders(cancel=None) -> dict:
+    if cancel is not None and cancel.is_set():
+        raise UnreadSendersUnavailable("WhatsApp unread scan cancelled")
     if launcher.SIMULATE:
         return {"supported": True, "senders": ["Test Contact"],
                 "visibleOnly": True, "messagesRead": False,

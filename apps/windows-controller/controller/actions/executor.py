@@ -442,7 +442,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Reading cancelled")
         try:
-            return wa_desktop.read_selected(a.get("contact"))
+            return wa_desktop.read_selected(a.get("contact"), cancel)
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -450,7 +450,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Draft cancelled")
         try:
-            return wa_desktop.draft_reply(a["contact"], a["message"])
+            return wa_desktop.draft_reply(a["contact"], a["message"], cancel)
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -471,7 +471,7 @@ class Executor:
         if not path.is_file() or path.suffix.casefold() not in allowed:
             raise ActionError("NOT_ALLOWED", "Only a supported file inside allowed local folders can be attached")
         try:
-            return wa_desktop.attach_preview(a["contact"], str(path))
+            return wa_desktop.attach_preview(a["contact"], str(path), cancel)
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -502,7 +502,7 @@ class Executor:
             selected = wa_desktop.select_chat(a["contact"], cancel)
             if cancel.is_set():
                 raise ActionError("CANCELLED", "WhatsApp draft cancelled before typing")
-            drafted = wa_desktop.draft_reply(a["contact"], a["message"])
+            drafted = wa_desktop.draft_reply(a["contact"], a["message"], cancel)
             return {"contact": a["contact"], "via": "desktop", "sent": False,
                     "recipientVerified": selected.get("recipientVerified", False),
                     **drafted}

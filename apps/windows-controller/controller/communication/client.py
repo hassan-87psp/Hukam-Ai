@@ -65,6 +65,8 @@ class ControllerClient:
         """Invalidate every command from the old socket on the event-loop thread."""
         self.connection_epoch += 1
         self.cancel_active(reason)
+        from ..whatsapp.desktop_ops import invalidate_attachment
+        invalidate_attachment()
 
     # ---- protocol ---------------------------------------------------
     def hello(self) -> dict:
@@ -124,6 +126,8 @@ class ControllerClient:
         elif t == "pause":
             self.paused = True
             self.cancel_active("emergency pause")
+            from ..whatsapp.desktop_ops import invalidate_attachment
+            invalidate_attachment()
             self.on_status("paused")
             log.warning("EMERGENCY STOP — controller paused; no commands will run until resumed from the web app")
         elif t == "resume":
