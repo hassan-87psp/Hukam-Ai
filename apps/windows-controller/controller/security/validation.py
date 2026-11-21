@@ -25,7 +25,7 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
+    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "desktop.control", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
     "whatsapp.select_chat", "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
@@ -34,7 +34,7 @@ CAPABILITY_OF = {
     "app.open": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
-    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.scroll": "input",
+    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.scroll": "input", "desktop.control": "input",
     "calendar.event_draft": "browser", "calendar.save_reviewed": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
     "chatgpt.download_visible": "browser", "whatsapp.select_chat": "whatsapp", "whatsapp.read_selected": "whatsapp",
     "whatsapp.draft_reply": "whatsapp", "whatsapp.send_reviewed": "whatsapp", "whatsapp.attach_preview": "whatsapp", "whatsapp.send_attachment_reviewed": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
@@ -153,6 +153,34 @@ def validate(action: str, args: dict) -> dict:
         return {"url": safe_url(a.get("url"))}
     if action in ("web.search", "youtube.search", "youtube.play"):
         return {"query": _str(a.get("query"), "query", 200)}
+    if action == "desktop.control":
+        kind = a.get("kind")
+        mouse_kinds = {"click", "double_click", "right_click", "drag"}
+        if kind in mouse_kinds:
+            def coord(name):
+                value = a.get(name)
+                if type(value) is not int or not -32000 <= value <= 32000:
+                    raise ValidationError(f"{name} must be an integer pixel coordinate")
+                return value
+            out = {"kind": kind, "x": coord("x"), "y": coord("y")}
+            if kind == "drag":
+                out.update({"toX": coord("toX"), "toY": coord("toY")})
+            return out
+        if kind == "type":
+            return {"kind": kind, "text": _str(a.get("text"), "text", 1000)}
+        if kind == "scroll":
+            steps = a.get("steps")
+            if type(steps) is not int or steps == 0 or abs(steps) > 5:
+                raise ValidationError("scroll steps must be from -5 to 5")
+            return {"kind": kind, "steps": steps}
+        if kind == "key":
+            keys = {"enter", "tab", "shift+tab", "escape", "backspace", "home", "end",
+                    "arrowdown", "arrowup", "arrowleft", "arrowright", "ctrl+a", "ctrl+c",
+                    "ctrl+v", "ctrl+z", "ctrl+s"}
+            if a.get("key") not in keys:
+                raise ValidationError("desktop shortcut not allowed")
+            return {"kind": kind, "key": a["key"]}
+        raise ValidationError("unsupported desktop input kind")
     if action == "ui.scroll":
         steps = a.get("steps")
         if not isinstance(steps, int) or isinstance(steps, bool) or steps == 0 or abs(steps) > 5:
