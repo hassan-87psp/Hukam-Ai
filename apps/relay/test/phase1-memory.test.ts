@@ -129,6 +129,15 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     expect(plannerRequests.length).toBe(before);
   });
 
+  it('never sends an explicit Notepad close request to Gemini as app.open',async()=>{
+    const before=plannerRequests.length;
+    const result=await api('POST','/api/operator/plan',{text:'note pad band kro'});
+    expect(result.status).toBe(200);
+    expect(result.data.steps).toEqual([{action:'app.close',args:{app:'notepad'}}]);
+    expect(plannerRequests.length).toBe(before);
+    // This is a proposed task only; the execution still requires explicit owner approval.
+  });
+
   it('restores deterministic and AI follow-up slots after a real Relay database restart',async()=>{
     const basic=await api('POST','/api/commands',{text:'folder kholo'});
     expect(basic.data.kind).toBe('clarify');
