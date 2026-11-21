@@ -35,6 +35,8 @@ export function whatsappResultUnverified(action: ActionName, result: unknown): b
   if(action !== 'whatsapp.check' && action !== 'whatsapp.unread_senders' && action !== 'whatsapp.send_reviewed') return false;
   const r = result && typeof result === 'object' && !Array.isArray(result)
     ? result as Record<string, unknown> : {};
+  if(action === 'whatsapp.send_reviewed')
+    return r.deliveryVerified !== true;
   if(action === 'whatsapp.check')
     return !(typeof r.unreadChats === 'number' && Number.isInteger(r.unreadChats) &&
       r.unreadChats >= 0 && r.unreadChats <= 999 &&
