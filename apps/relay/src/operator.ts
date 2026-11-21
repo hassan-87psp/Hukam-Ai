@@ -72,6 +72,22 @@ export function validatePlanShape(v:unknown):{summary:string;steps:Step[]} {
     'whatsapp.send_reviewed', 'whatsapp.send_attachment_reviewed',
     'calendar.save_reviewed',
   ]);
+  // Contact-specific reads must remain pinned to the same approved recipient.
+  // The user can change WhatsApp chats between steps; the Windows reader
+  // re-verifies the exact chat header immediately before exposing messages.
+  const selections=steps.filter(s=>s.action==='whatsapp.select_chat');
+  if(selections.length>1)
+    throw new HttpError(422,'UNSAFE_PLAN','Select only one exact WhatsApp recipient per plan');
+  if(selections.length===1){
+    const selectedContact=selections[0].args.contact;
+    const selectedAt=steps.findIndex(s=>s.action==='whatsapp.select_chat');
+    for(let i=0;i<steps.length;i++){
+      if(steps[i].action==='whatsapp.read_selected' &&
+        (i<=selectedAt || steps[i].args.contact!==selectedContact))
+        throw new HttpError(422,'UNSAFE_PLAN',
+          'Reading a named WhatsApp contact requires selecting and verifying that SAME contact first');
+    }
+  }
   const finalActions = steps.filter(s=>irreversible.has(s.action));
   if(finalActions.length>1 ||
       (finalActions.length===1 && !irreversible.has(steps[steps.length-1].action)))
