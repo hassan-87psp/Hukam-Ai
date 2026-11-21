@@ -12,12 +12,16 @@ and a time/date on the right. It is a layout hypothesis, not a universal API.
 """
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass
 
 from ..system import windows
 from . import locator
+
+
+log = logging.getLogger(__name__)
 
 
 class VisualUnreadUnavailable(RuntimeError):
@@ -83,9 +87,19 @@ def _ocr_words(image) -> list[Word]:
                             float(b.width), float(b.height)))
             return output
 
-        return asyncio.run(recognize())
+        # PyWinRT can take longer on the first invocation. Bound each OCR
+        # stage so the relay deadline does not expire while WinRT is still
+        # initializing. A pending worker must never click after cancellation.
+        async def bounded():
+            return await asyncio.wait_for(recognize(), timeout=22.0)
+
+        return asyncio.run(bounded())
     except VisualUnreadUnavailable:
         raise
+    except TimeoutError as exc:
+        raise VisualUnreadUnavailable(
+            "Windows OCR scan exceeded its 22-second local limit; no unverified mouse action was attempted."
+        ) from exc
     except Exception as exc:
         raise VisualUnreadUnavailable(
             "Windows on-device OCR could not initialize or recognize the "
@@ -224,14 +238,29 @@ def _chip_background(image, chip: Word) -> int:
     return int(ImageStat.Stat(patch).median[0])
 
 
-def visual_scan_unread(active_hwnd: int) -> dict:
+def _ensure_not_cancelled(cancel) -> None:
+    if cancel is not None and cancel.is_set():
+        raise VisualUnreadUnavailable(
+            "Unread scan was cancelled or disconnected; no further mouse action or names will be reported."
+        )
+
+
+def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     """Approved, foreground-only local OCR + real mouse click + verified list."""
     import win32api
     import win32con
     import win32gui
 
+    started = time.monotonic()
+    _ensure_not_cancelled(cancel)
+    log.info("WhatsApp unread visual stage=first_capture")
     image, left, top = _capture_left(active_hwnd)
+    _ensure_not_cancelled(cancel)
+    log.info("WhatsApp unread visual stage=first_ocr")
     words = _ocr_words(image)
+    _ensure_not_cancelled(cancel)
+    log.info("WhatsApp unread visual stage=first_ocr_complete elapsed=%.1fs",
+             time.monotonic() - started)
     chip = locate_unread(words, image.width, image.height)
     if chip is None:
         raise VisualUnreadUnavailable(
@@ -248,10 +277,12 @@ def visual_scan_unread(active_hwnd: int) -> dict:
         raise VisualUnreadUnavailable("Unread control is outside the verified WhatsApp client area")
 
     before = _chip_background(image, chip)
+    _ensure_not_cancelled(cancel)
     _safe_foreground(active_hwnd)
     previous_cursor = win32api.GetCursorPos()
     try:
         win32api.SetCursorPos((x, y))
+        _ensure_not_cancelled(cancel)
         _safe_foreground(active_hwnd)
         win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
         win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
@@ -260,13 +291,22 @@ def visual_scan_unread(active_hwnd: int) -> dict:
             win32api.SetCursorPos(previous_cursor)
         except Exception:
             pass
+    log.info("WhatsApp unread visual stage=clicked elapsed=%.1fs",
+             time.monotonic() - started)
+    _ensure_not_cancelled(cancel)
     time.sleep(.4)
+    _ensure_not_cancelled(cancel)
     after_image, new_left, new_top = _capture_left(active_hwnd)
     if (left, top) != (new_left, new_top):
         raise VisualUnreadUnavailable(
             "WhatsApp window moved while scanning Unread; no names reported."
         )
+    _ensure_not_cancelled(cancel)
+    log.info("WhatsApp unread visual stage=second_ocr")
     second_words = _ocr_words(after_image)
+    _ensure_not_cancelled(cancel)
+    log.info("WhatsApp unread visual stage=second_ocr_complete elapsed=%.1fs",
+             time.monotonic() - started)
     selected_chip = locate_unread(second_words, after_image.width, after_image.height)
     if selected_chip is None:
         raise VisualUnreadUnavailable(
@@ -288,6 +328,7 @@ def visual_scan_unread(active_hwnd: int) -> dict:
             "Unread filter was clicked but local OCR could not confirm any "
             "sender titles alongside their chat timestamps. No names guessed."
         )
+    _ensure_not_cancelled(cancel)
     return {
         "supported": True,
         "senders": senders,
