@@ -245,7 +245,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       announced.current.add(c.id);
       const lang = settingsRef.current.responseLang;
       if (c.status === 'completed' && whatsappResultUnverified(c.action,c.result)) {
-        agent({
+        const isSend=c.action === 'whatsapp.send_reviewed';
+        agent(isSend ? {
+          roman:'WhatsApp Send attempt hua, magar delivery confirm nahi hui. Chat manually check karein. Automatic retry mat karein.',
+          ur:'واٹس ایپ پیغام بھیجنے کی کوشش ہوئی، لیکن ڈیلیوری کی تصدیق نہیں۔ دوبارہ خودکار کوشش نہ کریں۔',
+          en:'WhatsApp Send was attempted but delivery is unverified. Check the chat manually; never auto-retry.',
+        } : {
           roman:'WhatsApp unread count ya names verify nahi ho sake. Ye zero nahi hai. Devices mein Controller version check karein aur HUKM diagnostics chalayein.',
           ur:'واٹس ایپ کے ان ریڈ میسجز کی تصدیق نہیں ہوئی۔ یہ صفر نہیں ہیں۔',
           en:'WhatsApp unread count or senders could not be verified. This does not mean zero unread. Check the Controller version and run HUKM diagnostics.',
