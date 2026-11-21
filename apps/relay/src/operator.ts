@@ -196,6 +196,16 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
   }finally{clearTimeout(timeout);}
 }
 
+/**
+ * Harmless connection/protocol probe. The AI may PROPOSE a plan, but none of
+ * the returned steps are stored, approved, dispatched or executed.
+ * Do not pass any owner prompts, Project notes or files to this probe.
+ */
+export async function probeGeminiPlanner(fetcher: typeof fetch = fetch): Promise<boolean> {
+  const response = await askGeminiPlan('Open Notepad', 'HUKM connectivity test only; no personal data.', fetcher);
+  return 'steps' in response && Array.isArray(response.steps) && response.steps.length > 0;
+}
+
 export class Operator {
   private running=new Set<string>();
   constructor(private db:DB,private relay:Relay,private projects:Projects){
