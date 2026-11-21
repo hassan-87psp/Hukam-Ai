@@ -367,6 +367,14 @@ class Executor:
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
+    def do_whatsapp_send_reviewed(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "WhatsApp Send cancelled before execution")
+        try:
+            return wa_desktop.send_reviewed(a["contact"], a["message"])
+        except wa_desktop.DesktopWhatsAppError as exc:
+            raise ActionError("WHATSAPP_SEND_NOT_SAFE", str(exc)) from exc
+
     def do_whatsapp_attach_preview(self, a, cancel):
         if cancel.is_set():
             raise ActionError("CANCELLED", "Attachment cancelled")
