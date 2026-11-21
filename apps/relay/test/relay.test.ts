@@ -496,7 +496,7 @@ describe('commands', () => {
     const r1 = await api('POST', '/api/commands', { text: 'Ali ko message likho ke main 10 minute mein call karunga' });
     expect(r1.data).toMatchObject({ kind: 'command', command: {
       action: 'whatsapp.compose', status: 'awaiting_approval',
-      args: {contact: 'Ali', message: 'main 10 minute mein call karunga'}
+      args: {contact: 'Ali', message: 'Main 10 minute mein call karunga'}
     }});
     expect(r1.data.command.args.phone).toBeUndefined();
     await api('POST', `/api/commands/${r1.data.command.id}/reject`);
