@@ -7,6 +7,7 @@ import type { ActionName, Command } from '../../../../../packages/shared-types/s
 import { Badge, cx, Modal, Spinner } from '../../components/ui';
 import { ACTION_LABEL, bytes, clock, describeArgs, duration, STATUS_LABEL, STATUS_TONE } from '../../lib/format';
 import { useStore } from '../../services/store';
+import { post } from '../../services/api';
 
 export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'app.open': AppWindow, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
@@ -104,6 +105,24 @@ function FileList({ items }: { items: any[] }) {
 export function CommandResult({ c }: { c: Command }) {
   const r = (c.result ?? {}) as Record<string, any>;
   const [zoom, setZoom] = useState(false);
+  const [visionBusy, setVisionBusy] = useState(false);
+  const [visionResult, setVisionResult] = useState('');
+  const [visionError, setVisionError] = useState('');
+  async function analyzeApprovedScreenshot() {
+    if(!c.screenshotId || visionBusy) return;
+    const approved = window.confirm('Send this entire approved screenshot to Google Gemini for AI visual analysis? It may contain private on-screen information. This is separate from the original screen capture approval.');
+    if(!approved)return;
+    setVisionBusy(true);setVisionError('');
+    try {
+      const r=await post<{analysis:string}>('/api/vision/analyze',{
+        screenshotId:c.screenshotId,
+        question:'Identify the visible application and actionable buttons on screen. Explain what can be verified, what is unknown, and suggest safe next steps.',
+        consent:true,
+      });
+      setVisionResult(r.analysis);
+    }catch(e){setVisionError(e instanceof Error?e.message:String(e));}
+    finally{setVisionBusy(false);}
+  }
   if (c.status !== 'completed') return null;
   switch (c.action) {
     case 'file.search':
@@ -152,6 +171,14 @@ export function CommandResult({ c }: { c: Command }) {
           <Modal open={zoom} onClose={() => setZoom(false)} title="Screenshot" wide>
             <img src={`/api/screenshots/${c.screenshotId}`} alt="Laptop screenshot full size" className="w-full rounded-xl" />
           </Modal>
+          <div className="mt-2 rounded-xl bg-field/40 p-3 text-sm">
+            <p className="mb-2 text-xs text-warn">Optional: AI analysis shares the entire screenshot with Google Gemini. No automatic computer actions follow.</p>
+            <button type="button" disabled={visionBusy} onClick={()=>void analyzeApprovedScreenshot()} className="btn-ghost px-3 py-2 text-xs">
+              {visionBusy?'Analyzing…':'Analyze screenshot with AI (requires consent)'}
+            </button>
+            {visionError&&<p className="mt-2 text-xs text-bad">{visionError}</p>}
+            {visionResult&&<p className="mt-2 whitespace-pre-wrap break-words text-xs text-ink2">{visionResult}</p>}
+          </div>
         </>
       ) : <p className="text-xs text-ink2">Screenshot expired or deleted.</p>;
     case 'youtube.play':
