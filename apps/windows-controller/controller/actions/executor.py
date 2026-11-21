@@ -297,6 +297,14 @@ class Executor:
         except calendar_draft.CalendarDraftError as exc:
             raise ActionError("CALENDAR_DRAFT_FAILED", str(exc)) from exc
 
+    def do_calendar_save_reviewed(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Calendar Save cancelled before execution")
+        try:
+            return calendar_draft.save_reviewed(a)
+        except calendar_draft.CalendarDraftError as exc:
+            raise ActionError("CALENDAR_SAVE_NOT_SAFE", str(exc)) from exc
+
     def do_chatgpt_prompt_draft(self, a, cancel):
         if cancel.is_set():
             raise ActionError("CANCELLED", "ChatGPT draft cancelled")
