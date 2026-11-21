@@ -164,9 +164,12 @@ class Executor:
             "foreground": None if seen == "unverifiable" else focused is not None,
         }
 
-    def do_folder_list(self, a, _c):
+    def do_folder_list(self, a, cancel):
         p = self.folder_path(a["folder"])
-        return {"folder": a["folder"], **files.list_folder(p, a["limit"])}
+        result = files.list_folder(p, a["limit"], cancel=cancel)
+        if result.get("cancelled"):
+            raise ActionError("CANCELLED", "Folder listing cancelled")
+        return {"folder": a["folder"], **result}
 
     def do_device_status(self, _a, _c):
         return info.device_status()
@@ -219,15 +222,25 @@ class Executor:
     def do_file_open(self, a, cancel):
         if "path" in a:
             p = v.check_openable(Path(a["path"]), self.root_paths())
+            if cancel.is_set():
+                raise ActionError("CANCELLED", "File open cancelled")
             launcher.open_path(p)
             return {"opened": True, "path": str(p), "name": p.name}
         r = self._search(a, cancel, 8)
+        if r.get("cancelled") or cancel.is_set():
+            raise ActionError("CANCELLED", "File search cancelled")
         hits = r["results"]
+        if r.get("truncated"):
+            return {"opened": False, "ambiguous": bool(hits), "truncated": True,
+                    "candidates": hits, "count": r["count"],
+                    "note": "Search incomplete. Choose an exact file or narrow the folder; latest or unique match is not verified."}
         if not hits:
             raise ActionError("NOT_FOUND", "no matching file in your allowed folders")
         # Open directly only when the choice is unambiguous: one hit, or "latest" requested.
-        if len(hits) == 1 or a.get("sort") == "latest":
+        if r["count"] == 1 or a.get("sort") == "latest":
             p = v.check_openable(Path(hits[0]["path"]), self.root_paths())
+            if cancel.is_set():
+                raise ActionError("CANCELLED", "File open cancelled")
             launcher.open_path(p)
             return {"opened": True, "path": str(p), "name": p.name, "picked": "only match" if len(hits) == 1 else "most recent"}
         return {"opened": False, "ambiguous": True, "candidates": hits, "count": r["count"]}

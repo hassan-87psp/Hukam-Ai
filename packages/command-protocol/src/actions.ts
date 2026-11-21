@@ -545,7 +545,7 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
         return ok({ kind, steps: a.steps });
       }
       const allowedKeys = ['enter', 'tab', 'escape', 'backspace', 'home', 'end',
-        'arrowdown', 'arrowup', 'ctrl+l', 'ctrl+a'];
+        'arrowdown', 'arrowup', 'ctrl+l', 'ctrl+a', 'ctrl+t', 'ctrl+tab', 'ctrl+shift+tab', 'ctrl+j'];
       if (!allowedKeys.includes(String(a.key ?? ''))) return fail('key is not in the browser allowlist');
       return ok({ kind, key: a.key });
     },

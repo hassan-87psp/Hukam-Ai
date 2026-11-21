@@ -39,6 +39,11 @@ def open_in_profile(url: str, profile: str) -> dict:
     folder = Path(base) / "Google" / "Chrome" / "User Data" / profile
     if not folder.is_dir():
         raise ProfileError("Saved Chrome profile directory was not found on this laptop: " + profile)
+    try:
+        if folder.resolve(strict=True).parent != folder.parent.resolve(strict=True):
+            raise ProfileError("Chrome profile points outside the existing User Data directory")
+    except (OSError, RuntimeError) as exc:
+        raise ProfileError("Chrome profile directory cannot be verified") from exc
     exe = launcher._browser_exe("chrome")
     if not exe:
         raise ProfileError("Google Chrome executable is not installed")

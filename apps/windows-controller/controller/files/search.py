@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import heapq
+import stat
 import re
 import threading
 import time
@@ -13,6 +15,14 @@ SKIP_DIRS = {
     ".venv", "venv", ".cache", ".npm", ".gradle", ".idea", ".vs", "temp", "tmp",
 }
 
+
+INCOMPLETE_EXTS = {".crdownload", ".part", ".partial", ".download", ".tmp"}
+
+def _safe_entry(entry, metadata) -> bool:
+    # Includes Windows junctions and other reparse targets, not just symlinks.
+    return not entry.is_symlink() and not (
+        getattr(metadata, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT
+    )
 
 @dataclass
 class FileHit:
@@ -68,84 +78,122 @@ def search(
 ) -> dict:
     tokens = _tokens(query)
     want = {"." + e.lower() for e in exts or []}
-    hits: list[FileHit] = []
-    scanned = 0
-    truncated = False
+    limit = max(1, min(limit, 200))
+    heap = []
+    scanned = count = 0
+    truncated = incomplete = False
     deadline = time.monotonic() + time_budget_s
-    seen_roots: set[str] = set()
-
+    seen_dirs: set[str] = set()
     for key, root in roots:
         try:
-            rkey = str(root.resolve())
-        except OSError:
+            root = root.resolve(strict=True)
+            if not root.is_dir():
+                incomplete = True
+                continue
+        except (OSError, RuntimeError):
+            incomplete = True
             continue
-        if rkey in seen_roots or not root.is_dir():
-            continue
-        seen_roots.add(rkey)
-        stack: list[tuple[Path, int]] = [(root, 0)]
+        stack = [(root, 0)]
         while stack:
             if cancel is not None and cancel.is_set():
                 return {"cancelled": True, "results": [], "count": 0, "scanned": scanned}
-            if scanned >= max_entries or time.monotonic() > deadline:
+            if scanned >= max_entries or time.monotonic() >= deadline:
                 truncated = True
-                stack.clear()
                 break
-            d, depth = stack.pop()
+            directory, depth = stack.pop()
             try:
-                with os.scandir(d) as it:
-                    for e in it:
+                resolved = directory.resolve(strict=True)
+                if not resolved.is_relative_to(root):
+                    incomplete = True
+                    continue
+                identity = os.path.normcase(str(resolved))
+                if identity in seen_dirs:
+                    continue
+                seen_dirs.add(identity)
+                with os.scandir(resolved) as entries:
+                    for entry in entries:
+                        if cancel is not None and cancel.is_set():
+                            return {"cancelled": True, "results": [], "count": 0, "scanned": scanned}
+                        if scanned >= max_entries or time.monotonic() >= deadline:
+                            truncated = True
+                            break
                         scanned += 1
-                        name = e.name
-                        if name.startswith((".", "~$")):
+                        name = entry.name
+                        if name.startswith((".", "~$")) or name.casefold() == "desktop.ini":
                             continue
                         try:
-                            if e.is_dir(follow_symlinks=False):
-                                if depth < max_depth and name.lower() not in SKIP_DIRS:
-                                    stack.append((Path(e.path), depth + 1))
+                            st = entry.stat(follow_symlinks=False)
+                            if not _safe_entry(entry, st):
                                 continue
-                            if not e.is_file(follow_symlinks=False):
+                            if stat.S_ISDIR(st.st_mode):
+                                if name.casefold() not in SKIP_DIRS:
+                                    if depth < max_depth:
+                                        stack.append((Path(entry.path), depth + 1))
+                                    else:
+                                        truncated = True
+                                continue
+                            if not stat.S_ISREG(st.st_mode):
                                 continue
                         except OSError:
+                            incomplete = True
                             continue
-                        if want and os.path.splitext(name)[1].lower() not in want:
+                        suffix = Path(name).suffix.casefold()
+                        if suffix in INCOMPLETE_EXTS or (want and suffix not in want):
                             continue
-                        s = score_name(name, tokens)
-                        if s <= 0:
+                        score = score_name(name, tokens)
+                        if score <= 0:
                             continue
-                        try:
-                            st = e.stat(follow_symlinks=False)
-                        except OSError:
-                            continue
-                        hits.append(FileHit(Path(e.path), st.st_size, st.st_mtime, s, key))
-            except (PermissionError, FileNotFoundError, NotADirectoryError, OSError):
-                continue
-
-    if sort == "latest":
-        hits.sort(key=lambda h: h.mtime, reverse=True)
-    else:
-        hits.sort(key=lambda h: (h.score, h.mtime), reverse=True)
+                        count += 1
+                        hit = FileHit(Path(entry.path), st.st_size, st.st_mtime, score, key)
+                        rank = (st.st_mtime,) if sort == "latest" else (score, st.st_mtime)
+                        candidate = (rank, count, hit)
+                        if len(heap) < limit:
+                            heapq.heappush(heap, candidate)
+                        elif candidate[:2] > heap[0][:2]:
+                            heapq.heapreplace(heap, candidate)
+            except (OSError, RuntimeError):
+                incomplete = True
+            if scanned >= max_entries or time.monotonic() >= deadline:
+                truncated = True
+                break
+        if scanned >= max_entries or time.monotonic() >= deadline:
+            truncated = True
+            break
+    if cancel is not None and cancel.is_set():
+        return {"cancelled": True, "results": [], "count": 0, "scanned": scanned}
     return {
-        "results": [h.as_dict() for h in hits[:limit]],
-        "count": len(hits),
-        "scanned": scanned,
-        "truncated": truncated,
+        "results": [hit.as_dict() for _, _, hit in sorted(heap, reverse=True)],
+        "count": count, "scanned": scanned, "truncated": truncated or incomplete,
     }
 
 
-def list_folder(path: Path, limit: int = 60) -> dict:
+def list_folder(path: Path, limit: int = 60, cancel=None) -> dict:
     items = []
-    total = 0
+    total = scanned = 0
+    truncated = False
+    deadline = time.monotonic() + 10
     try:
         with os.scandir(path) as it:
             for e in it:
+                if cancel is not None and cancel.is_set():
+                    return {"cancelled": True, "items": [], "total": 0}
+                if scanned >= 10000 or time.monotonic() >= deadline:
+                    truncated = True
+                    break
+                scanned += 1
                 if e.name.startswith((".", "~$")) or e.name.lower() == "desktop.ini":
                     continue
-                total += 1
                 try:
                     st = e.stat(follow_symlinks=False)
-                    is_dir = e.is_dir(follow_symlinks=False)
+                    if not _safe_entry(e, st):
+                        continue
+                    is_dir = stat.S_ISDIR(st.st_mode)
+                    if not is_dir and (not stat.S_ISREG(st.st_mode) or Path(e.name).suffix.casefold() in INCOMPLETE_EXTS):
+                        continue
                 except OSError:
+                    truncated = True
                     continue
+                total += 1
                 items.append(
                     {
                         "name": e.name,
@@ -160,4 +208,4 @@ def list_folder(path: Path, limit: int = 60) -> dict:
     except FileNotFoundError:
         raise
     items.sort(key=lambda x: x["modifiedTs"], reverse=True)
-    return {"path": str(path), "items": items[:limit], "total": total}
+    return {"path": str(path), "items": items[:limit], "total": total, "truncated": truncated or total > limit}

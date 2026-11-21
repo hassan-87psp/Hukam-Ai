@@ -22,6 +22,8 @@ KEYS = {
     "ctrl+l": 0x4C, "ctrl+a": 0x41,
     "ctrl+c": 0x43, "ctrl+v": 0x56, "ctrl+z": 0x5A, "ctrl+s": 0x53,
     "shift+tab": 0x09,
+    "ctrl+t": 0x54, "ctrl+tab": 0x09,
+    "ctrl+shift+tab": 0x09, "ctrl+j": 0x4A,
 }
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
@@ -57,7 +59,18 @@ def _send_unicode(text: str) -> None:
 def _press_key(key: str) -> None:
     import win32api
     import win32con
-    if key == "shift+tab":
+    if key == "ctrl+shift+tab":
+        win32api.keybd_event(win32con.VK_CONTROL, 0, 0, 0)
+        try:
+            win32api.keybd_event(win32con.VK_SHIFT, 0, 0, 0)
+            try:
+                win32api.keybd_event(KEYS[key], 0, 0, 0)
+                win32api.keybd_event(KEYS[key], 0, win32con.KEYEVENTF_KEYUP, 0)
+            finally:
+                win32api.keybd_event(win32con.VK_SHIFT, 0, win32con.KEYEVENTF_KEYUP, 0)
+        finally:
+            win32api.keybd_event(win32con.VK_CONTROL, 0, win32con.KEYEVENTF_KEYUP, 0)
+    elif key == "shift+tab":
         win32api.keybd_event(win32con.VK_SHIFT, 0, 0, 0)
         try:
             win32api.keybd_event(KEYS[key], 0, 0, 0)

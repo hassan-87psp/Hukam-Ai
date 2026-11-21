@@ -119,7 +119,15 @@ def check_openable(path: Path, roots: list[Path]) -> Path:
         raise ValidationError(f"{path.suffix} files can run code, so HUKM will not open them")
     if not path.exists():
         raise FileNotFoundError(str(path))
-    return path
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValidationError("Could not resolve exact local path") from exc
+    if not is_within(resolved, roots):
+        raise ValidationError("Resolved path is outside the folders you allowed")
+    if resolved.suffix.casefold() in BLOCKED_OPEN_EXTS or resolved.suffix.casefold() in {".crdownload", ".part", ".partial", ".download", ".tmp"}:
+        raise ValidationError("Unsafe or incomplete file cannot be opened")
+    return resolved
 
 
 def validate(action: str, args: dict) -> dict:
@@ -318,7 +326,7 @@ def validate(action: str, args: dict) -> dict:
         if kind == "key":
             key = a.get("key")
             if key not in ("enter", "tab", "escape", "backspace", "home", "end", "arrowdown",
-                           "arrowup", "ctrl+l", "ctrl+a"):
+                           "arrowup", "ctrl+l", "ctrl+a", "ctrl+t", "ctrl+tab", "ctrl+shift+tab", "ctrl+j"):
                 raise ValidationError("browser key not allowed")
             return {"kind": kind, "key": key}
         raise ValidationError("unsupported browser input")

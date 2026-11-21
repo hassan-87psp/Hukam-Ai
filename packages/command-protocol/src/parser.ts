@@ -237,6 +237,20 @@ export function parseCommand(input: string): ParseResult {
       ? cmd('browser.control', { kind:'scroll',steps }, 'browser-scroll')
       : cmd('ui.scroll', { steps }, 'active-app-scroll');
   }
+  // Narrow, explicit browser navigation commands; never close a tab or submit a form by inference.
+  const tabCommand = t.match(/^(?:(?:chrome|browser)\s+)?(new tab|naya tab|next tab|previous tab|pichla tab|browser downloads|chrome downloads)(?:\s+(?:kholo|open|dikhao|karo|kar do))?$/);
+  if (tabCommand) {
+    const key = ['new tab','naya tab'].includes(tabCommand[1]) ? 'ctrl+t'
+      : tabCommand[1]==='next tab' ? 'ctrl+tab'
+      : ['previous tab','pichla tab'].includes(tabCommand[1]) ? 'ctrl+shift+tab' : 'ctrl+j';
+    return cmd('browser.control',{kind:'key',key},'browser-tab-navigation');
+  }
+  const profileOpen = t.match(/^(?:chrome\s+)?(default|profile [1-9][0-9]?)\s+(?:mein|me|in|par)\s+(chatgpt|gmail|google calendar|outlook)\s+(?:kholo|open|chalao)$/);
+  if (profileOpen) {
+    const sites: Record<string,string> = {'chatgpt':'https://chatgpt.com/','gmail':'https://mail.google.com/','google calendar':'https://calendar.google.com/','outlook':'https://outlook.office.com/'};
+    const profile = profileOpen[1]==='default' ? 'Default' : 'Profile '+profileOpen[1].split(' ')[1];
+    return cmd('browser.profile_open',{profile,url:sites[profileOpen[2]]},'explicit-chrome-profile');
+  }
   const press = t.match(/^(?:browser\s+)?press\s+(enter|tab|escape|backspace|home|end|arrowdown|arrowup|ctrl\+l|ctrl\+a)$/);
   if (press) return cmd('browser.control', { kind: 'key', key: press[1] }, 'browser-key');
 

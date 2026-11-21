@@ -274,3 +274,16 @@ describe('single physical monitor capture',()=>{
     expect(validateCommand('screen.capture',{monitor:2,all:true}).ok).toBe(false);
   });
 });
+
+describe('explicit browser identity and navigation',()=>{
+  it('routes new and previous tab and browser downloads to reviewed keys',()=>{
+    for(const [input,key] of [['new tab kholo','ctrl+t'],['previous tab','ctrl+shift+tab'],['browser downloads kholo','ctrl+j']]){
+      expect(c(input)).toMatchObject({action:'browser.control',args:{kind:'key',key}});
+      expect(validateCommand('browser.control',{kind:'key',key}).ok).toBe(true);
+    }
+    expect(requiresApproval('browser.control',{'browser.control':false})).toBe(true);
+  });
+  it('preserves explicit Chrome profile and known site',()=>{
+    expect(c('Profile 2 mein Gmail kholo')).toMatchObject({action:'browser.profile_open',args:{profile:'Profile 2',url:'https://mail.google.com/'}});
+  });
+});
