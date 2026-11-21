@@ -11,7 +11,7 @@ const TASK_VERBS = /\b(?:karo|kro|kar do|krdo|kerdo|kholen?|kholo|open|chalao|ru
 const COMPOUND = /\b(?:aur|phir|then|after that|us\s*me|iske baad|afterwards|and then)\b|(?:notepad|note\s*pad).*?(?:likho|type)|(?:likho|type).*?(?:notepad|note\s*pad)/i;
 const WORKFLOWS = /\b(?:calendar|calender|meeting)\b.*?\b(?:add|create|schedule|set|bana|invite|reschedule)|\b(?:add|create|schedule|set)\b.*?\b(?:calendar|meeting)\b|\b(?:whatsapp|chats?|messages?|msgs?)\b.*?\b(?:reply|attach|file|read|parho|padho|send|bhejo|likho|draft)|\b(?:chatgpt|banner|image|script|poster|pic)\b.*?\b(?:bana|create|generate|draft|download|save|design)|\b(?:screen|window)\b.*?\b(?:dekho|dakho|observe|inspect|button|samjho)/i;
 const QUESTION = /^(?:what|why|who|when|where|which|how|kya|kyun|kiun|kaise|kese|kis|kon|kaun|kab)\b/i;
-const GREETING = /^(?:hi|hello|hey|salam|assalam|aoa|good morning|good evening)/i;
+const GREETING = /^(?:hi|hello|hey|salam|assalam(?:\s*[ou]?\s*alaikum)?|aoa|good morning|good evening)(?:\s+hukm)?[!?.,\s]*$/i;
 
 export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorReply = false): IntentRoute {
   const t=text.trim();
