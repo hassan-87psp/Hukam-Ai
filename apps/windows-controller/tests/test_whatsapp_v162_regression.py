@@ -1,4 +1,4 @@
-"""v1.6.7 final acceptance regression: no silent WhatsApp Web fallback.
+"""v1.6.8 final acceptance regression: no silent WhatsApp Web fallback.
 
 These tests simulate native Windows actions; live signed-in WhatsApp remains a
 separate final user-machine acceptance, not part of automated CI.
@@ -17,7 +17,7 @@ from controller.whatsapp import adapter, unread_senders
 def test_release_version_and_privacy_safe_diagnostics(monkeypatch):
     monkeypatch.setattr(launcher, "SIMULATE", True)
     d=diagnostics.probe(Config(whatsapp_mode="web"))
-    assert VERSION == "1.6.7"
+    assert VERSION == "1.6.8"
     assert d["controllerVersion"] == VERSION
     assert d["effectiveWhatsAppDefault"] == "desktop"
     assert d["automaticWhatsAppWebFallback"] is False
