@@ -57,28 +57,45 @@ export function startRecognition(opts: {
   r.interimResults = true;
   r.continuous = false;
   r.maxAlternatives = 1;
+  // Web Speech browsers can re-send the *same* final segment in later
+  // onresult events. Rebuilding from the complete result list prevents
+  // duplicate words and duplicate HUKM commands.
+  let ended = false;
+  let aborted = false;
   let finalText = '';
   r.onresult = (e: any) => {
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
+    if (ended || aborted) return;
+    const complete: string[] = [];
+    const interim: string[] = [];
+    for (let i = 0; i < e.results.length; i++) {
       const res = e.results[i];
-      if (res.isFinal) finalText += res[0].transcript;
-      else interim += res[0].transcript;
+      const value = String(res?.[0]?.transcript ?? '').trim();
+      if (!value) continue;
+      (res.isFinal ? complete : interim).push(value);
     }
-    opts.onInterim((finalText + ' ' + interim).trim());
+    finalText = complete.join(' ').trim().slice(0, 2000);
+    opts.onInterim([...complete, ...interim].join(' ').trim().slice(0, 2000));
   };
-  r.onerror = (e: any) => opts.onError(e.error || 'unknown');
+  r.onerror = (e: any) => {
+    if (!ended && !aborted) opts.onError(e.error || 'unknown');
+  };
   r.onend = () => {
-    if (finalText.trim()) opts.onFinal(finalText.trim());
+    if (ended) return;
+    ended = true;
+    if (!aborted && finalText) opts.onFinal(finalText);
     opts.onEnd();
   };
   try {
     r.start();
   } catch {
+    ended = true;
     opts.onError('start-failed');
     return null;
   }
-  return { stop: () => r.stop(), abort: () => r.abort() };
+  return {
+    stop: () => { if (!ended && !aborted) r.stop(); },
+    abort: () => { aborted = true; r.abort(); },
+  };
 }
 
 // ---------------------------------------------------------------- audio level (optional)
