@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import json
 import logging
 import random
@@ -136,11 +137,15 @@ class ControllerClient:
             log.error("this device was unpaired from the web app")
             raise Fatal("revoked")
 
-    async def on_command(self, cmd: dict) -> None:
+    async def on_command(self, cmd: dict, epoch: int | None = None) -> None:
         cid = str(cmd.get("id", ""))
         action = str(cmd.get("action", ""))
-        epoch = self.connection_epoch
-        await self.send({"type": "ack", "commandId": cid})
+        epoch = self.connection_epoch if epoch is None else epoch
+        if not cid or epoch != self.connection_epoch or self.stop_event.is_set():
+            return
+        if not await self.send({"type": "ack", "commandId": cid}):
+            # No acknowledged delivery means no local side effect is safe.
+            return
         # Atomically claim the ID before any input. A previously claimed ID
         # is NEVER executed twice, even after a WebSocket reconnect.
         if not self.dedupe.mark_started(cid):
@@ -246,19 +251,39 @@ class ControllerClient:
         async with conn as ws:
             self.connection_epoch += 1
             self.ws = ws
-            await ws.send(json.dumps(self.hello()))
-            hb = asyncio.create_task(self.heartbeat(ws))
+            hb = None
             try:
+                if self.stop_event.is_set():
+                    return
+                await ws.send(json.dumps(self.hello()))
+                # Authenticate the application-level session before accepting
+                # any commands, including commands queued before reconnect.
+                welcome = json.loads(await asyncio.wait_for(ws.recv(), timeout=20))
+                if not isinstance(welcome, dict) or welcome.get("type") not in ("welcome", "revoked"):
+                    raise RuntimeError("Relay did not acknowledge the controller hello")
+                await self.handle(welcome)
+                hb = asyncio.create_task(self._heartbeat_guard(ws))
                 async for raw in ws:
                     try:
                         msg = json.loads(raw)
                     except ValueError:
                         continue
+                    if not isinstance(msg, dict):
+                        continue
                     if msg.get("type") == "command":
-                        task = asyncio.create_task(self._guard(self.handle(msg)))
+                        command = msg.get("command")
+                        if not isinstance(command, dict) or not command.get("id"):
+                            continue
+                        # Bound the queue. Disconnect rather than execute
+                        # unbounded pending work or silently lose a command.
+                        if len(self.active_commands) >= 16:
+                            log.warning("Controller queue full; closing connection")
+                            return
+                        task = asyncio.create_task(self._guard(
+                            self.on_command(command, self.connection_epoch)))
                         self.active_commands.add(task)
                         task.add_done_callback(self.active_commands.discard)
-                    else:
+                    elif msg.get("type") != "welcome":
                         await self.handle(msg)
             finally:
                 # Any command that has not registered a cancellation Event yet
@@ -267,8 +292,22 @@ class ControllerClient:
                 # commands. Do not permit old queued actions to execute while
                 # this device is offline or after it reconnects.
                 self.invalidate_connection("WebSocket disconnected")
-                hb.cancel()
+                if hb is not None:
+                    hb.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await hb
                 self.ws = None
+
+    async def _heartbeat_guard(self, ws) -> None:
+        try:
+            await self.heartbeat(ws)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # A dead heartbeat must not leave an apparently connected socket.
+            log.warning("Heartbeat failed; reconnecting")
+            with suppress(Exception):
+                await asyncio.wait_for(ws.close(), timeout=5)
 
     async def _guard(self, coro) -> None:
         try:
@@ -280,10 +319,10 @@ class ControllerClient:
         self.loop = asyncio.get_running_loop()
         delay = 1.0
         while not self.stop_event.is_set():
+            started = time.monotonic()
             try:
                 self.on_status("connecting")
                 await self.connect_once()
-                delay = 1.0
             except Fatal:
                 self.on_status("revoked")
                 return
@@ -293,13 +332,19 @@ class ControllerClient:
                     self.on_status("unauthorized")
                     log.error("relay rejected this device (%s). Pair again with: hukm-controller pair", status)
                     return
-                log.warning("connection lost (%s) — retrying in %.0fs", type(e).__name__, delay)
+                log.warning("connection lost (%s)", type(e).__name__)
+            # Only reset the retry delay after a stable connection. A server
+            # that accepts and immediately closes must not cause a hot loop.
+            if time.monotonic() - started >= 60:
+                delay = 1.0
             self.on_status("offline")
+            if self.stop_event.is_set():
+                break
             try:
-                await asyncio.wait_for(self.stop_event.wait(), timeout=delay + random.uniform(0, 0.5))
+                await asyncio.wait_for(self.stop_event.wait(), timeout=delay + random.uniform(0, min(delay * 0.25, 5.0)))
             except asyncio.TimeoutError:
                 pass
-            delay = min(delay * 2, 30.0)
+            delay = min(delay * 2, 60.0)
 
     def stop(self) -> None:
         if self.loop:

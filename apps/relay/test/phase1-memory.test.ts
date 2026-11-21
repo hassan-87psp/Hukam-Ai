@@ -28,6 +28,10 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
 
   beforeAll(async()=>{
     process.env.GEMINI_API_KEY='PHASE1_TEST_ONLY';
+    // This suite intentionally sends many mocked provider requests within
+    // seconds. The independent cloud-transport tests cover real quota caps.
+    vi.stubEnv('HUKM_GEMINI_RPM','60');
+    vi.stubEnv('HUKM_GEMINI_RPD','500');
     vi.spyOn(globalThis,'fetch').mockImplementation(async (input,init)=>{
       if(!String(input).startsWith('https://generativelanguage.googleapis.com/'))
         return originalFetch(input,init);
@@ -60,6 +64,7 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
   afterAll(async()=>{
     await h.close();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
     if(originalKey===undefined)delete process.env.GEMINI_API_KEY;
     else process.env.GEMINI_API_KEY=originalKey;
     rmSync(dir,{recursive:true,force:true});

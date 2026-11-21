@@ -6,6 +6,19 @@ import socket
 
 import psutil
 
+# Reuse one process sampler. Nonblocking measurements, no background worker.
+_process = None
+
+def controller_stats() -> dict:
+    global _process
+    try:
+        if _process is None:
+            _process = psutil.Process()
+        return {"controllerMemoryMb": round(_process.memory_info().rss / 1024**2, 1),
+                "controllerCpuPercent": _process.cpu_percent(interval=None)}
+    except (OSError, psutil.Error):
+        return {}
+
 
 def os_info() -> tuple[str, str]:
     system = platform.system() or "Unknown"
@@ -34,6 +47,7 @@ def stats() -> dict:
     except Exception:
         out["battery"] = None
         out["plugged"] = None
+    out.update(controller_stats())
     return out
 
 
@@ -52,7 +66,6 @@ def device_status() -> dict:
             "memoryTotalGb": round(vm.total / 1024**3, 1),
             "memoryUsedGb": round(vm.used / 1024**3, 1),
             "uptimeHours": round((time.time() - boot) / 3600, 1),
-            "controllerMemoryMb": round(psutil.Process().memory_info().rss / 1024**2, 1),
         }
     )
     return s

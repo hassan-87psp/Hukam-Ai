@@ -61,7 +61,7 @@ class Config:
         if p.exists():
             try:
                 raw = json.loads(p.read_text(encoding="utf-8"))
-                for k, v in raw.items():
+                for k, v in (raw.items() if isinstance(raw, dict) else []):
                     if hasattr(cfg, k):
                         setattr(cfg, k, v)
             except (OSError, ValueError):
@@ -94,7 +94,7 @@ class Config:
             cfg.capabilities.remove("screen")
         def bounded_number(v: object, low: float, high: float, default: float) -> float:
             return float(v) if type(v) in (int, float) and low <= float(v) <= high else default
-        cfg.heartbeat_s = int(bounded_number(cfg.heartbeat_s, 10, 120, 20))
+        cfg.heartbeat_s = int(bounded_number(cfg.heartbeat_s, 10, 45, 20))
         cfg.search_max_depth = int(bounded_number(cfg.search_max_depth, 1, 10, 6))
         cfg.search_max_entries = int(bounded_number(cfg.search_max_entries, 1000, 300000, 150000))
         cfg.search_time_budget_s = bounded_number(cfg.search_time_budget_s, 1, 60, 25)
