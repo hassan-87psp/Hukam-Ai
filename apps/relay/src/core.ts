@@ -446,7 +446,7 @@ export class Relay {
           message: !countVerified
             ? (typeof msg.error?.message==='string' && msg.error.message.trim()
               ? msg.error.message.slice(0,500)
-              : 'Personal WhatsApp Desktop did not expose a verified unread count. Unknown is NOT zero; try an approved visible unread sender scan.')
+              : 'Personal WhatsApp Desktop did not expose a verified unread count: unknown, NOT zero. Try an approved visible unread sender scan.')
             : !sendersVerified
               ? (typeof msg.error?.message==='string' && msg.error.message.trim()
                 ? msg.error.message.slice(0,500)
