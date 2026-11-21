@@ -105,7 +105,8 @@ def inspect() -> dict:
 
 
 def activate(label: str) -> dict:
-    if label.casefold().strip() in DANGEROUS:
+    if any(label.casefold().strip() == word or
+           label.casefold().strip().startswith(word + " ") for word in DANGEROUS):
         raise AccessibilityError("Sensitive buttons require a dedicated approved workflow")
     if launcher.SIMULATE:
         launcher._record("ui.activate", "label (redacted)")
