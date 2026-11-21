@@ -269,7 +269,7 @@ def validate(action: str, args: dict) -> dict:
             raise ValidationError("invalid Chrome profile")
         url = safe_url(a.get("url"))
         parsed = urlparse(url)
-        if parsed.scheme != "https" or parsed.hostname not in ("chatgpt.com", "calendar.google.com", "outlook.office.com"):
+        if parsed.scheme != "https" or parsed.hostname not in ("chatgpt.com", "calendar.google.com", "mail.google.com", "outlook.office.com"):
             raise ValidationError("unsupported Chrome profile destination")
         return {"profile": profile, "url": url}
     if action == "notepad.type":
