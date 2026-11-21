@@ -106,7 +106,12 @@ def test_ambiguous_unread_filter_does_not_touch_mouse(monkeypatch):
     b=Control("Unread","ButtonControl",(285,110,350,151))
     root=Control("","WindowControl",(0,0,1000,800),children=[a,b])
     install_uia(monkeypatch,root)
-    with pytest.raises(unread_senders.UnreadSendersUnavailable,match="Multiple separate"):
+    # Ambiguous UIA may attempt independent local OCR, but NEVER a blind click.
+    def no_visual_match(hwnd):
+        raise unread_senders.visual_unread.VisualUnreadUnavailable(
+            "No unique All/Unread/Favourites visual row; no mouse click made")
+    monkeypatch.setattr(unread_senders.visual_unread,"visual_scan_unread",no_visual_match)
+    with pytest.raises(unread_senders.UnreadSendersUnavailable,match="no mouse click"):
         unread_senders.read_unread_senders()
     assert a.clicked==b.clicked==0
 
@@ -119,7 +124,12 @@ def test_missing_unread_filter_does_not_blind_click(monkeypatch):
     all_button=Control("All","ButtonControl",(25,110,74,153))
     root=Control("","WindowControl",(0,0,1000,800),children=[all_button])
     install_uia(monkeypatch,root)
-    with pytest.raises(unread_senders.UnreadSendersUnavailable,match="not accessible"):
+    # If neither UIA nor visual anchors can identify Unread, no mouse event.
+    def no_visual_match(hwnd):
+        raise unread_senders.visual_unread.VisualUnreadUnavailable(
+            "No unique All/Unread/Favourites visual row; no mouse click made")
+    monkeypatch.setattr(unread_senders.visual_unread,"visual_scan_unread",no_visual_match)
+    with pytest.raises(unread_senders.UnreadSendersUnavailable,match="no mouse click"):
         unread_senders.read_unread_senders()
     assert all_button.clicked==0
 
