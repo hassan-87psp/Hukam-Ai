@@ -1,4 +1,4 @@
-import { Copy, History, KeyRound, Laptop, Pause, Pencil, Play, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Copy, Download, History, KeyRound, Laptop, Pause, Pencil, Play, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ALL_CAPABILITIES, type Capability, type Device } from '../../../../packages/shared-types/src/index';
 import { LaptopArt } from '../components/Illustrations';
