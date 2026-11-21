@@ -245,6 +245,16 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     name: 'ui.inspect', capability: 'screen', label: 'Inspect visible app controls',
     timeoutMs: 25000, alwaysApprove: true, validate: () => ok({}),
   },
+  'ui.scroll': {
+    name:'ui.scroll',capability:'input',label:'Scroll active Windows application',
+    timeoutMs:15000,alwaysApprove:true,
+    validate(a){
+      const steps=a.steps;
+      if(typeof steps!=='number'||!Number.isInteger(steps)||steps===0||Math.abs(steps)>5)
+        return fail('scroll steps must be a nonzero integer between -5 and 5');
+      return ok({steps});
+    },
+  },
   'ui.activate': {
     name: 'ui.activate', capability: 'input', label: 'Activate exact on-screen control',
     timeoutMs: 25000, alwaysApprove: true,
