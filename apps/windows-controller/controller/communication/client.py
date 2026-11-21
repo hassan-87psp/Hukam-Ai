@@ -135,7 +135,12 @@ class ControllerClient:
             self.on_status("online")
             log.info("resumed")
         elif t == "capabilities":
+            previous = set(self.enabled_caps)
             self.enabled_caps = [c for c in msg.get("enabledCapabilities", []) if c in self.cfg.capabilities]
+            if previous.difference(self.enabled_caps):
+                self.cancel_active("permissions narrowed")
+                from ..whatsapp.desktop_ops import invalidate_attachment
+                invalidate_attachment()
             log.info("capabilities updated: %s", ", ".join(self.enabled_caps))
         elif t == "revoked":
             log.error("this device was unpaired from the web app")

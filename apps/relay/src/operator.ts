@@ -206,7 +206,13 @@ export async function probeGeminiPlanner(fetcher?: typeof fetch): Promise<boolea
 export class Operator {
   private running=new Set<string>();
   constructor(private db:DB,private relay:Relay,private projects:Projects){
-    run(db,"UPDATE operator_runs SET status='interrupted',error='Relay restarted during task',updated_at=? WHERE status IN ('queued','running','awaiting_approval')",nowIso());
+    const interrupted=all(db,"SELECT id,user_id,command_ids FROM operator_runs WHERE status IN ('queued','running','awaiting_approval')");
+    for(const task of interrupted){
+      // Also catch a command created just before the run's IDs were persisted.
+      const commands=all(db,"SELECT id FROM commands WHERE user_id=? AND client_request_id LIKE ? AND status IN ('pending','running','awaiting_approval')",task.user_id,task.id+'-%');
+      for(const command of commands)relay.cancelCommand(task.user_id,command.id,'Task interrupted by relay restart; inspect prior actions before retry');
+    }
+    run(db,"UPDATE operator_runs SET status='interrupted',error='Relay restarted during task; prior input may already have occurred',updated_at=? WHERE status IN ('queued','running','awaiting_approval')",nowIso());
   }
   getPlan(userId:string,id:string):Plan {
     const row=one(this.db,'SELECT * FROM operator_plans WHERE user_id=? AND id=?',userId,id);
@@ -509,6 +515,11 @@ export class Operator {
       try {this.relay.cancelCommand(userId,active,'Operator task stopped by owner');}catch{}
     }
     return this.getRun(userId,id);
+  }
+  cancelAll(userId:string){
+    const rows=all(this.db,"SELECT id FROM operator_runs WHERE user_id=? AND status IN ('queued','running','awaiting_approval')",userId);
+    for(const row of rows)this.cancel(userId,row.id);
+    return rows.length;
   }
   private update(id:string,status:string,error:string|null=null,currentStep?:number,commandIds?:string[]){
     const row=one(this.db,'SELECT * FROM operator_runs WHERE id=?',id);

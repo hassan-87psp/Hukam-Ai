@@ -6,6 +6,7 @@ import os
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from .security.transport import relay_origin
 
 IS_WINDOWS = sys.platform == "win32"
 
@@ -108,7 +109,7 @@ class Config:
         self.path().write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
 
     def ws_url(self) -> str:
-        base = self.server_url.rstrip("/")
+        base = relay_origin(self.server_url)
         if base.startswith("https://"):
             return "wss://" + base[len("https://"):] + "/ws/device"
         if base.startswith("http://"):

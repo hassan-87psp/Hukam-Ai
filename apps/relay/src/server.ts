@@ -448,7 +448,10 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   add('POST', '/api/devices/:id/pause', true, (c) => (relay.setPaused(c.user!.id, c.params.id, true, 'paused by user'), { ok: true }));
   add('POST', '/api/devices/:id/resume', true, (c) => (relay.setPaused(c.user!.id, c.params.id, false, 'resumed by user'), { ok: true }));
   add('GET', '/api/devices/:id/connections', true, (c) => relay.connectionHistory(c.user!.id, c.params.id));
-  add('POST', '/api/emergency-stop', true, (c) => ({ paused: relay.emergencyStopAll(c.user!.id) }));
+  add('POST', '/api/emergency-stop', true, (c) => {
+    const stoppedTasks=operator.cancelAll(c.user!.id);
+    return {paused:relay.emergencyStopAll(c.user!.id),stoppedTasks};
+  });
 
   // commands
   add('GET', '/api/commands', true, (c) => relay.listCommands(c.user!.id, {

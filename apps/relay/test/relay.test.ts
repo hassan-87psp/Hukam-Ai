@@ -691,6 +691,15 @@ describe('permissions & emergency stop', () => {
     const r = await api('POST', '/api/commands', { text: 'invoice pdf search karo' });
     expect(r.data.command).toMatchObject({ status: 'failed', error: { code: 'CAPABILITY_DISABLED' } });
   });
+  it('revocation cancels an outstanding screenshot approval',async()=>{
+    await api('PATCH',`/api/devices/${deviceId}`,{capabilitiesEnabled:['system','apps','folders','browser','screen']});
+    const created=await api('POST','/api/commands',{action:'screen.capture',args:{},deviceId});
+    expect(created.data.command.status).toBe('awaiting_approval');
+    const id=created.data.command.id;
+    await api('PATCH',`/api/devices/${deviceId}`,{capabilitiesEnabled:['system','apps','folders','browser']});
+    expect((await api('GET','/api/commands/'+id)).data).toMatchObject({status:'cancelled',error:{code:'CAPABILITY_REVOKED'}});
+    expect((await api('POST','/api/commands/'+id+'/approve',{})).status).toBe(409);
+  });
   it('emergency stop pauses the device and fails new commands', async () => {
     await api('POST', '/api/emergency-stop');
     await device.waitFor((m) => m.type === 'pause');
