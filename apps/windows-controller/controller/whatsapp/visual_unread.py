@@ -45,6 +45,25 @@ class Word:
         return self.y + self.height / 2
 
 
+def _prepare_ocr_image(image):
+    """Enlarge tiny desktop text for Windows OCR, preserve original geometry.
+
+    WhatsApp's 2026 dark desktop uses 12-15 px filter labels; native OCR can
+    miss them entirely at 1x. Upscale locally without network calls, then
+    transform recognized rectangles back to the original screenshot units.
+    The OCR bitmap is capped below common WinRT maximum dimensions.
+    """
+    from PIL import Image
+
+    source = image.convert("RGB")
+    scale = min(2.0, 1900.0 / max(source.width, source.height))
+    if scale <= 1.05:
+        return source, 1.0
+    width = round(source.width * scale)
+    height = round(source.height * scale)
+    return source.resize((width, height), Image.Resampling.LANCZOS), scale
+
+
 def _ocr_words(image) -> list[Word]:
     """Direct Windows.Media.Ocr word rectangles, no model/cloud/wrapper.
 
@@ -56,6 +75,7 @@ def _ocr_words(image) -> list[Word]:
     try:
         import asyncio
         import io
+        prepared_image, scale = _prepare_ocr_image(image)
         from winrt.windows.media import ocr
         from winrt.windows.graphics import imaging
         from winrt.windows.storage import streams
@@ -66,7 +86,7 @@ def _ocr_words(image) -> list[Word]:
                 raise VisualUnreadUnavailable(
                     "No local Windows OCR language pack is available.")
             buffer = io.BytesIO()
-            image.convert("RGB").save(buffer, format="PNG")
+            prepared_image.save(buffer, format="PNG")
             stream = streams.InMemoryRandomAccessStream()
             writer = streams.DataWriter(stream)
             writer.write_bytes(buffer.getvalue())
@@ -83,8 +103,8 @@ def _ocr_words(image) -> list[Word]:
                     b = word.bounding_rect
                     if value and b.width > 0 and b.height > 0:
                         output.append(Word(
-                            value, float(b.x), float(b.y),
-                            float(b.width), float(b.height)))
+                            value, float(b.x) / scale, float(b.y) / scale,
+                            float(b.width) / scale, float(b.height) / scale))
             return output
 
         # PyWinRT can take longer on the first invocation. Bound each OCR
