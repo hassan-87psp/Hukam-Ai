@@ -2,5 +2,8 @@ websockets>=13,<18
 psutil>=5.9
 mss>=9.0
 Pillow>=10.0
+# Last-resort on-device screen OCR for WhatsApp builds that hide WinUI labels.
+# Never sends WhatsApp screenshots to Gemini/cloud services.
+natocr>=2.2,<3; sys_platform == "win32"
 pywin32>=306; sys_platform == "win32"
 uiautomation>=2.0,<3; sys_platform == "win32"
