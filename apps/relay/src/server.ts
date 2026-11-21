@@ -219,6 +219,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
       throw new HttpError(429,'AI_RATE_LIMIT','AI planner limit reached');
     return operator.plan(c.user!.id, c.body?.text, c.body?.projectId);
   });
+  add('GET', '/api/operator/pending', true, (c) =>
+    operator.pending(c.user!.id, new URL(c.req.url??'/', 'http://localhost').searchParams.get('projectId')));
   add('GET', '/api/operator/plans/:id', true, (c) => operator.getPlan(c.user!.id, c.params.id));
   add('POST', '/api/operator/plans/:id/run', true, (c) => operator.start(c.user!.id,c.params.id,c.body?.deviceId));
   add('GET', '/api/operator/runs', true, (c) => operator.listRuns(c.user!.id));
