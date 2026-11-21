@@ -148,10 +148,10 @@ def _header_labels(words: list[Word], width: int, height: int) -> dict[str, bool
     limit_y = min(400, height * .46)
     header = [w for w in words
               if 45 <= w.cy <= limit_y and 65 <= w.cx <= min(width - 22, 480)]
-    values = [re.sub(r"\\s+", " ", w.text.strip()).casefold() for w in header]
+    values = [re.sub(r"\s+", " ", w.text.strip()).casefold() for w in header]
     return {
         "all": "all" in values,
-        "unread": any(re.fullmatch(r"unread(?:\\s*\\d{1,3})?", v) for v in values),
+        "unread": any(re.fullmatch(r"unread(?:\s*\d{1,3})?", v) for v in values),
         "favourites": "favourites" in values or "favorites" in values,
         "chats": "chats" in values,
     }
@@ -167,13 +167,13 @@ def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
     Coordinates scale with the captured pane height for Windows DPI settings.
     """
     def label(w: Word) -> str:
-        return re.sub(r"\\s+", " ", w.text.strip()).casefold()
+        return re.sub(r"\s+", " ", w.text.strip()).casefold()
 
     header = [w for w in words
               if 45 <= w.cy <= min(400, height * .46)
               and 65 <= w.cx <= min(width - 22, 480)]
     unread = [w for w in header
-              if re.fullmatch(r"unread(?:\\s*\\d{1,3})?", label(w))]
+              if re.fullmatch(r"unread(?:\s*\d{1,3})?", label(w))]
     all_chips = [w for w in header if label(w) == "all"]
     favourites = [w for w in header if label(w) in ("favourites", "favorites")]
     if len(unread) != 1 or len(all_chips) != 1 or len(favourites) > 1:
