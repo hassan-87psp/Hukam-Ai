@@ -265,10 +265,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           roman:'ChatGPT ka downloaded file verify nahi hua. Chrome Downloads check karein.',
           ur:'چیٹ جی پی ٹی فائل ڈاؤن لوڈ کی تصدیق نہیں ہوئی۔',
           en:'A completed ChatGPT output file could not be verified. Check Chrome Downloads.',
+        } : c.action === 'whatsapp.unread_senders' ? {
+          roman:'Sir, WhatsApp ki visible chat names mil gayi hain, lekin Unread filter select hona verify nahi hua. Inhe pakka unread na samjhein. Details command card mein hain.',
+          ur:'چیٹ کے نام مل گئے، لیکن ان ریڈ فلٹر منتخب ہونے کی تصدیق نہیں ہوئی۔',
+          en:'Visible chat names were found but Unread filter selection was not verified. Do not treat them as confirmed unread.',
         } : {
-          roman:'WhatsApp unread count ya names verify nahi ho sake. Ye zero nahi hai. Devices mein Controller version check karein.',
+          roman:'WhatsApp unread count verify nahi hua. Ye zero nahi hai. Visible unread senders check karne ke liye alag approval dein.',
           ur:'واٹس ایپ کے ان ریڈ میسجز کی تصدیق نہیں ہوئی۔ یہ صفر نہیں ہیں۔',
-          en:'WhatsApp unread count or senders could not be verified. Unknown does not mean zero.',
+          en:'WhatsApp unread count is unknown, not zero. An approved visible sender scan may help.',
         };
         agent(m,'warn');
         setFlash({state:'error',until:Date.now()+2200});
