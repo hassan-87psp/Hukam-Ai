@@ -40,7 +40,15 @@ def list_windows() -> list[WindowInfo]:
         if not win32gui.IsWindowVisible(hwnd):
             return True
         title = win32gui.GetWindowText(hwnd)
-        if not title:
+        # WhatsApp's 2026 WinUI/WebView2 host may show an empty native
+        # top-level title even while the app itself is visible. Keep that
+        # one known app identity; continue excluding untitled generic apps.
+        _, pid = win32process.GetWindowThreadProcessId(hwnd)
+        process = _proc_name(pid)
+        if not title and process.casefold() not in (
+            "whatsapp.exe", "whatsappdesktop.exe", "whatsappbeta.exe",
+            "whatsapp.root.exe"
+        ):
             return True
         ex = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
         if ex & win32con.WS_EX_TOOLWINDOW:
@@ -57,8 +65,7 @@ def list_windows() -> list[WindowInfo]:
                 return True
         except Exception:
             pass
-        _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        out.append(WindowInfo(hwnd, title, _proc_name(pid), pid))
+        out.append(WindowInfo(hwnd, title, process, pid))
         return True
 
     win32gui.EnumWindows(cb, None)
