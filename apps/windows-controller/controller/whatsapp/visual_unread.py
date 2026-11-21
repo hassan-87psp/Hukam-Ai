@@ -57,7 +57,7 @@ def _prepare_ocr_image(image):
 
     source = image.convert("RGB")
     scale = min(2.0, 1900.0 / max(source.width, source.height))
-    if scale <= 1.05:
+    if 1.0 <= scale <= 1.05:
         return source, 1.0
     width = round(source.width * scale)
     height = round(source.height * scale)
