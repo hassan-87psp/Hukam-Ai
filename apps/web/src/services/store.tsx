@@ -84,7 +84,7 @@ interface Store {
   logout(): Promise<void>;
   refresh(): Promise<void>;
   runText(text: string, source?: CommandSource): Promise<void>;
-  runAction(action: ActionName, args: Record<string, unknown>, opts?: { source?: CommandSource; label?: string; silent?: boolean }): Promise<Command | null>;
+  runAction(action: ActionName, args: Record<string, unknown>, opts?: { source?: CommandSource; label?: string; silent?: boolean; deviceId?: string }): Promise<Command | null>;
   approve(id: string): Promise<void>;
   reject(id: string): Promise<void>;
   cancel(id: string): Promise<void>;
@@ -532,14 +532,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const runAction = useCallback(
-    async (action: ActionName, args: Record<string, unknown>, opts: { source?: CommandSource; label?: string; silent?: boolean } = {}) => {
+    async (action: ActionName, args: Record<string, unknown>, opts: { source?: CommandSource; label?: string; silent?: boolean; deviceId?: string } = {}) => {
       if (!opts.silent) {
         if (opts.label) addChat({ id: uid(), kind: 'user', text: opts.label, source: opts.source ?? 'ui', at: new Date().toISOString() });
         agent(ackMessage(action, args), 'info');
       }
       setSubmitting(true);
       try {
-        const out = await post('/api/commands', { action, args, source: opts.source ?? 'ui', clientRequestId: uid(), deviceId: activeDevice?.id });
+        const out = await post('/api/commands', { action, args, source: opts.source ?? 'ui', clientRequestId: uid(), deviceId: opts.deviceId ?? activeDevice?.id });
         if (opts.silent && out.kind === 'command') return upsertCommand(out.command);
         return handleCreated(out);
       } catch (e) {

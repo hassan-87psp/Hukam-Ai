@@ -60,8 +60,14 @@ def test_ui_activate_denies_direct_send_delete_buttons(sandbox):
     for label in ("Send", "Delete", "Send message", "Purchase", "Pay now"):
         with pytest.raises(v.ValidationError):
             v.validate("ui.activate", {"label": label})
-    assert v.validate("ui.activate", {"label": "Search"}) == {"label": "Search"}
-    result = run("ui.activate", {"label": "Search"})
+    with pytest.raises(v.ValidationError):
+        v.validate("ui.activate", {"label": "Search"})
+    from controller.screen import accessibility
+    observed = accessibility.inspect()
+    checked = v.validate("ui.activate_observed", {
+        "label": "Search", "role": "ButtonControl", "snapshot": observed["snapshot"],
+    })
+    result = run("ui.activate_observed", checked)
     assert result.ok and result.result["verified"] is False
 
 

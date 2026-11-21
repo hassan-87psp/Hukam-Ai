@@ -15,7 +15,8 @@ describe('approved Personal WhatsApp + screen + Calendar + ChatGPT workflow cont
   });
   it('safe screen reading excludes arbitrary shell and unsafe clicks',()=>{
     expect(validatePlanShape({summary:'inspect',steps:[{action:'ui.inspect',args:{}}]}).steps).toHaveLength(1);
-    expect(validateCommand('ui.activate',{label:'Search'}).ok).toBe(true);
+    expect(validateCommand('ui.activate',{label:'Search'}).ok).toBe(false);
+    expect(validateCommand('ui.activate_observed',{label:'Search',role:'ButtonControl',snapshot:'a'.repeat(64)}).ok).toBe(true);
     expect(validateCommand('ui.activate',{label:'Send message'}).ok).toBe(false);
     expect(()=>validatePlanShape({steps:[{action:'browser.control',args:{kind:'click',x:40,y:60}}]})).toThrow();
     expect(()=>validatePlanShape({steps:[{action:'shell.exec',args:{cmd:'whoami'}}]})).toThrow();

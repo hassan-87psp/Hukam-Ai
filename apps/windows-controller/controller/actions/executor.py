@@ -295,6 +295,14 @@ class Executor:
         except accessibility.AccessibilityError as exc:
             raise ActionError("ACCESSIBILITY_UNAVAILABLE", str(exc)) from exc
 
+    def do_ui_activate_observed(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Inspected button click cancelled")
+        try:
+            return accessibility.activate_observed(a["label"], a["role"], a["snapshot"])
+        except accessibility.AccessibilityError as exc:
+            raise ActionError("WINDOW_CHANGED", str(exc)) from exc
+
     def do_desktop_control(self, a, cancel):
         if cancel.is_set():
             raise ActionError("CANCELLED", "Desktop input cancelled before execution")

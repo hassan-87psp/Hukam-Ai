@@ -25,7 +25,7 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
+    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.activate_observed", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
     "whatsapp.select_chat", "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
@@ -34,7 +34,7 @@ CAPABILITY_OF = {
     "app.open": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
-    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.scroll": "input", "desktop.control": "input",
+    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.activate_observed": "input", "ui.scroll": "input", "desktop.control": "input",
     "email.inbox_open": "browser", "email.compose_draft": "browser", "calendar.event_draft": "browser", "calendar.save_reviewed": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
     "chatgpt.download_visible": "browser", "whatsapp.select_chat": "whatsapp", "whatsapp.read_selected": "whatsapp",
     "whatsapp.draft_reply": "whatsapp", "whatsapp.send_reviewed": "whatsapp", "whatsapp.attach_preview": "whatsapp", "whatsapp.send_attachment_reviewed": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
@@ -192,10 +192,19 @@ def validate(action: str, args: dict) -> dict:
             raise ValidationError("scroll steps must be between -5 and 5")
         return {"steps": steps}
     if action == "ui.activate":
+        raise ValidationError("Inspect visible controls first; legacy unbound clicks are disabled")
+    if action == "ui.activate_observed":
+        from ..screen.accessibility import ROLES, safe_control_label
         label = _str(a.get("label"), "label", 100)
-        if re.match(r"^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\b|\s)", label, re.I):
-            raise ValidationError("sensitive button requires dedicated workflow")
-        return {"label": label}
+        role = a.get("role")
+        snapshot = a.get("snapshot")
+        if not isinstance(role, str) or role not in ROLES:
+            raise ValidationError("control role must match the inspection")
+        if not isinstance(snapshot, str) or not re.fullmatch(r"[a-f0-9]{64}", snapshot):
+            raise ValidationError("recent exact window inspection fingerprint is required")
+        if not safe_control_label(label):
+            raise ValidationError("sensitive control needs a dedicated reviewed workflow")
+        return {"label": label, "role": role, "snapshot": snapshot}
     if action in ("email.inbox_open", "email.compose_draft"):
         provider = a.get("provider")
         if provider not in ("google", "outlook"):

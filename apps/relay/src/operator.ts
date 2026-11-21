@@ -27,7 +27,7 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
   'whatsapp.unread_senders', 'whatsapp.select_chat', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed',
-  'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed', 'ui.inspect', 'ui.activate', 'ui.scroll', 'email.inbox_open', 'email.compose_draft', 'calendar.event_draft', 'calendar.save_reviewed',
+  'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed', 'ui.inspect', 'ui.scroll', 'email.inbox_open', 'email.compose_draft', 'calendar.event_draft', 'calendar.save_reviewed',
   'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
@@ -151,7 +151,7 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'For "scroll karo": use ui.scroll with {"steps":-2}; never invent screen coordinates.',
     'For "WhatsApp kis ka message aaya": use whatsapp.unread_senders with {}.',
     'For "WhatsApp ki selected chat parh ke batao": use whatsapp.read_selected with {}.',
-    'For "screen par kya buttons hain": use ui.inspect with {}. ui.activate needs exact label.',
+    'For "screen par kya buttons hain": use ui.inspect with {}. Never invent a label or snapshot; the owner can pick a safe control from that inspection in the HUKM UI. Do not propose ui.activate.',
     'Do not activate Send, Delete, Pay, Submit or other consequential buttons using ui.activate.',
     'For "Gmail inbox kholo": email.inbox_open with provider google and the exact saved Chrome profile. Ask if profile unknown.',
     'For "Outlook inbox kholo": email.inbox_open with provider outlook and the exact saved Chrome profile. Do not guess accounts.',

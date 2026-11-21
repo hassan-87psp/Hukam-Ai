@@ -6,6 +6,12 @@ never searched in hidden/background apps; no OCR or computer-wide scraping.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+import re
+import time
+import unicodedata
+
 from ..config import IS_WINDOWS
 from ..system import launcher, windows
 
@@ -17,15 +23,74 @@ PROCESSES = {
 ROLES = {"ButtonControl", "TabItemControl", "HyperlinkControl", "MenuItemControl",
          "CheckBoxControl", "RadioButtonControl", "ComboBoxControl"}
 # Mutating controls are deliberately excluded from generic label clicks.
-DANGEROUS = {
-    "send", "send message", "delete", "remove", "purchase", "pay", "submit",
-    "confirm", "approve", "publish", "share", "sign out", "log out",
-    "block", "report", "transfer", "call", "video call", "join",
-}
+# Generic UIA activation is a low-impact navigation primitive, not a way to
+# circumvent specific reviewed WhatsApp, Calendar, email or payment workflows.
+# Reject dangerous verbs *anywhere* in a label (including after emoji/prefixes).
+# We intentionally fail closed on ambiguous labels like "Next: Pay".
+RISKY_WORDS = frozenset({
+    "send", "sending", "delete", "remove", "pay", "payment", "purchase",
+    "buy", "checkout", "submit", "confirm", "approve", "authorize",
+    "publish", "share", "transfer", "withdraw", "deposit", "invite",
+    "report", "block", "unblock", "call", "join", "upload", "install",
+    "execute", "run", "post", "book", "order", "save", "accept", "apply",
+    "logout", "signin", "signout", "login", "erase", "clear", "reset",
+})
+RISKY_PHRASES = (
+    "log out", "sign out", "sign in", "place order", "check out",
+    "video call", "voice call", "add payment", "make payment",
+)
+# Native WhatsApp and generic UWP/WebView containers need their own dedicated
+# recipient/preview verification, never a generic automatic button click.
+CLICK_PROCESSES = frozenset({
+    "chrome.exe", "msedge.exe", "firefox.exe", "notepad.exe", "explorer.exe",
+})
+
+
+def safe_control_label(label: str) -> bool:
+    cleaned = clean_label(label)
+    if not cleaned:
+        return False
+    normalized = unicodedata.normalize("NFKC", cleaned).casefold()
+    words = re.findall(r"\w+", normalized)
+    if any(word in RISKY_WORDS for word in words):
+        return False
+    padded = " " + " ".join(words) + " "
+    return not any(" " + phrase + " " in padded for phrase in RISKY_PHRASES)
+
+
+def window_snapshot(active, controls: list[tuple[str, str]]) -> str:
+    """Pure window+visible-control fingerprint for short-lived reviewed clicks."""
+    data = {
+        "hwnd": active.hwnd, "pid": active.pid,
+        "process": active.process.casefold(), "title": active.title[:100],
+        "controls": sorted((role, label.casefold()) for role, label in controls),
+    }
+    return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 class AccessibilityError(Exception):
     pass
+
+
+# A snapshot is usable once, only within 90 seconds of a fresh foreground
+# inspection on this controller process. Old approvals cannot replay clicks
+# after a future reconnect, another window inspection or a long pause.
+_OBSERVED: tuple[str, float] | None = None
+OBSERVATION_TTL_S = 90.0
+
+
+def _remember_observation(token: str) -> None:
+    global _OBSERVED
+    _OBSERVED = (token, time.monotonic())
+
+
+def _consume_observation(token: str) -> None:
+    global _OBSERVED
+    observed = _OBSERVED
+    _OBSERVED = None  # consume before attempting a click; no blind retry
+    if (observed is None or observed[0] != token or
+            time.monotonic() - observed[1] > OBSERVATION_TTL_S):
+        raise AccessibilityError("The inspection expired or was already used; inspect again")
 
 
 def clean_label(label: object) -> str:
@@ -88,46 +153,93 @@ def _visible_controls(root, max_nodes=850):
 
 def inspect() -> dict:
     if launcher.SIMULATE:
-        return {"window": "Test Chrome", "process": "chrome.exe",
-                "controls": inspect_controls([("ButtonControl", "Search"), ("TextControl", "Private message")]),
-                "visibleOnly": True, "contentRead": False, "verified": True, "simulated": True}
+        active = windows.WindowInfo(100, "Test Chrome", "chrome.exe", 1000)
+        labels = [("ButtonControl", "Search"), ("ButtonControl", "🗑 Delete account")]
+        token = window_snapshot(active, labels)
+        _remember_observation(token)
+        return {
+            "window": active.title, "process": active.process,
+            "snapshot": token,
+            "controls": [{**x, "canActivate": safe_control_label(x["label"])}
+                         for x in inspect_controls(labels)],
+            "visibleOnly": True, "contentRead": False, "verified": True,
+            "simulated": True,
+        }
     active = _active()
     try:
         import uiautomation as auto
+        import win32gui
         root = auto.ControlFromHandle(active.hwnd)
         labels = [(role, label) for _, role, label in _visible_controls(root)]
-        return {"window": active.title[:100], "process": active.process,
-                "controls": inspect_controls(labels), "visibleOnly": True,
-                "contentRead": False, "verified": True,
-                "note": "Only foreground interactive control labels, not text fields or chat message contents."}
+        if win32gui.GetForegroundWindow() != active.hwnd:
+            raise AccessibilityError("Foreground window changed during inspection")
+        allowed = active.process.casefold() in CLICK_PROCESSES
+        token = window_snapshot(active, labels)
+        _remember_observation(token)
+        return {
+            "window": active.title[:100], "process": active.process,
+            "snapshot": token,
+            "controls": [{**x, "canActivate": allowed and safe_control_label(x["label"])}
+                         for x in inspect_controls(labels)],
+            "visibleOnly": True, "contentRead": False, "verified": True,
+            "note": "Only foreground interactive control labels, not text fields or chat message contents. Use the snapshot-bound control action for reviewed clicks.",
+        }
+    except AccessibilityError:
+        raise
     except Exception as exc:
         raise AccessibilityError("Could not inspect interactive controls on this window") from exc
 
 
 def activate(label: str) -> dict:
-    if any(label.casefold().strip() == word or
-           label.casefold().strip().startswith(word + " ") for word in DANGEROUS):
-        raise AccessibilityError("Sensitive buttons require a dedicated approved workflow")
+    # Legacy label-only activation is disabled in the v1.6.8 protocol.
+    # Without a fresh observed-window fingerprint, a model could guess
+    # a label on a different app than the one the owner inspected.
+    raise AccessibilityError("Inspect the visible controls and use a snapshot-bound action")
+
+
+def activate_observed(label: str, role: str, snapshot: str) -> dict:
+    if role not in ROLES or not safe_control_label(label):
+        raise AccessibilityError("Sensitive or unsupported button requires a dedicated workflow")
     if launcher.SIMULATE:
-        launcher._record("ui.activate", "label (redacted)")
+        active = windows.WindowInfo(100, "Test Chrome", "chrome.exe", 1000)
+        labels = [("ButtonControl", "Search"), ("ButtonControl", "🗑 Delete account")]
+        if snapshot != window_snapshot(active, labels) or (role, label) not in labels:
+            raise AccessibilityError("The observed window or button has changed; inspect again")
+        _consume_observation(snapshot)
+        launcher._record("ui.activate_observed", "label (redacted)")
         return {"inputDelivered": True, "verified": False, "simulated": True}
     active = _active()
+    if active.process.casefold() not in CLICK_PROCESSES:
+        raise AccessibilityError("Generic clicks are disabled for WhatsApp, system and WebView windows")
     try:
         import uiautomation as auto
+        import win32gui
         root = auto.ControlFromHandle(active.hwnd)
-        matches = [ctrl for ctrl, _, name in _visible_controls(root) if name.casefold() == label.casefold()]
+        controls = _visible_controls(root)
+        labels = [(control_role, control_label) for _, control_role, control_label in controls]
+        if window_snapshot(active, labels) != snapshot:
+            raise AccessibilityError("The visible window or controls changed; inspect again")
+        matches = [ctrl for ctrl, observed_role, name in controls
+                   if observed_role == role and name.casefold() == label.casefold()]
         if len(matches) != 1:
-            raise AccessibilityError("A single visible control with that exact label was not found")
-        # Re-check the foreground window; never click a control from another app.
-        if windows.active_window().hwnd != active.hwnd:
+            raise AccessibilityError("The exact control is missing or ambiguous; inspect again")
+        fresh = windows.active_window()
+        if (not fresh or fresh.hwnd != active.hwnd or fresh.pid != active.pid
+                or win32gui.GetForegroundWindow() != active.hwnd):
             raise AccessibilityError("Foreground window changed; no click performed")
+        if matches[0].IsOffscreen:
+            raise AccessibilityError("Target control is no longer visible")
+        _consume_observation(snapshot)
         matches[0].Click(simulateMove=False)
-        return {"inputDelivered": True, "verified": False, "label": label,
-                "note": "UI Automation activated the exact visible control; final website result is unverified."}
+        return {
+            "inputDelivered": True, "verified": False,
+            "role": role, "label": label,
+            "note": "The inspected control received a click in the same window. Final app or website outcome remains unverified.",
+        }
     except AccessibilityError:
         raise
     except Exception as exc:
-        raise AccessibilityError("UI Automation could not activate this control") from exc
+        raise AccessibilityError("UI Automation could not activate the inspected control") from exc
 
 
 def scroll_active(steps: int) -> dict:

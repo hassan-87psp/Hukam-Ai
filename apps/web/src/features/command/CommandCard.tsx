@@ -29,7 +29,7 @@ export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'app.open': AppWindow, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
   'file.reveal': FolderOpen, 'web.open': Globe, 'web.search': Search, 'youtube.search': Youtube, 'youtube.play': Youtube,
   'device.status': Laptop, 'apps.list': AppWindow, 'window.active': Monitor, 'window.focus': Monitor, 'screen.capture': Monitor,
-  'diagnostics.probe': Monitor, 'ui.inspect': Monitor, 'ui.activate': Monitor, 'ui.scroll': Monitor, 'desktop.control': Monitor, 'email.inbox_open': Globe, 'email.compose_draft': Pencil, 'calendar.event_draft': Globe, 'calendar.save_reviewed': Globe,
+  'diagnostics.probe': Monitor, 'ui.inspect': Monitor, 'ui.activate': Monitor, 'ui.activate_observed': Monitor, 'ui.scroll': Monitor, 'desktop.control': Monitor, 'email.inbox_open': Globe, 'email.compose_draft': Pencil, 'calendar.event_draft': Globe, 'calendar.save_reviewed': Globe,
   'chatgpt.prompt_draft': Pencil, 'chatgpt.submit_prompt': Pencil, 'chatgpt.download_visible': FileText,
   'whatsapp.select_chat': MessageCircle, 'whatsapp.read_selected': MessageCircle, 'whatsapp.draft_reply': MessageCircle, 'whatsapp.send_reviewed': MessageCircle, 'whatsapp.attach_preview': FileText, 'whatsapp.send_attachment_reviewed': FileText,
   'browser.control': Monitor, 'browser.profile_open': Globe, 'notepad.type': Pencil, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.unread_senders': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
@@ -246,14 +246,26 @@ export function CommandResult({ c }: { c: Command }) {
         <p>Private messages and screenshots were not collected.</p>
       </div>;
     case 'ui.inspect':
-      return <div className="space-y-1 text-xs text-ink2">
-        <p>{r.window} · {Array.isArray(r.controls) ? r.controls.length : 0} interactive controls</p>
+      return <div className="space-y-2 text-xs text-ink2">
+        <p className="font-semibold text-ink">{String(r.window??'Unknown window')} · {String(r.process??'')} · {Array.isArray(r.controls) ? r.controls.length : 0} interactive controls</p>
+        <p>Inspect first, then select exactly one safe button below. HUKM will check the same window and controls again before clicking, and ask for separate approval.</p>
         {Array.isArray(r.controls) && r.controls.slice(0,30).map((x:any,i:number)=>
-          <div key={i} className="rounded-lg bg-field/40 px-2 py-1">{String(x.role)}: {String(x.label)}</div>)}
-        <p>Messages and text input contents were not read.</p>
+          <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-field/40 px-2 py-2">
+            <span className="min-w-0 break-words">{String(x.role)}: {String(x.label)}</span>
+            {x.canActivate===true && typeof r.snapshot==='string' && /^[a-f0-9]{64}$/.test(r.snapshot) && c.deviceId
+              ? <button className="btn-ghost shrink-0 px-3 py-1 text-xs" type="button"
+                  onClick={()=>void runAction('ui.activate_observed',
+                    {label:String(x.label),role:String(x.role),snapshot:r.snapshot},
+                    {deviceId:c.deviceId!,label:'Click inspected '+String(x.label)+' on '+String(r.window)})}>
+                  Select &amp; request approval
+                </button>
+              : <span className="text-[11px] text-warn">Protected / use dedicated workflow</span>}
+          </div>)}
+        <p>Only foreground control names were read—not text fields or private message contents. If the screen changes, inspect again.</p>
       </div>;
     case 'ui.activate':
-      return <p className="text-xs text-warn">{r.note ?? 'Control activated; outcome unverified.'}</p>;
+    case 'ui.activate_observed':
+      return <p className="text-xs text-warn">{r.note ?? 'Click attempted only on the verified inspected control; app outcome unverified.'}</p>;
     case 'calendar.event_draft':
       return <p className="text-xs text-warn">{r.note ?? 'Calendar composer opened; event NOT saved.'}</p>;
     case 'calendar.save_reviewed':

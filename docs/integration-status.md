@@ -1,5 +1,5 @@
 <!-- Historical V1 status, not the current operational checklist. -->
-> This file documents the original Version 1 only. **Current code release is v1.6.7**: read [Phase 6 release and deployment audit](phase6-v167-release-audit.md), [the operator audit](audit-20261121.md) and Phase 3–5 updates. Build success is not real laptop or live Render verification.
+> This file documents the original Version 1 only. **Current code release is v1.6.8**: read [Phase 6 release and deployment audit](phase6-v167-release-audit.md), [the operator audit](audit-20261121.md) and Phase 3–5 updates. Build success is not real laptop or live Render verification.
 
 # Integration status & feature checklist
 
