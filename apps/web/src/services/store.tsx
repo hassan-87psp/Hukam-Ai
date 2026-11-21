@@ -265,6 +265,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           roman:'ChatGPT ka downloaded file verify nahi hua. Chrome Downloads check karein.',
           ur:'چیٹ جی پی ٹی فائل ڈاؤن لوڈ کی تصدیق نہیں ہوئی۔',
           en:'A completed ChatGPT output file could not be verified. Check Chrome Downloads.',
+        } : c.action === 'desktop.control' ? {
+          roman:'Laptop par mouse/keyboard input bhej diya. Natija abhi verify nahi hua — active window check karein.',
+          ur:'ماؤس یا کی بورڈ ان پٹ بھیج دیا گیا، نتیجے کی تصدیق ابھی نہیں ہوئی۔',
+          en:'Mouse/keyboard input was delivered to the foreground window, but the result is not independently verified.',
         } : c.action === 'whatsapp.unread_senders' ? {
           roman:'Sir, WhatsApp ki visible chat names mil gayi hain, lekin Unread filter select hona verify nahi hua. Inhe pakka unread na samjhein. Details command card mein hain.',
           ur:'چیٹ کے نام مل گئے، لیکن ان ریڈ فلٹر منتخب ہونے کی تصدیق نہیں ہوئی۔',
