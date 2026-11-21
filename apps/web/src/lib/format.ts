@@ -64,6 +64,16 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'window.active': 'Active window',
   'window.focus': 'Focus window',
   'screen.capture': 'Screenshot',
+  'diagnostics.probe': 'Safe laptop diagnostics',
+  'ui.inspect': 'Inspect visible controls',
+  'ui.activate': 'Activate visible control',
+  'calendar.event_draft': 'Calendar event draft',
+  'chatgpt.prompt_draft': 'ChatGPT prompt draft',
+  'chatgpt.submit_prompt': 'Submit ChatGPT prompt',
+  'chatgpt.download_visible': 'Download visible ChatGPT file',
+  'whatsapp.read_selected': 'Read selected WhatsApp chat',
+  'whatsapp.draft_reply': 'Draft WhatsApp reply',
+  'whatsapp.attach_preview': 'WhatsApp file preview',
   'browser.control': 'Browser input (approval)',
   'notepad.type': 'Type into Notepad (approval)',
   'browser.profile_open': 'Open saved Chrome profile',
@@ -95,6 +105,13 @@ export function describeArgs(action: ActionName, args: Record<string, unknown>):
     case 'window.focus': return String(a.title ?? '');
     case 'browser.profile_open': return String(a.profile)+' · '+String(a.url);
     case 'notepad.type': return 'text (' + String(a.text ?? '').length + ' characters)';
+    case 'ui.activate': return 'control ' + String(a.label ?? '');
+    case 'calendar.event_draft': return String(a.provider ?? '') + ' · ' + String(a.title ?? '');
+    case 'chatgpt.prompt_draft': return 'prompt (' + String(a.prompt ?? '').length + ' characters)';
+    case 'chatgpt.submit_prompt': return 'reviewed prompt (' + String(a.prompt ?? '').length + ' characters)';
+    case 'chatgpt.download_visible': return 'current ChatGPT Project';
+    case 'whatsapp.draft_reply': return 'to ' + String(a.contact ?? '');
+    case 'whatsapp.attach_preview': return 'file for ' + String(a.contact ?? '');
     case 'browser.control': return a.kind === 'click' ? `click (${a.x}, ${a.y})` : a.kind === 'scroll' ? `scroll ${a.steps}` : a.kind === 'key' ? `press ${a.key}` : 'type into browser';
     default: return '';
   }

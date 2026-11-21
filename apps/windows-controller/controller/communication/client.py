@@ -123,7 +123,9 @@ class ControllerClient:
             return
         self.dedupe.mark_started(cid)
         await self.send({"type": "started", "commandId": cid})
-        log.info("▶ %s %s", action, json.dumps(cmd.get("args", {}), ensure_ascii=False)[:200])
+        # Never log user-supplied command arguments. WhatsApp content, Calendar
+        # invitations and ChatGPT prompts can contain personal/private data.
+        log.info("▶ action=%s command=%s (arguments redacted)", action, cid[:16])
         ev = threading.Event()
         self.cancels[cid] = ev
         timeout = max(1.0, float(cmd.get("timeoutMs", 30000)) / 1000.0)

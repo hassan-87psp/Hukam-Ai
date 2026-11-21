@@ -18,6 +18,13 @@ describe('normalisation', () => {
   });
 });
 
+describe('laptop diagnostics', () => {
+  it('routes HUKM diagnostics to local controller, not Gemini chat',()=>{
+    expect(c('HUKM diagnostics')).toMatchObject({action:'diagnostics.probe',args:{}});
+    expect(requiresApproval('diagnostics.probe')).toBe(true);
+  });
+});
+
 describe('approved browser control', () => {
   it('parses an explicit click', () => {
     expect(c('browser click 440 320')).toMatchObject({ action: 'browser.control', args: { kind: 'click', x: 440, y: 320 } });

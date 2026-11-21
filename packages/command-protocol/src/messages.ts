@@ -53,6 +53,26 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('Window samne la raha hoon.', 'ونڈو سامنے لا رہا ہوں۔', 'Bringing the window to the front.');
     case 'screen.capture':
       return L('Screenshot le raha hoon.', 'اسکرین شاٹ لے رہا ہوں۔', 'Capturing a screenshot.');
+    case 'diagnostics.probe':
+      return L('Laptop ka safe diagnostics check kar raha hoon.', 'لیپ ٹاپ چیک ہو رہا ہے۔', 'Checking computer capabilities without private data.');
+    case 'ui.inspect':
+      return L('Visible controls check karne ke liye approval chahiye.', 'اسکرین کنٹرولز دیکھنے کی اجازت چاہیے۔', 'Approval required to inspect the foreground controls.');
+    case 'ui.activate':
+      return L('Visible button par click karne ke liye approval chahiye.', 'بٹن کلک کرنے کی اجازت چاہیے۔', 'Approval required to activate the exact visible control.');
+    case 'calendar.event_draft':
+      return L('Calendar event ka draft browser mein kholne ke liye approval chahiye.', 'کیلنڈر ایونٹ ڈرافٹ کی اجازت چاہیے۔', 'Approval required to open the Calendar event draft.');
+    case 'chatgpt.prompt_draft':
+      return L('ChatGPT Project mein prompt type karne ke liye approval chahiye.', 'چیٹ جی پی ٹی میں پرامپٹ لکھنے کی اجازت چاہیے۔', 'Approval required to draft the prompt in ChatGPT.');
+    case 'chatgpt.submit_prompt':
+      return L('ChatGPT ko reviewed prompt bhejne ke liye approval chahiye.', 'چیٹ جی پی ٹی کو پرامپٹ بھیجنے کی اجازت چاہیے۔', 'Approval required to submit the reviewed ChatGPT prompt.');
+    case 'chatgpt.download_visible':
+      return L('ChatGPT ka visible result download karne ke liye approval chahiye.', 'نتیجہ ڈاؤن لوڈ کرنے کی اجازت چاہیے۔', 'Approval required to download the visible ChatGPT result.');
+    case 'whatsapp.read_selected':
+      return L('Selected WhatsApp chat ka text aapke HUKM account par transfer hoga. Approval chahiye.', 'منتخب چیٹ کا متن آپ کے اکاؤنٹ میں جائے گا۔', 'Approval required: visible WhatsApp text will be transferred to your HUKM account.');
+    case 'whatsapp.draft_reply':
+      return L('WhatsApp mein sirf reply draft karunga, send nahi.', 'واٹس ایپ ریپلائی ڈرافٹ ہوگا، بھیجا نہیں جائے گا۔', 'WhatsApp reply will be drafted, not sent.');
+    case 'whatsapp.attach_preview':
+      return L('WhatsApp file attachment ka preview tayyar karunga, send nahi.', 'فائل اٹیچمنٹ ڈرافٹ ہوگا، بھیجا نہیں جائے گا۔', 'WhatsApp attachment preview will be prepared, not sent.');
     case 'browser.profile_open':
       return L('Selected Chrome profile kholne se pehle approval chahiye.','منتخب کروم پروفائل کھولنے کی اجازت چاہیے۔','Approval is required to open the saved Chrome profile.');
     case 'notepad.type':
@@ -122,6 +142,26 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Window samne aa gayi.', 'ونڈو سامنے آ گئی۔', 'Window brought to the front.');
     case 'screen.capture':
       return L('Screenshot aa gaya.', 'اسکرین شاٹ آ گیا۔', 'Screenshot received.');
+    case 'diagnostics.probe':
+      return L('Laptop diagnostics result aa gaya.', 'لیپ ٹاپ جانچ کے نتائج آگئے۔', 'Laptop diagnostic result is ready.');
+    case 'ui.inspect':
+      return L('Visible control labels mile hain. Message contents read nahi hue.', 'نظر آنے والے کنٹرولز پڑھ لیے۔', 'Visible interactive controls inspected; no message bodies read.');
+    case 'ui.activate':
+      return L('Control activate hua, final result verify nahi hua.', 'کنٹرول دب گیا، نتیجہ تصدیق شدہ نہیں۔', 'Control activated; final result not verified.');
+    case 'calendar.event_draft':
+      return L('Calendar event draft open hua. Event abhi save nahi hua.', 'کیلنڈر ڈرافٹ کھلا ہے مگر محفوظ نہیں ہوا۔', 'Calendar draft opened. Event not yet saved.');
+    case 'chatgpt.prompt_draft':
+      return L('ChatGPT mein prompt draft hua. Abhi send nahi hua.', 'پرامپٹ لکھا گیا، بھیجا نہیں گیا۔', 'ChatGPT prompt drafted but not submitted.');
+    case 'chatgpt.submit_prompt':
+      return L('ChatGPT ko prompt submit hua; result verify nahi hua.', 'پرامپٹ بھیجا، نتیجہ تصدیق شدہ نہیں۔', 'Prompt submitted; response not verified.');
+    case 'chatgpt.download_visible':
+      return L('ChatGPT se nayi file download verify hui.', 'چیٹ جی پی ٹی فائل ڈاؤن لوڈ تصدیق ہوئی۔', 'A new file was detected after ChatGPT download.');
+    case 'whatsapp.read_selected':
+      return L('Visible WhatsApp chat ka text aapke HUKM account mein mila.', 'منتخب چیٹ کا متن آپ کے اکاؤنٹ میں آ گیا۔', 'Visible WhatsApp text was returned to your authenticated account.');
+    case 'whatsapp.draft_reply':
+      return L('Selected chat mein reply draft hua; send nahi hua.', 'ریپلائی ڈرافٹ ہوا، بھیجا نہیں گیا۔', 'Reply drafted in selected chat; not sent.');
+    case 'whatsapp.attach_preview':
+      return L('Attachment request hui; send nahi hua. Preview check karein.', 'فائل ڈرافٹ ہوئی، بھیجی نہیں گئی۔', 'Attachment was selected, not sent. Verify the preview.');
     case 'browser.profile_open':
       return L('Chrome profile start kar di. Login/page load verify nahi hua.','کروم پروفائل شروع ہوئی، نتیجہ تصدیق شدہ نہیں۔','Chrome profile launch requested; page and login are not verified.');
     case 'notepad.type':

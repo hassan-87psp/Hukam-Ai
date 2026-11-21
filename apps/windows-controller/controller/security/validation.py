@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlparse
 
 KNOWN_FOLDERS = ["downloads", "documents", "desktop", "pictures", "music", "videos", "home"]
@@ -24,6 +25,8 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
+    "diagnostics.probe", "ui.inspect", "ui.activate", "calendar.event_draft", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
+    "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.attach_preview",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
 
@@ -31,7 +34,10 @@ CAPABILITY_OF = {
     "app.open": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
-    "screen.capture": "screen", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
+    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input",
+    "calendar.event_draft": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
+    "chatgpt.download_visible": "browser", "whatsapp.read_selected": "whatsapp",
+    "whatsapp.draft_reply": "whatsapp", "whatsapp.attach_preview": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
     "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp", "whatsapp.unread_senders": "whatsapp",
 }
 
@@ -147,6 +153,59 @@ def validate(action: str, args: dict) -> dict:
         return {"url": safe_url(a.get("url"))}
     if action in ("web.search", "youtube.search", "youtube.play"):
         return {"query": _str(a.get("query"), "query", 200)}
+    if action == "ui.activate":
+        label = _str(a.get("label"), "label", 100)
+        if re.match(r"^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\b|\s)", label, re.I):
+            raise ValidationError("sensitive button requires dedicated workflow")
+        return {"label": label}
+    if action == "calendar.event_draft":
+        provider = a.get("provider")
+        if provider not in ("google", "outlook"):
+            raise ValidationError("unsupported Calendar provider")
+        title = _str(a.get("title"), "title", 100)
+        profile = _str(a.get("profile"), "profile", 80)
+        if not re.fullmatch(r"(?:Default|Profile [1-9][0-9]?)", profile):
+            raise ValidationError("invalid Chrome profile directory")
+        start, end = a.get("startUtc"), a.get("endUtc")
+        iso = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"
+        if not isinstance(start, str) or not isinstance(end, str) or not re.fullmatch(iso, start) or not re.fullmatch(iso, end):
+            raise ValidationError("UTC timestamps must be YYYY-MM-DDTHH:MM:SSZ")
+        try:
+            begin = datetime.strptime(start, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            finish = datetime.strptime(end, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        except ValueError as exc:
+            raise ValidationError("invalid Calendar date") from exc
+        now = datetime.now(timezone.utc)
+        if not begin < finish or finish - begin > timedelta(days=1) or begin < now - timedelta(minutes=5) or begin > now + timedelta(days=366):
+            raise ValidationError("Calendar event dates invalid")
+        tz = _str(a.get("timeZone"), "timeZone", 70)
+        if not re.fullmatch(r"[A-Za-z_]+(?:/[A-Za-z0-9_+\-]+){0,2}", tz):
+            raise ValidationError("invalid IANA time zone")
+        return {"provider": provider, "title": title, "profile": profile,
+                "startUtc": start, "endUtc": end, "timeZone": tz,
+                "details": _str(a.get("details"), "details", 500, required=False),
+                "location": _str(a.get("location"), "location", 120, required=False)}
+    if action in ("chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible"):
+        url = _str(a.get("projectUrl"), "projectUrl", 500)
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or parsed.hostname != "chatgpt.com" or parsed.username or parsed.password or parsed.fragment:
+            raise ValidationError("Only HTTPS ChatGPT Project URLs are supported")
+        out = {"projectUrl": url}
+        if action != "chatgpt.download_visible":
+            prompt = a.get("prompt")
+            if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1800 or re.search(r"[\x00-\x08\x0b-\x1f]", prompt):
+                raise ValidationError("invalid ChatGPT prompt")
+            out["prompt"] = prompt
+        return out
+    if action == "whatsapp.draft_reply":
+        contact = _str(a.get("contact"), "contact", 80)
+        message = a.get("message")
+        if not isinstance(message, str) or not message.strip() or len(message) > 1000 or re.search(r"[\x00-\x08\x0b-\x1f]", message):
+            raise ValidationError("invalid WhatsApp reply")
+        return {"contact": contact, "message": message}
+    if action == "whatsapp.attach_preview":
+        return {"contact": _str(a.get("contact"), "contact", 80),
+                "path": _str(a.get("path"), "path", 1024)}
     if action == "browser.profile_open":
         profile = _str(a.get("profile"), "profile", 80)
         if not re.fullmatch(r"(?:Default|Profile [1-9][0-9]?)", profile):

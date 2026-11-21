@@ -1,4 +1,4 @@
-HUKM AI Windows Controller - Consolidated Install/Update (v1.3.0)
+HUKM AI Windows Controller - Consolidated Install/Update (v1.4.0)
 
 1. Extract the ENTIRE ZIP to one temporary folder.
 2. Close any previous HUKM Controller black window. Do not delete old folders yet.
@@ -18,7 +18,9 @@ CURRENT CAPABILITIES:
 - Existing device pairing, safe app/browser actions and WhatsApp best-effort unread checking.
 
 NOT YET COMPLETE:
-- Autonomous visual screen loop, reliable full WhatsApp message/reply/file sending, full Calendar event-creation, ChatGPT image generation/download workflows and real-PC regression testing.
+- This adds approved foreground UIA inspection, Personal WhatsApp visible read/draft/attachment preview, Calendar event drafts, ChatGPT prompt/submission/visible download actions.
+- Automatic real WhatsApp sending, Calendar OAuth event creation/attendee invitations, fully autonomous visual agent and real-PC regression testing remain incomplete.
+- Website accessibility controls can change; user must run real laptop acceptance tests.
 - "Success" for an input event means sent, not independently verified.
 
 Protect your account credentials. Never type passwords or OTP codes in HUKM prompts.

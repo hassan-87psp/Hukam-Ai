@@ -183,6 +183,9 @@ export function parseCommand(input: string): ParseResult {
   if (/^(help|madad|commands|kya kar sakte ho|what can you do|tum kya kar sakte ho|aap kya kar sakte hain)$/.test(t))
     return { kind: 'reply', topic: 'help', normalized: t };
 
+  if (/\b(hukm|laptop|controller|windows|computer)?\s*(?:diagnostics?|self test|health check|system test)\b/.test(t))
+    return cmd('diagnostics.probe', {}, 'computer-diagnostics');
+
   // Calendar shortcuts must win over the generic "Google search" rule.
   if (/\b(?:google\s+calendar|gcal)\b/.test(t) && OPEN.test(t))
     return cmd('web.open', { url: 'https://calendar.google.com/calendar/u/0/r' }, 'google-calendar-open');

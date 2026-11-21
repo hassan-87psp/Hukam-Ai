@@ -11,10 +11,11 @@ import { chatWithGemini, geminiConfigured, GeminiError } from './gemini';
 import { HttpError, Relay } from './core';
 import { Projects } from './projects';
 import { Operator } from './operator';
+import { analyzeScreenshot } from './vision';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
-export const VERSION = '1.3.0';
+export const VERSION = '1.4.0';
 const COOKIE = 'hukm_session';
 const MAX_BODY = 64 * 1024;
 
@@ -382,6 +383,22 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
       reportFemaleVoiceError(e);
       throw new HttpError(503, 'VOICE_UNAVAILABLE', 'Free Pakistani female voice is temporarily unavailable');
     }
+  });
+
+  // Screenshot already requires controller approval. Sending it to Google
+  // requires a distinct explicit authenticated POST by the owner.
+  add('POST', '/api/vision/analyze', true, async (c) => {
+    if(!aiLimit.take('vision:'+c.user!.id)||!aiDailyLimit.take('vision:'+c.user!.id))
+      throw new HttpError(429,'VISION_RATE_LIMIT','Vision AI rate limit reached');
+    if(c.body?.consent !== true)
+      throw new HttpError(400,'VISION_CONSENT','Explicit screenshot-sharing consent required');
+    const id=c.body?.screenshotId;
+    if(typeof id!=='string'||!/^s_[A-Za-z0-9_-]{8,90}$/.test(id))
+      throw new HttpError(400,'VISION_SCREENSHOT','Invalid screenshot ID');
+    const shot=relay.getScreenshot(c.user!.id,id);
+    const answer=await analyzeScreenshot(shot.path,c.body?.question);
+    relay.audit(c.user!.id,'user','screen.vision_analyzed',{screenshotId:id,provider:'Google Gemini'},null,c.ip);
+    return answer;
   });
 
   // settings, audit, screenshots
