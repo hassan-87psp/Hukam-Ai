@@ -100,6 +100,8 @@ def test_whatsapp_read_and_draft_are_explicit_and_not_sent(sandbox):
     assert result.result["verified"] is False
     with pytest.raises(v.ValidationError):
         v.validate("whatsapp.draft_reply", {"contact": "Test", "message": ""})
+    with pytest.raises(v.ValidationError):
+        v.validate("whatsapp.send_reviewed", {"contact": "Test", "message": ""})
 
 
 def test_whatsapp_attachment_only_allowed_path_and_preview(sandbox, tmp_path):
