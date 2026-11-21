@@ -143,31 +143,63 @@ def _capture_left(hwnd: int):
     return image, left, top
 
 
-def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
-    """Require a visual Unread *between* the All and Favourites chips."""
-    def text(w: Word) -> str:
-        return re.sub(r"\s+", " ", w.text.strip()).casefold()
-
-    # Only the chip row, never similarly worded chat previews below it.
+def _header_labels(words: list[Word], width: int, height: int) -> dict[str, bool]:
+    """Only diagnostic BOOLEAN flags for fixed UI words, never chat/contact text."""
+    limit_y = min(400, height * .46)
     header = [w for w in words
-              if 55 <= w.cy <= min(275, height * .34)
-              and 65 <= w.cx <= min(width - 30, 440)]
+              if 45 <= w.cy <= limit_y and 65 <= w.cx <= min(width - 22, 480)]
+    values = [re.sub(r"\\s+", " ", w.text.strip()).casefold() for w in header]
+    return {
+        "all": "all" in values,
+        "unread": any(re.fullmatch(r"unread(?:\\s*\\d{1,3})?", v) for v in values),
+        "favourites": "favourites" in values or "favorites" in values,
+        "chats": "chats" in values,
+    }
+
+
+def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
+    """Find Unread using confirmed left-side anchors, not a blind coordinate.
+
+    WhatsApp's Favourites chip is optional in recent builds and Windows OCR
+    often misses it. Require a unique All + Unread row and, if Favourites
+    wasn't recognized, a separate Chats heading ABOVE the row. Reject
+    uncertain or duplicated rows instead of clicking arbitrary text.
+    Coordinates scale with the captured pane height for Windows DPI settings.
+    """
+    def label(w: Word) -> str:
+        return re.sub(r"\\s+", " ", w.text.strip()).casefold()
+
+    header = [w for w in words
+              if 45 <= w.cy <= min(400, height * .46)
+              and 65 <= w.cx <= min(width - 22, 480)]
     unread = [w for w in header
-              if re.fullmatch(r"unread(?:\s*\d{1,3})?", text(w))]
-    all_chips = [w for w in header if text(w) == "all"]
-    favorites = [w for w in header
-                 if text(w) in ("favourites", "favorites")]
-    if len(unread) != 1 or len(all_chips) != 1 or len(favorites) != 1:
+              if re.fullmatch(r"unread(?:\\s*\\d{1,3})?", label(w))]
+    all_chips = [w for w in header if label(w) == "all"]
+    favourites = [w for w in header if label(w) in ("favourites", "favorites")]
+    if len(unread) != 1 or len(all_chips) != 1 or len(favourites) > 1:
         return None
-    candidate = unread[0]
-    left = all_chips[0]
-    right = favorites[0]
-    if (not (left.cx + 22 < candidate.cx < right.cx - 22) or
-            max(abs(left.cy - candidate.cy),
-                abs(right.cy - candidate.cy)) > 23):
+
+    candidate, left = unread[0], all_chips[0]
+    # Unread is immediately to the right of All on the same chip row.
+    if not (left.cx + 20 < candidate.cx < left.cx + 240
+            and abs(left.cy - candidate.cy) <= 24):
         return None
-    if candidate.width < 28 or candidate.width > 150:
+    if not (25 <= candidate.width <= 155 and 11 <= candidate.height <= 44):
         return None
+
+    if favourites:
+        right = favourites[0]
+        if not (candidate.cx + 20 < right.cx < candidate.cx + 260
+                and abs(right.cy - candidate.cy) <= 24):
+            return None
+    else:
+        # Two matched chip words alone could be conversation preview text.
+        # A separately recognized Chats heading must precede the chip row.
+        headings = [w for w in header if label(w) == "chats"
+                    and w.cy + 38 < candidate.cy
+                    and w.cx < candidate.cx]
+        if len(headings) != 1:
+            return None
     return candidate
 
 
@@ -263,9 +295,16 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
              time.monotonic() - started)
     chip = locate_unread(words, image.width, image.height)
     if chip is None:
+        evidence = _header_labels(words, image.width, image.height)
+        # Boolean fixed-label diagnostics only; do not log OCR's private chat text.
+        log.info("WhatsApp unread header detected all=%s unread=%s favourites=%s chats=%s",
+                 evidence["all"], evidence["unread"], evidence["favourites"], evidence["chats"])
         raise VisualUnreadUnavailable(
-            "Windows UIA and local visual OCR could not uniquely identify "
-            "the All / Unread / Favourites row. No mouse click was attempted."
+            "Local WhatsApp OCR could not verify the All / Unread chip row "
+            "(All: %s, Unread: %s, Chats heading: %s, Favourites: %s). "
+            "No mouse click was attempted." %
+            tuple("yes" if evidence[k] else "no"
+                  for k in ("all", "unread", "chats", "favourites"))
         )
 
     x, y = left + round(chip.cx), top + round(chip.cy)
