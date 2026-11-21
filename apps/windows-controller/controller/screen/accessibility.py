@@ -197,7 +197,9 @@ def activate(label: str) -> dict:
     raise AccessibilityError("Inspect the visible controls and use a snapshot-bound action")
 
 
-def activate_observed(label: str, role: str, snapshot: str) -> dict:
+def activate_observed(label: str, role: str, snapshot: str, cancel=None) -> dict:
+    if cancel is not None and cancel.is_set():
+        raise AccessibilityError("Click cancelled")
     if role not in ROLES or not safe_control_label(label):
         raise AccessibilityError("Sensitive or unsupported button requires a dedicated workflow")
     if launcher.SIMULATE:
@@ -227,10 +229,37 @@ def activate_observed(label: str, role: str, snapshot: str) -> dict:
         if (not fresh or fresh.hwnd != active.hwnd or fresh.pid != active.pid
                 or win32gui.GetForegroundWindow() != active.hwnd):
             raise AccessibilityError("Foreground window changed; no click performed")
-        if matches[0].IsOffscreen:
-            raise AccessibilityError("Target control is no longer visible")
+        control = matches[0]
+        if control.IsOffscreen or not control.IsEnabled:
+            raise AccessibilityError("Target control is no longer visible or enabled")
+        rect = control.BoundingRectangle
+        left, top, right, bottom = rect.left, rect.top, rect.right, rect.bottom
+        if right <= left or bottom <= top:
+            raise AccessibilityError("Target has no visible bounds")
+        point = ((left + right)//2, (top + bottom)//2)
+        from ..system import desktop_input
+        client = desktop_input._client_rect(active.hwnd)
+        if not desktop_input.inside_client(point, client):
+            raise AccessibilityError("Target is outside the foreground client")
+        hit = win32gui.WindowFromPoint(point)
+        if not hit or win32gui.GetAncestor(hit, 2) != active.hwnd:
+            raise AccessibilityError("Target control is obscured")
+        if cancel is not None and cancel.is_set():
+            raise AccessibilityError("Click cancelled")
+        if win32gui.GetForegroundWindow() != active.hwnd:
+            raise AccessibilityError("Foreground changed before click")
         _consume_observation(snapshot)
-        matches[0].Click(simulateMove=False)
+        # Revalidate the selected original HWND, bounds and pointer immediately
+        # before input. Do not resolve a NEW foreground window here.
+        import win32api
+        import win32con
+        desktop_input._check_pointer(active.hwnd, point, client, cancel)
+        win32api.SetCursorPos(point)
+        desktop_input._check_pointer(active.hwnd, point, client, cancel)
+        if win32api.GetCursorPos() != point:
+            raise AccessibilityError("Mouse position changed before click")
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
         return {
             "inputDelivered": True, "verified": False,
             "role": role, "label": label,
@@ -242,12 +271,14 @@ def activate_observed(label: str, role: str, snapshot: str) -> dict:
         raise AccessibilityError("UI Automation could not activate the inspected control") from exc
 
 
-def scroll_active(steps: int) -> dict:
+def scroll_active(steps: int, cancel=None) -> dict:
     """Bounded mouse-wheel input to the active allowlisted Windows app.
 
     Does not use a screen coordinate supplied by the model; the local
     Controller computes the center of the actual foreground window.
     """
+    if cancel is not None and cancel.is_set():
+        raise AccessibilityError("Scroll cancelled")
     if not isinstance(steps, int) or isinstance(steps, bool) or steps == 0 or abs(steps) > 5:
         raise AccessibilityError("scroll must be an integer from -5 to 5, excluding zero")
     if launcher.SIMULATE:
@@ -264,7 +295,17 @@ def scroll_active(steps: int) -> dict:
         if win32gui.GetForegroundWindow() != active.hwnd:
             raise AccessibilityError("Foreground window changed before scrolling")
         center = (int((left + right) / 2), int((top + bottom) / 2))
+        hit = win32gui.WindowFromPoint(center)
+        if not hit or win32gui.GetAncestor(hit, 2) != active.hwnd:
+            raise AccessibilityError("Scroll target is obscured")
         win32api.SetCursorPos(center)
+        hit = win32gui.WindowFromPoint(center)
+        if (win32api.GetCursorPos() != center or not hit or
+                win32gui.GetAncestor(hit, 2) != active.hwnd or
+                win32gui.GetForegroundWindow() != active.hwnd or
+                win32gui.GetWindowRect(active.hwnd) != (left, top, right, bottom) or
+                (cancel is not None and cancel.is_set())):
+            raise AccessibilityError("Scroll target changed or cancelled")
         win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, steps * 120, 0)
         return {"inputDelivered": True, "verified": False, "steps": steps,
                 "window": active.title[:100], "process": active.process,

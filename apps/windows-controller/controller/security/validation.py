@@ -119,7 +119,15 @@ def check_openable(path: Path, roots: list[Path]) -> Path:
         raise ValidationError(f"{path.suffix} files can run code, so HUKM will not open them")
     if not path.exists():
         raise FileNotFoundError(str(path))
-    return path
+    try:
+        resolved = path.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValidationError("Could not resolve exact local path") from exc
+    if not is_within(resolved, roots):
+        raise ValidationError("Resolved path is outside the folders you allowed")
+    if resolved.suffix.casefold() in BLOCKED_OPEN_EXTS or resolved.suffix.casefold() in {".crdownload", ".part", ".partial", ".download", ".tmp"}:
+        raise ValidationError("Unsafe or incomplete file cannot be opened")
+    return resolved
 
 
 def validate(action: str, args: dict) -> dict:
@@ -128,6 +136,17 @@ def validate(action: str, args: dict) -> dict:
     if not isinstance(args, dict):
         raise ValidationError("args must be an object")
     a = args
+    if action == "screen.capture":
+        if not a:
+            return {}
+        monitor = a.get("monitor")
+        if (set(a) - {"monitor", "textOnly"} or type(monitor) is not int or not 1 <= monitor <= 16
+                or ("textOnly" in a and a["textOnly"] is not True)):
+            raise ValidationError("Select one physical monitor numbered 1–16; optional textOnly must be true")
+        out = {"monitor": monitor}
+        if a.get("textOnly") is True:
+            out["textOnly"] = True
+        return out
     if action == "controller.update":
         if a:
             raise ValidationError("HUKM updater accepts no URL, executable path or arguments")
@@ -261,6 +280,14 @@ def validate(action: str, args: dict) -> dict:
         if parsed.scheme != "https" or parsed.hostname != "chatgpt.com" or parsed.username or parsed.password or parsed.fragment:
             raise ValidationError("Only HTTPS ChatGPT Project URLs are supported")
         out = {"projectUrl": url}
+        if action == "chatgpt.download_visible" and "assetFolder" in a:
+            folder = a["assetFolder"]
+            if (not isinstance(folder, str) or len(folder)>350
+                    or not re.fullmatch(r'[A-Za-z]:[\\/][^\x00-\x1f<>:"|?*]+', folder)
+                    or any(not part or part in (".","..") or part.endswith((" ","."))
+                           for part in re.split(r"[\\/]", folder[3:]))):
+                raise ValidationError("Asset folder must be an existing absolute Windows directory")
+            out["assetFolder"] = folder
         if action != "chatgpt.download_visible":
             prompt = a.get("prompt")
             if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1800 or re.search(r"[\x00-\x08\x0b-\x1f]", prompt):
@@ -311,7 +338,7 @@ def validate(action: str, args: dict) -> dict:
         if kind == "key":
             key = a.get("key")
             if key not in ("enter", "tab", "escape", "backspace", "home", "end", "arrowdown",
-                           "arrowup", "ctrl+l", "ctrl+a"):
+                           "arrowup", "ctrl+l", "ctrl+a", "ctrl+t", "ctrl+tab", "ctrl+shift+tab", "ctrl+j"):
                 raise ValidationError("browser key not allowed")
             return {"kind": kind, "key": key}
         raise ValidationError("unsupported browser input")

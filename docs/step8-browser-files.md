@@ -1,0 +1,7 @@
+# Step 8 — Browser and file intelligence candidate
+
+- Existing Chrome profile routing preserves saved local directory and does not read cookies, tokens or account identities. Explicit Profile N / Default commands can open allowlisted ChatGPT, Gmail, Google Calendar and Outlook. Profile directory resolving outside User Data is refused. Actual logged-in identity or load is not certified by process launch.
+- Explicit new/next/previous tab and browser downloads navigation uses bounded owner-reviewed keys in foreground browser. No arbitrary script or automatic close/submit.
+- File search enforces entry/deadline/cancellation checks even in huge flat folders, skips symlinks/reparse entries and incomplete downloads, deduplicates visited directories, retains only top K hits in memory, marks incomplete/depth-bounded searches. Partial searches do not auto-open a claimed latest/unique file. Exact resolved paths are rechecked; unsafe executable/partial targets blocked.
+- Folder listing bounded to 10 seconds/10000 entries and cancellation, bounded result count. No background indexing, file content upload, rename/delete/move automation or additional dependency. Existing allowed roots remain authoritative. Restrictive reparse policy can exclude cloud placeholders.
+- New regression tests for search bounds, partial downloads, incomplete-result guard and explicit browser routing. Latest CI and real personal Chrome/Windows acceptance remain outstanding. No deployment or paid upgrade.

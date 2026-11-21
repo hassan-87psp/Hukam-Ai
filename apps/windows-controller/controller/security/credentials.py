@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -22,7 +23,8 @@ def _protect(data: bytes) -> tuple[str, str]:
             blob = win32crypt.CryptProtectData(data, "HUKM AI device token", None, None, None, 0)
             return "dpapi", base64.b64encode(blob).decode()
         except Exception:
-            pass
+            raise RuntimeError("Windows credential encryption failed; no token saved") from None
+    # Non-Windows development only: restricted local file.
     return "plain", base64.b64encode(data).decode()
 
 
@@ -32,15 +34,30 @@ def _unprotect(kind: str, value: str) -> bytes:
         import win32crypt  # type: ignore
 
         return win32crypt.CryptUnprotectData(raw, None, None, None, 0)[1]
+    if kind != "plain":
+        raise ValueError("Unknown credential format")
     return raw
 
 
 def save_device(server_url: str, device_id: str, token: str, name: str) -> None:
     kind, enc = _protect(token.encode())
     p = _path()
-    p.write_text(json.dumps({"server_url": server_url, "device_id": device_id, "name": name, "token_kind": kind, "token": enc}), encoding="utf-8")
-    if not IS_WINDOWS:
-        os.chmod(p, 0o600)
+    # Atomic replacement preserves existing pairing on encryption/write failure.
+    fd, temp = tempfile.mkstemp(prefix="device-", suffix=".tmp", dir=p.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as out:
+            json.dump({"server_url": server_url, "device_id": device_id, "name": name,
+                       "token_kind": kind, "token": enc}, out)
+            out.flush()
+            os.fsync(out.fileno())
+        if not IS_WINDOWS:
+            os.chmod(temp, 0o600)
+        os.replace(temp, p)
+    finally:
+        try:
+            os.unlink(temp)
+        except FileNotFoundError:
+            pass
 
 
 def load_device() -> Optional[dict]:
@@ -49,7 +66,14 @@ def load_device() -> Optional[dict]:
         return None
     try:
         d = json.loads(p.read_text(encoding="utf-8"))
-        d["token"] = _unprotect(d.get("token_kind", "plain"), d["token"]).decode()
+        kind = d.get("token_kind", "plain")
+        token = _unprotect(kind, d["token"]).decode()
+        if IS_WINDOWS and kind == "plain":
+            # Migrate old unencrypted Windows credentials before connecting.
+            # On failure preserve the old file and refuse the connection.
+            save_device(d["server_url"], d["device_id"], token, d.get("name", ""))
+            d["token_kind"] = "dpapi"
+        d["token"] = token
         return d
     except Exception:
         return None

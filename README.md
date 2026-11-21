@@ -1,7 +1,11 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
-## Current development release — v1.8.4 (21 Nov 2026)
+## Development candidate — v1.9.0 (not released)
+
+The stabilization candidate includes the 15-phase implementation and audit. Production remains on v1.8.4 until all release gates are met. See [release readiness](docs/step15-release-readiness.md) for the outstanding real-device and data-recovery checks.
+
+## Previous development release — v1.8.4 (21 Nov 2026)
 
 **v1.8.4:** Fix opaque website update approval. The Devices page shows an inline command approval, running/download confirmation, final installer outcome and official manual recovery link. Controller logs every update stage without private data, brings owner confirmation to foreground, and gracefully exits the old Controller *after* reporting that the verified installer was launched to unlock its own EXE. The installed new version is not verified until the device reconnects. The existing v1.8.2/1.8.3 binary cannot receive fixes to its own updater without one successful installation; the official EXE provides a one-time recovery fallback if website updates are failing.
 

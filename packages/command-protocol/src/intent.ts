@@ -73,12 +73,18 @@ const ASIDE_QUESTION = /^(?:what (?:is|are)|who (?:is|are)|why (?:is|are)|explai
 
 export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorReply = false): IntentRoute {
   const t=text.trim();
+  if(/^skill\s+\S/i.test(t))return 'plan';
   if(awaitingOperatorReply) {
     // A clear unrelated question/greeting does not erase an unfinished task.
     if(GREETING.test(t) || ASIDE_QUESTION.test(t))return 'chat';
     return 'plan';
   }
-  if(!t || GREETING.test(t))return 'chat';
+  if(!t || GREETING.test(t) || ASIDE_QUESTION.test(t))return 'chat';
+  // A complete single read request already has a vetted read-only path.
+  // The persisted relay permission determines whether per-read approval is
+  // required; do not add a separate model planning/Run step.
+  if(parsed.kind==='command' && parsed.action==='whatsapp.unread_senders' && !COMPOUND.test(t))
+    return 'command';
   if(desktopWhatsAppWorkflow(t))return 'plan';
   if(namedWhatsAppRead(t))return 'plan';
   // Mailboxes have account-specific identities: don't silently treat "send

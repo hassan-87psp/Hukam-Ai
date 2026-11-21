@@ -60,7 +60,9 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
     case 'window.focus':
       return L('Window samne la raha hoon.', 'ونڈو سامنے لا رہا ہوں۔', 'Bringing the window to the front.');
     case 'screen.capture':
-      return L('Screenshot le raha hoon.', 'اسکرین شاٹ لے رہا ہوں۔', 'Capturing a screenshot.');
+      return args.textOnly===true
+        ? L('Selected monitor ka visible text read karne aur account history mein bhejne ke liye approval chahiye.', 'نظر آنے والا متن پڑھنے اور اکاؤنٹ میں بھیجنے کی اجازت چاہیے۔', 'Approval required: read visible text on the selected monitor and return it to your account history. No screenshot upload.')
+        : L('Screenshot le raha hoon.', 'اسکرین شاٹ لے رہا ہوں۔', 'Capturing a screenshot.');
     case 'diagnostics.probe':
       return L('Laptop ka safe diagnostics check kar raha hoon.', 'لیپ ٹاپ چیک ہو رہا ہے۔', 'Checking computer capabilities without private data.');
     case 'ui.inspect':
@@ -112,7 +114,7 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
     case 'whatsapp.check':
       return L('WhatsApp check kar raha hoon.', 'واٹس ایپ چیک کر رہا ہوں۔', 'Checking WhatsApp.');
     case 'whatsapp.unread_senders':
-      return L('WhatsApp ki visible unread chats ke names parhne ke liye approval chahiye.', 'نظر آنے والی ان ریڈ چیٹس کے نام پڑھنے کے لیے اجازت چاہیے۔', 'Approval is required to read visible unread sender names.');
+      return L('WhatsApp ki unread list check karne ki request tayyar hai.', 'واٹس ایپ کی ان ریڈ فہرست چیک کرنے کی درخواست تیار ہے۔', 'Request to check the visible unread WhatsApp list is ready.');
     case 'whatsapp.read_visible':
       return L('Aapki approval ke baad WhatsApp ki khuli chat laptop par offline parhunga. Message text cloud par nahi bhejunga.', 'آپ کی منظوری کے بعد کھلی چیٹ لیپ ٹاپ پر آف لائن پڑھوں گا۔', 'With approval, I will read aloud the visible WhatsApp chat on your laptop only; no message contents are transferred.');
     case 'whatsapp.compose':
@@ -179,7 +181,9 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
     case 'window.focus':
       return L('Window samne aa gayi.', 'ونڈو سامنے آ گئی۔', 'Window brought to the front.');
     case 'screen.capture':
-      return L('Screenshot aa gaya.', 'اسکرین شاٹ آ گیا۔', 'Screenshot received.');
+      return args.textOnly===true
+        ? L('Local OCR result aa gaya; text mein recognition errors ho sakte hain.', 'مقامی متن پڑھنے کا نتیجہ آ گیا۔', 'Local OCR result received; recognition may contain errors.')
+        : L('Screenshot aa gaya.', 'اسکرین شاٹ آ گیا۔', 'Screenshot received.');
     case 'diagnostics.probe':
       return L('Laptop diagnostics result aa gaya.', 'لیپ ٹاپ جانچ کے نتائج آگئے۔', 'Laptop diagnostic result is ready.');
     case 'ui.inspect':
@@ -205,7 +209,7 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
     case 'chatgpt.submit_prompt':
       return L('ChatGPT ko prompt submit hua; result verify nahi hua.', 'پرامپٹ بھیجا، نتیجہ تصدیق شدہ نہیں۔', 'Prompt submitted; response not verified.');
     case 'chatgpt.download_visible':
-      return L('ChatGPT se nayi file download verify hui.', 'چیٹ جی پی ٹی فائل ڈاؤن لوڈ تصدیق ہوئی۔', 'A new file was detected after ChatGPT download.');
+      return L('Downloads check hua; exact ChatGPT file verify nahi hui. File review karein.', 'ڈاؤن لوڈز چیک ہوئے، اصل فائل کی تصدیق نہیں ہوئی۔', 'Downloads checked; the exact ChatGPT artifact is not independently verified. Review the file.');
     case 'whatsapp.select_chat':
       return L('WhatsApp par exact selected chat verify ho gayi. Koi message send nahi hua.', 'درست واٹس ایپ چیٹ منتخب ہو گئی، کوئی پیغام نہیں بھیجا۔', 'The exact WhatsApp chat was selected and verified. Nothing was sent.');
     case 'whatsapp.read_selected':
@@ -242,14 +246,25 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('WhatsApp open hai, lekin unread count parha nahi ja saka.', 'واٹس ایپ کھلا ہے، لیکن ان ریڈ تعداد نہیں پڑھی جا سکی۔', "WhatsApp is open, but the unread count couldn't be read.");
     case 'whatsapp.unread_senders': {
       const senders = Array.isArray(r.senders) ? r.senders.filter((x): x is string => typeof x === 'string').slice(0, 12) : [];
+      if (!senders.length && r.totalUnreadChats===0 && r.unreadCountVerified===true && r.source==='Explicit WhatsApp Unread zero badge')
+        return L('WhatsApp ke Unread badge par zero chats confirm hui hain.', 'واٹس ایپ میں صفر ان ریڈ چیٹس کی تصدیق ہوئی۔', 'The explicit WhatsApp Unread badge confirms zero unread conversations.');
       if (!senders.length) return L('WhatsApp ne unread sender names verify nahi kiye.', 'واٹس ایپ کے ناموں کی تصدیق نہیں ہوئی۔', 'No unread sender names could be verified.');
       if (r.filterSelectedVerified === false)
         return L(`Sir, visible chat names: ${senders.join(', ')}. WhatsApp ka Unread filter select hona confirm nahi hua, isliye inhe verified unread na samjhein.`,
           `نظر آنے والے چیٹ نام: ${senders.join('، ')}۔ ان ریڈ فلٹر کی تصدیق نہیں ہوئی۔`,
           `Visible chat names: ${senders.join(', ')}. Unread filter selection was NOT verified.`);
-      return L(`WhatsApp par visible unread chats: ${senders.join(', ')}. Messages ka content nahi parha.`,
-        `نظر آنے والی ان ریڈ چیٹس: ${senders.join('، ')}۔ میسج نہیں پڑھے۔`,
-        `Visible unread chats: ${senders.join(', ')}. Message contents were not read.`);
+      const counts=new Map<string,number>();
+      if(Array.isArray(r.conversations))for(const item of r.conversations){
+        if(item && typeof item.name==='string' && typeof item.unreadMessages==='number' &&
+          Number.isInteger(item.unreadMessages) && item.unreadMessages>0 && item.unreadMessages<=9999)
+          counts.set(item.name,item.unreadMessages);
+      }
+      const names=senders.map(n=>counts.has(n)?n+' — '+counts.get(n)+' unread messages':n).join(', ');
+      const total=r.unreadCountVerified===true && typeof r.totalUnreadChats==='number' && r.totalUnreadChats>=senders.length
+        ? r.totalUnreadChats : null;
+      return L(`WhatsApp par ${total===null?'total unread chats verify nahi hui':total+' unread chats ka badge hai'}. Visible senders: ${names}. Tamam unread messages ka total confirm nahi hua; message bodies nahi parhe.`,
+        `نظر آنے والی ان ریڈ چیٹس: ${names}۔ مکمل پیغامات کی تعداد کی تصدیق نہیں ہوئی۔`,
+        `Unread conversation badge: ${total===null?'unknown':total}. Visible senders: ${names}. Total unread messages not verified; message bodies were not read.`);
     }
     case 'whatsapp.read_visible':
       if (r.messagesRead === true && r.spokenOnDevice === true)
@@ -268,19 +283,33 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
   }
 }
 
-export function failureMessage(error: CommandError | null): Localized {
+export function failureMessage(error: CommandError | null, action?:ActionName): Localized {
   const msg = error?.message ?? 'unknown error';
   switch (error?.code) {
     case 'DEVICE_OFFLINE':
       return L('Laptop offline hai. Controller start karein.', 'لیپ ٹاپ آف لائن ہے۔ کنٹرولر چلائیں۔', 'The laptop is offline. Start the controller.');
     case 'UNVERIFIABLE':
-      return /unread sender|sender names|chat-row|unread filter/i.test(msg)
+      if(action==='whatsapp.unread_senders'){
+        if(/moved|resized|foreground|obscured|pointer|mouse moved/i.test(msg))
+          return L('WhatsApp scan ruk gaya: window ya mouse position badli. Sender names verify nahi hue. Command card mein exact error hai.',
+            'واٹس ایپ اسکین رک گیا، ونڈو یا ماؤس کی جگہ بدلی۔ ناموں کی تصدیق نہیں ہوئی۔',
+            'WhatsApp sender scan stopped because the window or pointer changed. No names verified; see the exact command error.');
+        return L('WhatsApp sender names verify nahi hue. Ye zero unread ka result nahi hai. Exact error command card mein hai.',
+          'واٹس ایپ بھیجنے والوں کے ناموں کی تصدیق نہیں ہوئی۔',
+          'Unread sender names could not be verified. This does not mean zero unread chats. See the command error.');
+      }
+      if(action==='whatsapp.check'){
+        return L('WhatsApp unread count verify nahi hua; ye zero ka result nahi hai. Exact wajah command card mein hai. Wohi failed request dobara dene se pehle Controller ka issue resolve karein.',
+          'واٹس ایپ کی ان ریڈ تعداد کی تصدیق نہیں ہوئی۔ اصل خرابی کمانڈ کارڈ میں ہے۔',
+          'Unread count is unknown, not zero. See the command error and resolve the controller issue before retrying.');
+      }
+      return /unread sender|sender names|chat-row|unread filter|unread chip/i.test(msg)
         ? L('Sir, WhatsApp ki Unread list ke contact names Windows se verify nahi hue. HUKM diagnostics run karein; bina verified names ke koi chat assume nahi karunga.',
             'واٹس ایپ کی ان ریڈ چیٹس کے نام تصدیق نہیں ہو سکے۔ ڈائگناسٹکس چلائیں۔',
             'WhatsApp did not expose verifiable unread chat names. Run HUKM diagnostics.')
-        : L('Sir, Personal WhatsApp Desktop ka unread count verify nahi hua. Ye zero nahi hai. Aap "WhatsApp par kis kis ka unread msg aya" bolein; approval ke baad visible names check karunga.',
+        : L('Result verify nahi hua. Exact wajah command card mein hai. Wohi failed request dobara dene se pehle issue resolve karein.',
             'واٹس ایپ ڈیسک ٹاپ کی ان ریڈ تعداد کی تصدیق نہیں ہوئی۔ یہ صفر نہیں ہے۔',
-            'Personal WhatsApp Desktop unread count is unknown, not zero. Try an approved visible unread sender scan.');
+            'The result was not verified. See the command error before retrying.');
     case 'WHATSAPP_DESKTOP_UNAVAILABLE':
       return L('Sir, installed WhatsApp Desktop open/focus nahi ho saka. Windows Start se WhatsApp kholein, phir HUKM diagnostics chalayein. Main WhatsApp Web automatically nahi kholunga.',
         'واٹس ایپ ڈیسک ٹاپ کھل نہیں سکا۔ ونڈوز اسٹارٹ سے کھول کر ڈائگناسٹکس چلائیں۔',

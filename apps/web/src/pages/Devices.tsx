@@ -5,6 +5,7 @@ import { LaptopArt } from '../components/Illustrations';
 import { Badge, Card, cx, EmptyState, Modal, PageHeader, Spinner, StatusDot, Toggle } from '../components/ui';
 import { PageFrame } from '../layouts/AppShell';
 import { ACTION_LABEL, dateTime, STATUS_LABEL, timeAgo } from '../lib/format';
+import { metric } from '../lib/control-center';
 import { del, get, patch, post, useStore } from '../services/store';
 
 const CAP_LABEL: Record<Capability, { label: string; desc: string }> = {
@@ -213,7 +214,7 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
                 : 'Update request finished, but a new Controller version has NOT been verified. Check the laptop installation and reconnect.'}</p>}
           {(lastUpdate.status==='failed' || lastUpdate.status==='timed_out' ||
             lastUpdate.status==='cancelled') &&
-            <p className="text-bad">Updater did not finish: {lastUpdate.error?.message ?? 'Windows command failed or was interrupted'}. Do not repeatedly approve the same failed command.</p>}
+            <p className="text-bad">Updater did not finish: {lastUpdate.error?.message ?? 'Windows command failed or was interrupted'}. Do not repeatedly approve the same failed command. If the previous executable was backed up, close HUKM on the laptop and use the local Restore Previous Controller shortcut.</p>}
           {latestVersion &&
             <a className="text-ice underline" target="_blank" rel="noreferrer"
               href={`https://github.com/hassan-87psp/Hukam-Ai/releases/tag/v${encodeURIComponent(latestVersion)}`}>
@@ -239,7 +240,7 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
           <dt className="text-ink2">Last seen</dt><dd>{d.online ? 'Now' : timeAgo(d.lastSeen)}</dd>
           <dt className="text-ink2">Paired</dt><dd>{dateTime(d.createdAt)}</dd>
           <dt className="text-ink2">Last command</dt><dd>{d.lastCommand ? `${ACTION_LABEL[d.lastCommand.action]} · ${STATUS_LABEL[d.lastCommand.status]} · ${timeAgo(d.lastCommand.at)}` : '—'}</dd>
-          {d.stats && d.online && (<><dt className="text-ink2">Load</dt><dd>CPU {Math.round(d.stats.cpu ?? 0)}% · RAM {Math.round(d.stats.memory ?? 0)}%{d.stats.battery != null ? ` · Battery ${d.stats.battery}%` : ''}</dd></>)}
+          {d.stats && d.online && (<><dt className="text-ink2">System load</dt><dd>CPU {metric(d.stats.cpu,'%',100)} · RAM {metric(d.stats.memory,'%',100)}{d.stats.battery != null ? ' · Battery '+metric(d.stats.battery,'%',100) : ''}</dd><dt className="text-ink2">HUKM process</dt><dd>CPU {metric(d.stats.controllerCpuPercent,'%')} · RAM {metric(d.stats.controllerMemoryMb,' MB')}</dd></>)}
           <dt className="text-ink2">Allowed folders</dt>
           <dd className="space-y-0.5">{d.controllerConfig?.allowedDirs?.length ? d.controllerConfig.allowedDirs.map((x) => <p key={x.path} className="truncate text-xs" title={x.path}>{x.path}</p>) : <span className="text-ink2">Reported when the controller connects</span>}</dd>
           <dt className="text-ink2">Allowed apps</dt><dd className="text-xs">{d.controllerConfig?.apps?.join(', ') || '—'}</dd>

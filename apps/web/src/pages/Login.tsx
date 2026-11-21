@@ -50,6 +50,11 @@ export default function Login() {
                   <label className="label" htmlFor="name">Your name</label>
                   <input id="name" className="input" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} autoComplete="name" />
                 </div>
+                <div>
+                  <label className="label" htmlFor="setup-code">Owner setup code</label>
+                  <input id="setup-code" className="input" type="password" value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} autoComplete="off" spellCheck={false} maxLength={128} />
+                  <p className="mt-1.5 text-xs text-ink2">Enter the first-run setup code from your private relay console. Leave blank only for a relay explicitly configured for code-free testing.</p>
+                </div>
               </>
             )}
             <div>

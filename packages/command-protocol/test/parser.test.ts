@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCommand, parseWhatsAppChoice, validateCommand, requiresApproval, normalize, ackMessage, successMessage, clarifyMessage } from '../src/index';
+import { parseCommand, parseWhatsAppChoice, validateCommand, requiresApproval, normalize, ackMessage, successMessage, clarifyMessage, failureMessage } from '../src/index';
 
 function c(text: string) {
   const r = parseCommand(text);
@@ -181,8 +181,8 @@ describe('system', () => {
 });
 
 describe('whatsapp', () => {
-  it('check', () => expect(c('WhatsApp check karo.').action).toBe('whatsapp.check'));
-  it('unread', () => expect(c('WhatsApp par unread messages batao.').action).toBe('whatsapp.check'));
+  it('check', () => expect(c('WhatsApp check karo.').action).toBe('whatsapp.unread_senders'));
+  it('unread', () => expect(c('WhatsApp par unread messages batao.').action).toBe('whatsapp.unread_senders'));
   it('contact unread → check', () => expect(c('Ali ke naye messages batao.').action).toBe('whatsapp.check'));
   for (const t of ['WhatsApp kholo', 'WhatsApp khol do.', 'Open WhatsApp', 'whatsapp']) {
     it("defaults to Personal WhatsApp Desktop: " + t, () =>
@@ -238,9 +238,9 @@ describe('validation & approval', () => {
   it('rejects exe filter', () => expect(validateCommand('file.search', { query: 'x', ext: ['exe'] }).ok).toBe(false));
   it('normalises URL', () => expect(validateCommand('web.open', { url: 'google.com' })).toMatchObject({ ok: true, args: { url: 'https://google.com/' } }));
   it('compose always needs approval even if user disables', () => expect(requiresApproval('whatsapp.compose', { 'whatsapp.compose': false })).toBe(true));
-  it('screen capture default approval, user can relax', () => {
+  it('screen capture always requires approval', () => {
     expect(requiresApproval('screen.capture')).toBe(true);
-    expect(requiresApproval('screen.capture', { 'screen.capture': false })).toBe(false);
+    expect(requiresApproval('screen.capture', { 'screen.capture': false })).toBe(true);
   });
   it('every parsed command validates', () => {
     const samples = ['Chrome kholo', 'Downloads folder kholo', 'Invoice PDF search karo', 'YouTube par Gold analysis play karo', 'Browser mein Forex news search karo', 'Desktop par jo PDF hai woh kholo'];
@@ -260,5 +260,61 @@ describe('messages', () => {
   });
   it('youtube fallback is honest', () => {
     expect(successMessage('youtube.play', { query: 'x' }, { mode: 'search' }).en).toContain("Couldn't");
+  });
+});
+
+describe('single physical monitor capture',()=>{
+  it('selects a numbered monitor without guessing',()=>{
+    expect(c('monitor 2 ka screenshot lo')).toMatchObject({action:'screen.capture',args:{monitor:2}});
+    expect(validateCommand('screen.capture',{monitor:2})).toMatchObject({ok:true,args:{monitor:2}});
+  });
+  it('rejects virtual desktop, out-of-range and non-integer selectors',()=>{
+    for(const monitor of [0,17,1.5,'2',true,null])
+      expect(validateCommand('screen.capture',{monitor}).ok).toBe(false);
+    expect(validateCommand('screen.capture',{monitor:2,all:true}).ok).toBe(false);
+  });
+});
+
+describe('explicit browser identity and navigation',()=>{
+  it('routes new and previous tab and browser downloads to reviewed keys',()=>{
+    for(const [input,key] of [['new tab kholo','ctrl+t'],['previous tab','ctrl+shift+tab'],['browser downloads kholo','ctrl+j']]){
+      expect(c(input)).toMatchObject({action:'browser.control',args:{kind:'key',key}});
+      expect(validateCommand('browser.control',{kind:'key',key}).ok).toBe(true);
+    }
+    expect(requiresApproval('browser.control',{'browser.control':false})).toBe(true);
+  });
+  it('preserves explicit Chrome profile and known site',()=>{
+    expect(c('Profile 2 mein Gmail kholo')).toMatchObject({action:'browser.profile_open',args:{profile:'Profile 2',url:'https://mail.google.com/'}});
+  });
+});
+
+describe('explicit single-monitor OCR',()=>{
+  it('keeps text-only intent distinct from screenshot and always approved',()=>{
+    expect(c('Monitor 2 ka text parho')).toMatchObject({action:'screen.capture',args:{monitor:2,textOnly:true}});
+    expect(validateCommand('screen.capture',{monitor:2,textOnly:true})).toMatchObject({ok:true,args:{monitor:2,textOnly:true}});
+    expect(validateCommand('screen.capture',{monitor:2,textOnly:false}).ok).toBe(false);
+    expect(validateCommand('screen.capture',{textOnly:true}).ok).toBe(false);
+    expect(validateCommand('screen.capture',{monitor:17,textOnly:true}).ok).toBe(false);
+    expect(requiresApproval('screen.capture',{'screen.capture':false})).toBe(true);
+    expect(ackMessage('screen.capture',{monitor:2,textOnly:true}).en).toContain('No screenshot upload');
+  });
+});
+
+describe('owner read-only WhatsApp preference (explicit opt-in)',()=>{
+  it('defaults to per-scan approval but supports saved read-only permission',()=>{
+    expect(requiresApproval('whatsapp.unread_senders')).toBe(true);
+    expect(requiresApproval('whatsapp.unread_senders',{'whatsapp.unread_senders':false})).toBe(true);
+    expect(requiresApproval('whatsapp.compose',{'whatsapp.compose':false})).toBe(true);
+  });
+  for (const phrase of ['Kinke messages unread hain?', 'Who has messaged me on WhatsApp?',
+    'WhatsApp par new messages batao','Check my unread WhatsApp messages'])
+    it(phrase,()=>expect(c(phrase).action).toBe('whatsapp.unread_senders'));
+});
+
+
+describe('WhatsApp failed result messages', () => {
+  it('does not ask to repeat a failed sender scan as an unread-count action', () => {
+    expect(failureMessage({code:'UNVERIFIABLE',message:'could not identify an unambiguous Unread chip'},'whatsapp.unread_senders').roman).toContain('sender names verify nahi hue');
+    expect(failureMessage({code:'UNVERIFIABLE',message:'could not identify an unambiguous Unread chip'},'whatsapp.check').roman).toContain('count verify nahi hua');
   });
 });

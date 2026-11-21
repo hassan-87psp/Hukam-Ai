@@ -27,6 +27,8 @@ if exist "%APP%" (
   )
 )
 echo Installing to %DEST%
+copy /Y "%~dp0RESTORE_PREVIOUS.cmd" "%DEST%\RESTORE_PREVIOUS.cmd" >nul
+if errorlevel 1 goto error
 copy /Y "%SRC%" "%APP%" >nul
 if errorlevel 1 goto rollback
 "%APP%" --version

@@ -39,6 +39,8 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
   const r = result && typeof result === 'object' && !Array.isArray(result)
     ? result as Record<string, unknown> : {};
   switch (action) {
+    case 'screen.capture':
+      return r.ocrRead===true;
     case 'controller.update':
       return !(r.verified === true && r.updateAvailable === false);
     case 'app.close':
@@ -66,6 +68,8 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
         r.unreadChats >= 0 && r.unreadChats <= 999 &&
         (r.source === 'WhatsApp Desktop Unread filter' || r.source === 'window title'));
     case 'whatsapp.unread_senders':
+      if(Array.isArray(r.senders) && r.senders.length===0 && r.totalUnreadChats===0 &&
+         r.unreadCountVerified===true && r.filterSelectedVerified===true && r.source==='Explicit WhatsApp Unread zero badge')return false;
       return !(Array.isArray(r.senders) && r.senders.length > 0 &&
         r.senders.every((x:unknown)=>typeof x === 'string' && !!x.trim())) ||
         r.filterSelectedVerified === false;

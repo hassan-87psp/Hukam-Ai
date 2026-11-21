@@ -130,7 +130,9 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Update cancelled before laptop execution")
         try:
-            return updater.update_from_website()
+            return updater.update_from_website(cancel=cancel)
+        except updater.UpdateCancelled as exc:
+            raise ActionError("CANCELLED", str(exc)) from exc
         except updater.UpdateError as exc:
             raise ActionError("UPDATE_UNAVAILABLE", str(exc)) from exc
 
@@ -162,9 +164,12 @@ class Executor:
             "foreground": None if seen == "unverifiable" else focused is not None,
         }
 
-    def do_folder_list(self, a, _c):
+    def do_folder_list(self, a, cancel):
         p = self.folder_path(a["folder"])
-        return {"folder": a["folder"], **files.list_folder(p, a["limit"])}
+        result = files.list_folder(p, a["limit"], cancel=cancel)
+        if result.get("cancelled"):
+            raise ActionError("CANCELLED", "Folder listing cancelled")
+        return {"folder": a["folder"], **result}
 
     def do_device_status(self, _a, _c):
         return info.device_status()
@@ -217,15 +222,25 @@ class Executor:
     def do_file_open(self, a, cancel):
         if "path" in a:
             p = v.check_openable(Path(a["path"]), self.root_paths())
+            if cancel.is_set():
+                raise ActionError("CANCELLED", "File open cancelled")
             launcher.open_path(p)
             return {"opened": True, "path": str(p), "name": p.name}
         r = self._search(a, cancel, 8)
+        if r.get("cancelled") or cancel.is_set():
+            raise ActionError("CANCELLED", "File search cancelled")
         hits = r["results"]
+        if r.get("truncated"):
+            return {"opened": False, "ambiguous": bool(hits), "truncated": True,
+                    "candidates": hits, "count": r["count"],
+                    "note": "Search incomplete. Choose an exact file or narrow the folder; latest or unique match is not verified."}
         if not hits:
             raise ActionError("NOT_FOUND", "no matching file in your allowed folders")
         # Open directly only when the choice is unambiguous: one hit, or "latest" requested.
-        if len(hits) == 1 or a.get("sort") == "latest":
+        if r["count"] == 1 or a.get("sort") == "latest":
             p = v.check_openable(Path(hits[0]["path"]), self.root_paths())
+            if cancel.is_set():
+                raise ActionError("CANCELLED", "File open cancelled")
             launcher.open_path(p)
             return {"opened": True, "path": str(p), "name": p.name, "picked": "only match" if len(hits) == 1 else "most recent"}
         return {"opened": False, "ambiguous": True, "candidates": hits, "count": r["count"]}
@@ -260,9 +275,9 @@ class Executor:
         return {"app": "notepad", "inputDelivered": True, "verified": False,
                 "note": "Text delivered to Notepad. Document content is not independently verified."}
 
-    def do_browser_control(self, a, _c):
+    def do_browser_control(self, a, cancel):
         try:
-            return browser_operator.control(a)
+            return browser_operator.control(a, cancel)
         except RuntimeError as exc:
             raise ActionError("NOT_ALLOWED", str(exc)) from exc
 
@@ -301,7 +316,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Scroll cancelled")
         try:
-            return accessibility.scroll_active(a["steps"])
+            return accessibility.scroll_active(a["steps"], cancel=cancel)
         except accessibility.AccessibilityError as exc:
             raise ActionError("ACCESSIBILITY_UNAVAILABLE", str(exc)) from exc
 
@@ -323,7 +338,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Inspected button click cancelled")
         try:
-            return accessibility.activate_observed(a["label"], a["role"], a["snapshot"])
+            return accessibility.activate_observed(a["label"], a["role"], a["snapshot"], cancel=cancel)
         except accessibility.AccessibilityError as exc:
             raise ActionError("WINDOW_CHANGED", str(exc)) from exc
 
@@ -331,7 +346,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Desktop input cancelled before execution")
         try:
-            return desktop_input.control(a)
+            return desktop_input.control(a, cancel=cancel)
         except desktop_input.DesktopInputError as exc:
             raise ActionError("DESKTOP_INPUT_REFUSED", str(exc)) from exc
         except RuntimeError as exc:
@@ -365,7 +380,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Calendar Save cancelled before execution")
         try:
-            return calendar_draft.save_reviewed(a)
+            return calendar_draft.save_reviewed(a, cancel)
         except calendar_draft.CalendarDraftError as exc:
             raise ActionError("CALENDAR_SAVE_NOT_SAFE", str(exc)) from exc
 
@@ -373,7 +388,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "ChatGPT draft cancelled")
         try:
-            return chatgpt.draft_prompt(a["projectUrl"], a["prompt"])
+            return chatgpt.draft_prompt(a["projectUrl"], a["prompt"], cancel)
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -381,7 +396,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "ChatGPT submit cancelled")
         try:
-            return chatgpt.submit_prompt(a["projectUrl"], a["prompt"])
+            return chatgpt.submit_prompt(a["projectUrl"], a["prompt"], cancel)
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -390,16 +405,34 @@ class Executor:
             raise ActionError("CANCELLED", "ChatGPT download cancelled")
         p = self.folder_path("downloads")
         try:
-            return chatgpt.download_visible(a["projectUrl"], p, cancel)
+            if "assetFolder" in a:
+                from ..browser.project_asset import checked_directory, copy_reviewed_candidate
+                target = checked_directory(Path(a["assetFolder"]), self.root_paths())
+            else:
+                target = None
+            result = chatgpt.download_visible(a["projectUrl"], p, cancel)
+            candidate_mtime = result.pop("_candidateMtimeNs", None)
+            if target is not None and not result.get("simulated"):
+                result.update(copy_reviewed_candidate(
+                    p, target, self.root_paths(), result.get("fileName"),
+                    result.get("sizeBytes"), candidate_mtime, cancel))
+            return result
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 
     # -- screen ---------------------------------------------------------
-    def do_screen_capture(self, _a, _c):
+    def do_screen_capture(self, a, cancel):
         if not self.cfg.screen_capture:
             raise ActionError("NOT_ALLOWED", "screen capture is disabled in this laptop's controller config")
-        shot = screen.capture()
-        return {"width": shot["width"], "height": shot["height"], "bytes": shot["bytes"], "_screenshot": shot}
+        if a.get("textOnly") is True:
+            from ..screen import local_ocr
+            try:
+                return local_ocr.read_monitor(a["monitor"], cancel=cancel)
+            except local_ocr.ScreenOCRError as exc:
+                raise ActionError("SCREEN_OCR_UNAVAILABLE", str(exc)) from exc
+        shot = screen.capture(monitor=a.get("monitor", 1), cancel=cancel)
+        return {**{k: shot[k] for k in ("width", "height", "bytes", "monitor", "monitorCount", "sourceBounds", "simulated")},
+                "_screenshot": shot}
 
     # -- whatsapp -------------------------------------------------------
     def do_whatsapp_open(self, a, _c):
@@ -410,7 +443,13 @@ class Executor:
     def do_whatsapp_check(self, a, _c):
         if not launcher.IS_WINDOWS and not launcher.SIMULATE:
             raise ActionError("NOT_SUPPORTED", "WhatsApp check reads window titles and needs Windows")
-        result = wa.check(a.get("mode", "desktop"), self.cfg.browser)
+        if a.get("mode","desktop")=="desktop" and not launcher.SIMULATE:
+            try:
+                result=wa_senders.read_unread_count(_c)
+            except wa_senders.UnreadSendersUnavailable as exc:
+                raise ActionError("UNVERIFIABLE",str(exc)) from exc
+        else:
+            result = wa.check(a.get("mode", "desktop"), self.cfg.browser)
         if result.get("unreadChats") is None:
             raise ActionError("UNVERIFIABLE", result.get(
                 "note", "WhatsApp unread count is unknown, not zero."))
@@ -439,7 +478,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Reading cancelled")
         try:
-            return wa_desktop.read_selected(a.get("contact"))
+            return wa_desktop.read_selected(a.get("contact"), cancel)
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -447,7 +486,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Draft cancelled")
         try:
-            return wa_desktop.draft_reply(a["contact"], a["message"])
+            return wa_desktop.draft_reply(a["contact"], a["message"], cancel)
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -468,7 +507,7 @@ class Executor:
         if not path.is_file() or path.suffix.casefold() not in allowed:
             raise ActionError("NOT_ALLOWED", "Only a supported file inside allowed local folders can be attached")
         try:
-            return wa_desktop.attach_preview(a["contact"], str(path))
+            return wa_desktop.attach_preview(a["contact"], str(path), cancel)
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -499,7 +538,7 @@ class Executor:
             selected = wa_desktop.select_chat(a["contact"], cancel)
             if cancel.is_set():
                 raise ActionError("CANCELLED", "WhatsApp draft cancelled before typing")
-            drafted = wa_desktop.draft_reply(a["contact"], a["message"])
+            drafted = wa_desktop.draft_reply(a["contact"], a["message"], cancel)
             return {"contact": a["contact"], "via": "desktop", "sent": False,
                     "recipientVerified": selected.get("recipientVerified", False),
                     **drafted}

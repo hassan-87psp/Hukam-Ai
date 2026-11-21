@@ -1,0 +1,7 @@
+# Step 6 — One-time installation and reviewed update recovery candidate
+
+Existing official GitHub release discovery, versioned download, checksums, no arbitrary URL/shell, local owner confirmation and reconnect verification remain. Added staged installer hash and exact size rechecks before and after local confirmation. Checksum from same repository is not signing; a local race or compromised repository is not ruled out. No unattended installation.
+
+Existing per-user install directory and separate pairing data retained. One-file setup includes local recovery helper and corrected first-time shortcut. Setup checks the installed executable starts with --version and attempts to restore previous executable if that check fails. A local, owner-confirmed recovery helper restores only the previous executable; no fresh download, account reset or automatic restart. ZIP installs also copy the helper. Recovery is not a database rollback, and only trustworthy local backup should be restored. Existing device health/version shown on website; failed update UI points to local recovery.
+
+CI adds repeated isolated one-file setup and recovery smoke, verifies backup/current checksums and no autostart. Regression test modifies staged installer while confirmation is open and requires refusal. Latest combined checks and real Windows owner acceptance still required. No new release/version, paid code-signing certificate, production deployment or laptop changes. Official release remains unsigned and publishing stays gated for later release.

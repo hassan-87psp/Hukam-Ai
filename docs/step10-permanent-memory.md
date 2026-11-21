@@ -1,0 +1,7 @@
+# Step 10 — Permanent memory and projects candidate
+
+Additive SQLite migration: eight explicitly saved categories (personal, conversation, project, computer, skills, experience, contacts, tasks/routines). Existing project notes, instructions, preferences, chat and task history preserved. Records persist across process restart, bounded to 60 per workspace. Account-general and each project are isolated; no automatic cross-project sharing. Composite foreign key prevents linking a memory to another user's project.
+
+Owner CRUD with category/search and explicit opt-in to share a bounded excerpt with Gemini in the matching workspace only. Default stored-only. Prior notes retain previous sharing behavior. No automatic capture of private chat/device/credentials, no executable skills or permission changes. Common credential patterns blocked, not a guarantee against all secret formats. Memory is reference data, not authorization. Delete removes active record, not copies in prior conversations/backups. Existing snapshot mechanism includes new table, but live retention and recovery still need verification.
+
+Added synthetic persistence/isolation/consent regression and fixed Step 9 strict-null TypeScript error. No migration applied to production, no new cloud subscription. Actual live migration, UI acceptance and complete backup verification remain release gates. Automatic learning/Teach Mode deferred to Step 11.

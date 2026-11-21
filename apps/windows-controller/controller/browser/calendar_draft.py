@@ -71,21 +71,28 @@ def _same_prefilled_editor(actual_url: str, expected_url: str) -> bool:
         expected = urlparse(expected_url)
     except (TypeError, ValueError):
         return False
-    return (actual.scheme == expected.scheme == "https"
-            and actual.hostname == expected.hostname
-            and actual.path.rstrip("/") == expected.path.rstrip("/")
-            and dict(parse_qsl(actual.query)) == dict(parse_qsl(expected.query))
-            and not actual.username and not actual.password and not actual.fragment)
+    try:
+        return (actual.scheme == expected.scheme == "https"
+                and actual.hostname == expected.hostname
+                and actual.port in (None, 443) and expected.port in (None, 443)
+                and actual.path.rstrip("/") == expected.path.rstrip("/")
+                and sorted(parse_qsl(actual.query, keep_blank_values=True)) ==
+                    sorted(parse_qsl(expected.query, keep_blank_values=True))
+                and not actual.username and not actual.password and not actual.fragment)
+    except ValueError:
+        return False
 
 
-def save_reviewed(args: dict) -> dict:
+def save_reviewed(args: dict, cancel=None) -> dict:
     """User-confirmed Calendar Save via the foreground logged-in Chrome editor.
 
     URL, title and active app must match before clicking an exact visible Save.
     If the website redirects/changes any of them, the automation fails closed.
     This cannot prove a Google/Outlook API event ID or invitation delivery.
     """
-    from ..system import launcher, windows
+    from ..system import launcher, windows, desktop_input
+    from .reviewed_input import check_window, click_reviewed
+    desktop_input._check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("calendar.save_reviewed", "event (redacted)")
         return {"saveAttempted": True, "eventCreatedVerified": False,
@@ -144,7 +151,23 @@ def save_reviewed(args: dict) -> dict:
         raise CalendarDraftError("Foreground Chrome window changed; no Save attempted")
     # This can submit the real event, so never retry if the click outcome is unknown.
     try:
-        save_buttons[0].Click(simulateMove=False)
+        check_window(active, cancel)
+        # URL + title cannot verify modified times/attendees. Require a live
+        # local owner check of the complete visible editor before committing.
+        import ctypes
+        flags = 0x0001 | 0x0030 | 0x0100 | 0x00040000
+        answer = ctypes.windll.user32.MessageBoxW(active.hwnd,
+            "Review the exact event title, date, time, calendar account and attendees in Chrome. "
+            "HUKM cannot independently verify all edited fields. OK authorizes one Save attempt; Cancel leaves the draft.",
+            "HUKM Calendar — local review", flags)
+        if answer != 1:
+            raise CalendarDraftError("Owner cancelled final Calendar Save")
+        check_window(active, cancel)
+        if str(title_matches[0].GetValuePattern().Value or "") != args["title"]:
+            raise CalendarDraftError("Calendar title changed after review")
+        click_reviewed(active, save_buttons[0], cancel)
+    except (CalendarDraftError, desktop_input.DesktopInputError):
+        raise
     except Exception:
         return {"saveAttempted": "unknown", "eventCreatedVerified": False,
                 "invitesSentVerified": False, "verified": False,
