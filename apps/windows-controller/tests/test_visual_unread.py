@@ -140,6 +140,61 @@ def test_existing_uia_no_match_routes_to_local_vision(monkeypatch):
     monkeypatch.setattr(unread_filter,"candidates",lambda root,rect:[])
     called=[]
     monkeypatch.setattr(vu,"visual_scan_unread",
-                        lambda hwnd:(called.append(hwnd),{"senders":["Ali"],"filterSelectedVerified":True})[1])
+                        lambda hwnd,cancel=None:(called.append(hwnd),{"senders":["Ali"],"filterSelectedVerified":True})[1])
     assert unread_senders.read_unread_senders()["senders"]==["Ali"]
     assert called==[120]
+
+
+def test_cancellation_after_first_ocr_prevents_mouse_click(monkeypatch):
+    import threading
+    import win32api
+    from PIL import Image
+    cancelled=threading.Event()
+    image=Image.new("RGB",(520,920),(28,28,28))
+    monkeypatch.setattr(vu,"_capture_left",lambda hwnd:(image,0,0))
+    def ocr_result(_image):
+        cancelled.set()
+        return words()
+    monkeypatch.setattr(vu,"_ocr_words",ocr_result)
+    mouse=[]
+    monkeypatch.setattr(win32api,"mouse_event",lambda *a:mouse.append(a))
+    with pytest.raises(vu.VisualUnreadUnavailable,match="cancelled"):
+        vu.visual_scan_unread(120,cancel=cancelled)
+    assert mouse==[]
+
+
+def test_cancellation_after_click_does_not_return_names(monkeypatch):
+    import threading
+    import win32api
+    import win32con
+    import win32gui
+    from PIL import Image
+    cancelled=threading.Event()
+    image=Image.new("RGB",(520,920),(28,28,28))
+    monkeypatch.setattr(vu,"_capture_left",lambda hwnd:(image,0,0))
+    monkeypatch.setattr(vu,"_ocr_words",lambda image:words())
+    monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
+    monkeypatch.setattr(win32gui,"GetClientRect",lambda hwnd:(0,0,520,920))
+    monkeypatch.setattr(win32gui,"ClientToScreen",lambda hwnd,p:p)
+    monkeypatch.setattr(win32api,"GetCursorPos",lambda:(0,0))
+    monkeypatch.setattr(win32api,"SetCursorPos",lambda p:None)
+    def clicked(kind,*args):
+        if kind == win32con.MOUSEEVENTF_LEFTUP:
+            cancelled.set()
+    monkeypatch.setattr(win32api,"mouse_event",clicked)
+    with pytest.raises(vu.VisualUnreadUnavailable,match="cancelled"):
+        vu.visual_scan_unread(120,cancel=cancelled)
+
+
+def test_cancelled_before_first_capture_never_interacts(monkeypatch):
+    import threading
+    import win32api
+    cancelled=threading.Event()
+    cancelled.set()
+    monkeypatch.setattr(vu,"_capture_left",
+                        lambda hwnd: (_ for _ in ()).throw(AssertionError("capture after Stop")))
+    mouse=[]
+    monkeypatch.setattr(win32api,"mouse_event",lambda *a:mouse.append(a))
+    with pytest.raises(vu.VisualUnreadUnavailable,match="cancelled"):
+        vu.visual_scan_unread(120,cancel=cancelled)
+    assert mouse==[]
