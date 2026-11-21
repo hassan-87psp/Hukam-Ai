@@ -132,7 +132,7 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
     }
   };
   const status = d.online ? (d.paused ? 'Paused (emergency stop)' : 'Online') : 'Offline';
-  const supportsWebUpdate = /^\\d+\\.\\d+\\.\\d+$/.test(d.controllerVersion ?? '') &&
+  const supportsWebUpdate = /^\d+\.\d+\.\d+$/.test(d.controllerVersion ?? '') &&
     (d.controllerVersion ?? '').split('.').map(Number).reduce(
       (v,n,i)=>v+n*[10000,100,1][i],0) >= 10800;
   const versionMismatch = Boolean(d.controllerVersion && latestVersion &&
