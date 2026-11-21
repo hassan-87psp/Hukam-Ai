@@ -65,7 +65,7 @@ def test_release_metadata_requires_both_exact_assets(monkeypatch):
 
 
 def test_release_metadata_accepts_only_exact_repository_urls(monkeypatch):
-    next_ver = "1.8.2"
+    next_ver = "1.8.3"
     name = "HUKM-Setup-v" + next_ver + ".exe"
     base = "https://github.com/hassan-87psp/Hukam-Ai/releases/download/v" + next_ver + "/"
     payload = {"tag_name": "v" + next_ver, "draft": False, "prerelease": False,
