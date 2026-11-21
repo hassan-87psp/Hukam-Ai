@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BookOpen, Check, ExternalLink, FolderKanban, MessageSquare, Plus, Save, Send, Trash2 } from 'lucide-react';
+import { BookOpen, Check, ExternalLink, FolderKanban, Laptop, ListTodo, MessageSquare, Pencil, Plus, RefreshCw, Save, Search, Send, Trash2, X } from 'lucide-react';
 import { get, post, patch, del } from '../services/api';
 import { useStore } from '../services/store';
 
@@ -11,17 +11,24 @@ type Project = {
 };
 type Note = {id:string;title:string;content:string;createdAt:string;updatedAt:string};
 type Message = {id:string;role:'user'|'assistant';content:string;createdAt:string};
-const empty = {name:'',description:'',instructions:'',chromeProfile:'',chatgptProjectUrl:'',assetFolder:''};
-type Tab = 'chat'|'instructions'|'memory';
+type Task = {id:string;planId:string|null;summary:string;deviceId:string|null;status:string;
+  currentStep:number;totalSteps:number;createdAt:string;updatedAt:string;error:string|null};
+const empty = {name:'',description:'',instructions:'',chromeProfile:'',chatgptProjectUrl:'',assetFolder:'',preferredDeviceId:null as string|null};
+type Tab = 'chat'|'instructions'|'memory'|'tasks';
 function errMsg(e:unknown) { return e instanceof Error ? e.message : String(e); }
 
 export default function Projects(){
-  const {runAction}=useStore();
+  const {runAction,devices}=useStore();
   const navigate=useNavigate();
   const [items,setItems]=useState<Project[]>([]);
   const [selected,setSelected]=useState<string|null>(null);
   const [edit,setEdit]=useState({...empty});
   const [notes,setNotes]=useState<Note[]>([]);
+  const [tasks,setTasks]=useState<Task[]>([]);
+  const [taskFilter,setTaskFilter]=useState<'all'|'active'|'finished'>('all');
+  const [noteSearch,setNoteSearch]=useState('');
+  const [editingNoteId,setEditingNoteId]=useState<string|null>(null);
+  const selectedRef=useRef<string|null>(null);
   const [messages,setMessages]=useState<Message[]>([]);
   const [tab,setTab]=useState<Tab>('chat');
   const [draft,setDraft]=useState('');
@@ -30,21 +37,45 @@ export default function Projects(){
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState('');
   const [saving,setSaving]=useState(false);
+  selectedRef.current=selected;
   const project=items.find(p=>p.id===selected)??null;
+  const filteredNotes=useMemo(()=>notes.filter(n=>(n.title+' '+n.content).toLowerCase().includes(noteSearch.toLowerCase().trim())),[notes,noteSearch]);
+  const filteredTasks=useMemo(()=>tasks.filter(t=>taskFilter==='all'
+    ||(taskFilter==='active'?['queued','running','awaiting_approval'].includes(t.status)
+      :['completed','unverified','failed','cancelled','interrupted'].includes(t.status))),[tasks,taskFilter]);
+  const activeTasks=tasks.filter(t=>['queued','running','awaiting_approval'].includes(t.status)).length;
   useEffect(()=>{ void get<Project[]>('/api/projects').then(data=>setItems(data)).catch(e=>setError(errMsg(e)));},[]);
   useEffect(()=>{
-    if (!project){setEdit({...empty});setMessages([]);setNotes([]);return;}
+    if (!project){setEdit({...empty});setMessages([]);setNotes([]);setTasks([]);return;}
+    // Drop the old project's visible data immediately; slow API responses
+    // must never display memory, chat or tasks in another project.
+    setMessages([]);setNotes([]);setTasks([]);
+    setEditingNoteId(null);setNoteSearch('');setDraft('');
     setEdit({name:project.name,description:project.description,instructions:project.instructions,
       chromeProfile:project.chromeProfile,chatgptProjectUrl:project.chatgptProjectUrl,
-      assetFolder:project.assetFolder});
+      assetFolder:project.assetFolder,preferredDeviceId:project.preferredDeviceId});
     setError('');
     let live=true;
     void Promise.all([get<Message[]>('/api/projects/'+project.id+'/messages'),
-      get<Note[]>('/api/projects/'+project.id+'/notes')]).then(([m,n])=>{
-      if(live){setMessages(m);setNotes(n);}
-    }).catch(e=>{if(live)setError(errMsg(e));});
+      get<Note[]>('/api/projects/'+project.id+'/notes'),
+      get<Task[]>('/api/projects/'+project.id+'/tasks')]).then(([m,n,t])=>{
+      if(live&&selectedRef.current===project.id){setMessages(m);setNotes(n);setTasks(t);}
+    }).catch(e=>{if(live&&selectedRef.current===project.id)setError(errMsg(e));});
     return ()=>{live=false;};
   },[selected,project?.updatedAt]);
+
+  useEffect(()=>{
+    if(!selected||tab!=='tasks')return;
+    let live=true;
+    const refresh=()=>{
+      void get<Task[]>('/api/projects/'+selected+'/tasks')
+        .then(rows=>{if(live&&selectedRef.current===selected)setTasks(rows);})
+        .catch(()=>{}); // Keep last valid task snapshot on transient network loss.
+    };
+    refresh();
+    const timer=window.setInterval(refresh,4000);
+    return ()=>{live=false;window.clearInterval(timer);};
+  },[selected,tab]);
 
   async function create(){
     setSaving(true);setError('');
@@ -76,31 +107,61 @@ export default function Projects(){
     e.preventDefault();
     if(!project||!draft.trim()||busy)return;
     setBusy(true);setError('');
+    const projectId=project.id;
     const message=draft.trim();setDraft('');
     const optimistic:Message={id:'sending',role:'user',content:message,createdAt:new Date().toISOString()};
     setMessages(v=>[...v,optimistic]);
     try{
-      const ai=await post<{reply:string}>('/api/projects/'+project.id+'/chat',{message});
-      const saved=await get<Message[]>('/api/projects/'+project.id+'/messages');
-      setMessages(saved);
-      if(!ai.reply)setError('No AI response received');
+      const ai=await post<{reply:string}>('/api/projects/'+projectId+'/chat',{message});
+      const saved=await get<Message[]>('/api/projects/'+projectId+'/messages');
+      if(selectedRef.current===projectId){
+        setMessages(saved);
+        if(!ai.reply)setError('No AI response received');
+      }
     }catch(ex){
-      setMessages(v=>v.filter(x=>x.id!=='sending'));setDraft(message);setError(errMsg(ex));
+      if(selectedRef.current===projectId){
+        setMessages(v=>v.filter(x=>x.id!=='sending'));setDraft(message);setError(errMsg(ex));
+      }
     }finally{setBusy(false);}
   }
   async function saveNote(e:FormEvent){
     e.preventDefault();if(!project||!noteTitle.trim())return;
     setSaving(true);setError('');
+    const projectId=project.id;
     try{
-      const note=await post<Note>('/api/projects/'+project.id+'/notes',{title:noteTitle,content:noteContent});
-      setNotes(v=>[note,...v]);setNoteTitle('');setNoteContent('');
-    }catch(ex){setError(errMsg(ex));}
+      const note=editingNoteId
+        ?await patch<Note>('/api/projects/'+projectId+'/notes/'+editingNoteId,{title:noteTitle,content:noteContent})
+        :await post<Note>('/api/projects/'+projectId+'/notes',{title:noteTitle,content:noteContent});
+      if(selectedRef.current===projectId){
+        setNotes(v=>[note,...v.filter(n=>n.id!==note.id)]);setNoteTitle('');setNoteContent('');setEditingNoteId(null);
+      }
+    }catch(ex){if(selectedRef.current===projectId)setError(errMsg(ex));}
     finally{setSaving(false);}
   }
   async function deleteNote(id:string){
     if(!project||!confirm('Delete this saved note?'))return;
-    try{await del('/api/projects/'+project.id+'/notes/'+id);setNotes(v=>v.filter(n=>n.id!==id));}
-    catch(e){setError(errMsg(e));}
+    const projectId=project.id;
+    try{await del('/api/projects/'+projectId+'/notes/'+id);
+      if(selectedRef.current===projectId)setNotes(v=>v.filter(n=>n.id!==id));
+    }catch(e){if(selectedRef.current===projectId)setError(errMsg(e));}
+  }
+  async function clearMessages(){
+    if(!project||!confirm('Clear only this project conversation? Permanent notes and tasks will remain.'))return;
+    const projectId=project.id;
+    setSaving(true);setError('');
+    try{await del('/api/projects/'+projectId+'/messages');
+      if(selectedRef.current===projectId)setMessages([]);
+    }catch(e){if(selectedRef.current===projectId)setError(errMsg(e));}
+    finally{setSaving(false);}
+  }
+  async function cancelTask(id:string){
+    if(!project||!confirm('Stop this project task? Already executed steps cannot be undone.'))return;
+    const projectId=project.id;
+    try{
+      await post('/api/operator/runs/'+id+'/cancel',{});
+      const rows=await get<Task[]>('/api/projects/'+projectId+'/tasks');
+      if(selectedRef.current===projectId)setTasks(rows);
+    }catch(e){if(selectedRef.current===projectId)setError(errMsg(e));}
   }
   return <div className="mx-auto w-full max-w-7xl px-4 pb-32 pt-4 sm:px-6 lg:pb-12">
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
