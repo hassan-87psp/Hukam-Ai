@@ -494,7 +494,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
           return;
         }
-        const out = await post('/api/commands', { text: t, source, clientRequestId: uid(), deviceId: opts.deviceId ?? activeDevice?.id });
+        const out = await post('/api/commands', { text: t, source, clientRequestId: uid(), deviceId: activeDevice?.id });
         // A one-word follow-up ("Desktop wala") is resolved on the relay,
         // so it has no optimistic local parser acknowledgement.
         if (out.kind === 'command' && (local.kind !== 'command' || inDialogue))
@@ -539,7 +539,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       setSubmitting(true);
       try {
-        const out = await post('/api/commands', { action, args, source: opts.source ?? 'ui', clientRequestId: uid(), deviceId: activeDevice?.id });
+        const out = await post('/api/commands', { action, args, source: opts.source ?? 'ui', clientRequestId: uid(), deviceId: opts.deviceId ?? activeDevice?.id });
         if (opts.silent && out.kind === 'command') return upsertCommand(out.command);
         return handleCreated(out);
       } catch (e) {
