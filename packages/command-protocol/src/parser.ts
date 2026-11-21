@@ -197,6 +197,12 @@ export function parseCommand(input: string): ParseResult {
     return cmd('command.cancel', {}, 'cancel');
   if (/\b(command|kaam|task)\b/.test(t) && /\b(band karo|band kar do|stop)\b/.test(t)) return cmd('command.cancel', {}, 'cancel-band');
 
+  // Explicit close must beat app.open and all Gemini planning. The previous
+  // implementation had no close action; "note pad band kro" was answered
+  // by a model that incorrectly suggested app.open Notepad.
+  if (CLOSE.test(t) && /\bnotepad\b/.test(t) && !OPEN.test(t))
+    return cmd('app.close', { app: 'notepad' }, 'notepad-window-close');
+
   // The first operator foundation: explicit, one-step browser controls.
   // No model-generated coordinates and no implicit website submissions.
   // Explicit manual desktop actions; never inferred from vague model plans.
@@ -331,7 +337,8 @@ export function parseCommand(input: string): ParseResult {
   if (/\b(laptop|computer|device|pc|system)\b/.test(t) && /\b(status|haal|online|battery|info|information|kaisa|kesa|connected|details)\b/.test(t))
     return cmd('device.status', {}, 'device-status');
 
-  // closing apps is not supported in V1
+  // No general-purpose process termination. Other app closings are not
+  // silently reinterpreted as opening, clicking, or killing an app.
   if (CLOSE.test(t)) return { kind: 'unsupported', reason: 'close', normalized: t };
 
   // files

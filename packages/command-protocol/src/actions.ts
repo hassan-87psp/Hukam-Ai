@@ -134,6 +134,16 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({ app: a.app });
     },
   },
+  'app.close': {
+    name: 'app.close', capability: 'apps', label: 'Close a verified Notepad window',
+    timeoutMs: 12000, alwaysApprove: true,
+    validate(a) {
+      // Do not expose an arbitrary process-kill mechanism to AI planning.
+      // Future apps require separate reviewed window-close adapters.
+      return a.app === 'notepad' ? ok({ app: 'notepad' }) :
+        fail('Only a verified Notepad window can be closed by this action');
+    },
+  },
   'folder.open': {
     name: 'folder.open', capability: 'folders', label: 'Open folder', timeoutMs: 15000,
     validate(a) {

@@ -126,6 +126,22 @@ class Executor:
                 res["windowTitle"] = (focused or seen).title
         return res
 
+    def do_app_close(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Notepad close cancelled")
+        if a.get("app") != "notepad":
+            raise ActionError("NOT_ALLOWED", "Only verified Notepad close is supported")
+        if launcher.SIMULATE:
+            launcher._record("app.close", "notepad")
+            return {"app": "notepad", "windowClosed": True,
+                    "verified": True, "simulated": True}
+        try:
+            return windows.close_notepad_window()
+        except FileNotFoundError as exc:
+            raise ActionError("NOT_FOUND", str(exc)) from exc
+        except RuntimeError as exc:
+            raise ActionError("CLOSE_NOT_SAFE", str(exc)) from exc
+
     def do_folder_open(self, a, _c):
         p = self.folder_path(a["folder"])
         before = windows.snapshot()

@@ -116,7 +116,7 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     ]);
     expect(plannerRequests.length).toBe(before);
     const health=await api('GET','/api/health');
-    expect(health.data.version).toBe('1.7.0');
+    expect(health.data.version).toBe('1.7.1');
   });
 
   it('creates a reviewed owner-only desktop input plan without asking Gemini to invent coordinates',async()=>{
@@ -127,6 +127,15 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
       kind:'right_click',x:-850,y:220
     }}]);
     expect(plannerRequests.length).toBe(before);
+  });
+
+  it('never sends an explicit Notepad close request to Gemini as app.open',async()=>{
+    const before=plannerRequests.length;
+    const result=await api('POST','/api/operator/plan',{text:'note pad band kro'});
+    expect(result.status).toBe(200);
+    expect(result.data.steps).toEqual([{action:'app.close',args:{app:'notepad'}}]);
+    expect(plannerRequests.length).toBe(before);
+    // This is a proposed task only; the execution still requires explicit owner approval.
   });
 
   it('restores deterministic and AI follow-up slots after a real Relay database restart',async()=>{
