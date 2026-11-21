@@ -18,6 +18,16 @@ describe('normalisation', () => {
   });
 });
 
+describe('owner-approved Personal WhatsApp chat reading', () => {
+  it('reads selected WhatsApp chat only after approval and without switching to Web',()=>{
+    expect(c('WhatsApp selected chat parho')).toMatchObject({
+      action:'whatsapp.read_selected',args:{}
+    });
+    expect(requiresApproval('whatsapp.read_selected')).toBe(true);
+    expect(requiresApproval('whatsapp.select_chat')).toBe(true);
+  });
+});
+
 describe('laptop diagnostics', () => {
   it('routes HUKM diagnostics to local controller, not Gemini chat',()=>{
     expect(c('HUKM diagnostics')).toMatchObject({action:'diagnostics.probe',args:{}});
