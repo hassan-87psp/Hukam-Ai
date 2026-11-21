@@ -225,6 +225,7 @@ export class Operator {
     }
     const last=one(this.db,'SELECT * FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
     let request=answer;
+    let isFollowup=false;
     if(last){
       if(Date.parse(last.expires_at)<Date.now()) {
         this.clearPending(userId,key);
@@ -233,6 +234,7 @@ export class Operator {
         // A model error or quota timeout MUST NOT discard the user's unfinished task.
         const fresh=/^(?:whatsapp|chrome|notepad|youtube|calendar|google|outlook|browser|open|khol|new task)\b.*\b(?:kholo|open|start|check|karo)$/i.test(answer);
         if(!fresh) {
+          isFollowup=true;
           request=(String(last.request).slice(0,1300)+
             '\nHUKM asked: '+String(last.question).slice(0,250)+
             '\nUser replied: '+answer).slice(0,1800);
@@ -269,7 +271,7 @@ export class Operator {
     const intent=routeIntent(request,parsed);
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/.test(url);
-    if(projectLaunch){
+    if(projectLaunch && !isFollowup){
       if(!/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile))
         throw new HttpError(422,'PROJECT_PROFILE_REQUIRED','Set the exact Chrome profile directory in this HUKM Project.');
       const destination=url.startsWith('https://chatgpt.com/')
@@ -279,7 +281,7 @@ export class Operator {
       result={summary:'Open selected HUKM Project in the configured Chrome profile',
         steps:[validateStep({action:'browser.profile_open',
           args:{profile:project.chromeProfile,url:destination}})]};
-    } else if(intent==='command' && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
+    } else if(!isFollowup && intent==='command' && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
       result={summary:ACTIONS[parsed.action].label,steps:[validateStep({action:parsed.action,args:parsed.args})]};
     }else{
       if(!geminiConfigured())throw new HttpError(503,'AI_NOT_CONFIGURED','Natural-language planner requires Gemini');
