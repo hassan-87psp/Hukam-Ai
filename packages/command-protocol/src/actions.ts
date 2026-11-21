@@ -301,6 +301,35 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({kind,key:a.key});
     },
   },
+  'email.inbox_open': {
+    name:'email.inbox_open', capability:'browser', label:'Open selected Gmail/Outlook inbox',
+    timeoutMs:20000, alwaysApprove:true,
+    validate(a) {
+      if (a.provider !== 'google' && a.provider !== 'outlook')
+        return fail('Email provider must be google or outlook');
+      const profile=str(a.profile,'profile',80);
+      if(isErr(profile))return profile;
+      if(!/^(?:Default|Profile [1-9][0-9]?)$/.test(profile))
+        return fail('Choose an existing Chrome profile directory');
+      return ok({provider:a.provider,profile});
+    },
+  },
+  'email.compose_draft': {
+    name:'email.compose_draft', capability:'browser', label:'Prepare Gmail/Outlook email draft',
+    timeoutMs:25000, alwaysApprove:true,
+    validate(a) {
+      const checked=ACTIONS['email.inbox_open'].validate(a);
+      if(!checked.ok)return checked;
+      const to=str(a.to,'to',254),subject=str(a.subject,'subject',120);
+      const body=str(a.body,'body',1000);
+      if(isErr(to))return to;
+      if(isErr(subject))return subject;
+      if(isErr(body))return body;
+      if(!/^[A-Za-z0-9.!#$%&'*+/=?^`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(to))
+        return fail('Enter one valid recipient email address');
+      return ok({...checked.args,to,subject,body});
+    },
+  },
   'calendar.event_draft': {
     name: 'calendar.event_draft', capability: 'browser', label: 'Prepare Calendar event draft',
     timeoutMs: 25000, alwaysApprove: true,
