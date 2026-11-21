@@ -1,7 +1,9 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
-## Current development release — v1.8.0 (21 Nov 2026)
+## Current development release — v1.8.1 (21 Nov 2026)
+
+**v1.8.1:** Restores the actual minimized Personal WhatsApp Desktop main window, finds the Unread chip by accessible Name, AutomationId or HelpText, deduplicates nested UI controls, performs a local mouse click after explicit approval, and reads only visible chat sender names. "WhatsApp check karo" creates this multi-step workflow without needing Gemini. If WhatsApp exposes no trustworthy Unread control, HUKM reports an honest blocker instead of guessing mouse positions. The release requires automated tests and final real Windows acceptance.
 
 **v1.8.0:** Owner-approved website-initiated update action for paired Controllers, restricted official GitHub Release + SHA-256, and mandatory local Windows approval (unsigned installer is NOT unattended). Exact named Personal WhatsApp Desktop reads and follow-up reply drafts without depending on Gemini. Initial v1.8.0 one-time Windows installation is still needed before future website updates. Live WhatsApp UIA acceptance remains pending.
 
@@ -9,7 +11,7 @@
 **v1.8.0 fix:** Explicit Roman Urdu “note pad band kro” uses an owner-approved, exact Notepad window close request instead of incorrectly opening Notepad. Never terminates processes or auto-discards unsaved text. Live Windows confirmation and Render deployment are separate from CI validation.
 
 
-**New in v1.8.0:** Owner-clicked live Gemini chat/planner diagnostics on Settings > AI engine, corrected live controller/backend version comparison, and an **experimental one-file HUKM Setup EXE** (CI-built, unsigned) alongside the legacy ZIP. The one-file installer requires a real Windows acceptance check and a trusted direct website download channel before broad release. **Automatic website-managed updates are not implemented yet.**
+**Previous version notes:** Owner-clicked Gemini diagnostics are in Settings > AI Engine. An **unsigned one-time Windows Setup EXE** is provided alongside the legacy ZIP. From Controller v1.8.0 onward, the website can request an *owner-approved* update from an exact official GitHub Release with SHA-256 verification and an additional Windows confirmation. Fully unattended/silent updates are deliberately unsupported.
 
 Read [the Gemini + one-time installer audit](docs/v170-gemini-and-one-time-setup-audit.md) for verified vs pending items.
 
