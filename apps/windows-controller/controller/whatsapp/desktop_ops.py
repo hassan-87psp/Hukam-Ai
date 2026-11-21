@@ -20,6 +20,7 @@ import time
 from ..config import IS_WINDOWS
 from ..system import launcher, windows
 from .reader import visible_texts
+from . import locator
 
 PROCESSES = {"whatsapp.exe", "whatsappdesktop.exe", "msedgewebview2.exe", "applicationframehost.exe"}
 
@@ -32,7 +33,7 @@ def _active_root():
     if not IS_WINDOWS:
         raise DesktopWhatsAppError("Personal WhatsApp Desktop needs Windows")
     active = windows.active_window()
-    if not active or active.process.casefold() not in PROCESSES or "whatsapp" not in active.title.casefold():
+    if not active or not locator.matches_desktop_window(active):
         raise DesktopWhatsAppError("Focus the installed WhatsApp Desktop and select the intended chat")
     import win32gui
     if not win32gui.IsWindowVisible(active.hwnd) or win32gui.IsIconic(active.hwnd):

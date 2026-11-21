@@ -8,13 +8,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from ..system import launcher, windows
+from ..whatsapp import locator as wa_locator
 
 
 def probe() -> dict:
     if launcher.SIMULATE:
         return {
             "windowsInteractive": True, "uiautomationInstalled": True,
-            "whatsappDesktopWindow": True, "chromeProfileDirectories": ["Default", "Profile 1"],
+            "whatsappDesktopWindow": True, "whatsappProcessRunning": True,
+            "whatsappWindowCount": 1, "whatsappForeground": False,
+            "whatsappDiagnosis": "Desktop window available; focus WhatsApp to inspect unread indicators",
+            "chromeProfileDirectories": ["Default", "Profile 1"],
             "activeApp": "chrome.exe", "monitorCount": 2,
             "privateDataCollected": False, "simulated": True, "verified": True,
         }
@@ -22,6 +26,10 @@ def probe() -> dict:
         "windowsInteractive": windows.IS_WINDOWS,
         "uiautomationInstalled": False,
         "whatsappDesktopWindow": False,
+        "whatsappProcessRunning": False,
+        "whatsappWindowCount": 0,
+        "whatsappForeground": False,
+        "whatsappDiagnosis": "unknown",
         "chromeProfileDirectories": [],
         "activeApp": None,
         "monitorCount": None,
@@ -38,12 +46,21 @@ def probe() -> dict:
     try:
         active = windows.active_window()
         result["activeApp"] = active.process if active else None
-        result["whatsappDesktopWindow"] = any(
-            "whatsapp" in w.title.casefold()
-            for w in windows.list_windows()
-            if w.process.casefold() in (
-                "whatsapp.exe", "whatsappdesktop.exe",
-                "msedgewebview2.exe", "applicationframehost.exe")
+        whatsapp_windows = wa_locator.desktop_windows()
+        running = wa_locator.running_native_processes()
+        result["whatsappDesktopWindow"] = bool(whatsapp_windows)
+        result["whatsappWindowCount"] = len(whatsapp_windows)
+        result["whatsappProcessRunning"] = bool(running) or bool(whatsapp_windows)
+        result["whatsappForeground"] = bool(
+            active and wa_locator.matches_desktop_window(active))
+        result["whatsappDiagnosis"] = (
+            "WhatsApp Desktop is foreground and visible. Try an unread check."
+            if result["whatsappForeground"]
+            else "WhatsApp Desktop window detected in background. Say 'WhatsApp Desktop kholo' to focus it."
+            if whatsapp_windows
+            else "WhatsApp process is running, but no accessible top-level window was detected. Restore the app from taskbar."
+            if running
+            else "No installed WhatsApp Desktop window or process detected. Open the actual WhatsApp Windows app (not a Chrome tab)."
         )
     except Exception:
         pass

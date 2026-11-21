@@ -1,3 +1,3 @@
 """HUKM AI Windows controller."""
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"

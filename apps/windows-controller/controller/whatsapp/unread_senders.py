@@ -16,7 +16,7 @@ import time
 
 from ..config import IS_WINDOWS
 from ..system import launcher, windows
-from .adapter import DESKTOP_PROCESSES
+from . import locator
 
 _UNREAD = re.compile(r"^unread(?:\s+(?:chats|messages))?(?:\s+\d{1,3})?$", re.I)
 _SKIP = {"unread", "all", "favorites", "favourites", "groups", "search",
@@ -70,18 +70,19 @@ def read_unread_senders() -> dict:
     if not IS_WINDOWS:
         raise UnreadSendersUnavailable("WhatsApp Desktop sender reading requires Windows")
     active = windows.active_window()
-    if not active or active.process.casefold() not in DESKTOP_PROCESSES or "whatsapp" not in active.title.casefold():
-        # The owner approved this action; focus only the installed WhatsApp app.
-        procs = ["WhatsApp.exe", "WhatsAppDesktop.exe", "ApplicationFrameHost.exe", "msedgewebview2.exe"]
-        active = windows.focus_by_process(procs, title_contains="WhatsApp")
+    if not active or not locator.matches_desktop_window(active):
+        # Explicitly approved: focus a verified native WhatsApp desktop window.
+        # Never pull private chat content from Chrome/Edge WhatsApp Web tabs.
+        active = locator.focus_whatsapp()
         if active is None:
-            # This command includes opening WhatsApp if it was not already open.
             from .adapter import open_whatsapp
             opened = open_whatsapp("desktop", "default")
-            if opened.get("opened") == "desktop":
-                active = windows.focus_by_process(procs, title_contains="WhatsApp")
+            if opened.get("verified") is True:
+                active = locator.focus_whatsapp()
         if active is None:
-            raise UnreadSendersUnavailable("WhatsApp Desktop could not be brought to the foreground")
+            raise UnreadSendersUnavailable(
+                "WhatsApp Desktop window not detected or could not be focused. "
+                "Open installed WhatsApp app and run HUKM diagnostics.")
 
     try:
         import uiautomation as auto

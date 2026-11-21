@@ -163,9 +163,9 @@ function DeviceCard({ d }: { d: Device }) {
         <dl className="grid content-start grid-cols-[130px_1fr] gap-x-3 gap-y-2.5 text-sm">
           <dt className="text-ink2">Operating system</dt><dd>{d.os ? `${d.os} ${d.osVersion ?? ''}` : '—'}</dd>
           <dt className="text-ink2">Hostname</dt><dd>{d.hostname ?? '—'}</dd>
-          <dt className="text-ink2">Controller</dt><dd>{d.controllerVersion ? `v${d.controllerVersion}` : '—'}{d.controllerVersion && d.controllerVersion !== '1.4.0' &&
+          <dt className="text-ink2">Controller</dt><dd>{d.controllerVersion ? `v${d.controllerVersion}` : '—'}{d.controllerVersion && d.controllerVersion !== '1.4.1' &&
   <p className="mt-1 text-xs text-warn">
-    Outdated Controller detected. This device is reporting v{d.controllerVersion}, not v1.4.0.
+    Outdated Controller detected. This device is reporting v{d.controllerVersion}, not v1.4.1.
     If you have installed v1.4.0, close ALL older controller windows and launch START_HUKM.cmd
     from the installed Controller folder. Do not delete the pairing config.
   </p>}</dd>

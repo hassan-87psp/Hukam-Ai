@@ -9,12 +9,14 @@ previews are transmitted for this check.
 from __future__ import annotations
 
 import re
+import time
 from urllib.parse import quote
 
 from ..system import launcher, windows
+from . import locator
 
 TITLE_RE = re.compile(r"^\s*\((\d{1,3})\)\s*WhatsApp\b", re.I)
-DESKTOP_PROCESSES = {"whatsapp.exe", "whatsappdesktop.exe", "applicationframehost.exe", "msedgewebview2.exe"}
+DESKTOP_PROCESSES = set(locator.ALL_PROCESSES)
 UNREAD_LABEL_RE = re.compile(
     r"^(?:unread(?:\s+(?:chats|messages))?\s*[:,(\-\s]*)(\d{1,3})\)?$",
     re.I,
@@ -25,24 +27,35 @@ UNREAD_REVERSE_RE = re.compile(r"^(\d{1,3})\s+unread(?:\s+chats)?$", re.I)
 def open_whatsapp(mode: str, browser_pref: str) -> dict:
     """Prefer the installed WhatsApp app. Never silently swap to Chrome."""
     if mode == "desktop":
+        if not launcher.SIMULATE:
+            existing = locator.focus_whatsapp()
+            if existing:
+                return {"opened": "desktop", "messagesRead": False,
+                        "foreground": True, "verified": True,
+                        "note": "Existing Personal WhatsApp Desktop window focused."}
         try:
-            before = windows.snapshot()
             launcher.open_uri("whatsapp:")
-            procs = ["WhatsApp.exe", "WhatsAppDesktop.exe", "ApplicationFrameHost.exe", "msedgewebview2.exe"]
-            seen = windows.wait_for_window(before, processes=procs, title_contains="WhatsApp", timeout=3)
-            focused = windows.focus_by_process(procs, title_contains="WhatsApp") if seen != "unverifiable" else None
-            return {
-                "opened": "desktop", "messagesRead": False,
-                "foreground": None if seen == "unverifiable" else focused is not None,
-                "verified": None if seen == "unverifiable" else (seen is not None or focused is not None),
-            }
+            if launcher.SIMULATE:
+                return {"opened": "desktop", "messagesRead": False,
+                        "foreground": None, "verified": None}
+            # ShellExecute returns immediately; Windows app activation needs
+            # an actual *new or existing* window before we can claim success.
+            end = time.monotonic() + 5.0
+            while time.monotonic() < end:
+                focused = locator.focus_whatsapp()
+                if focused:
+                    return {"opened": "desktop", "messagesRead": False,
+                            "foreground": True, "verified": True}
+                time.sleep(0.25)
+            visible = locator.desktop_windows()
+            return {"opened": "desktop", "messagesRead": False,
+                    "foreground": False, "verified": False,
+                    "note": "WhatsApp launch requested, but its desktop window could not be focused. Check taskbar or Windows app installation.",
+                    "windowDetected": bool(visible)}
         except (OSError, launcher.LaunchError):
-            return {
-                "opened": None,
-                "needsChoice": True,
-                "note": "WhatsApp Desktop could not be launched. Install it or say 'WhatsApp Web kholo' to use the browser.",
-                "messagesRead": False,
-            }
+            return {"opened": None, "needsChoice": True, "verified": False,
+                    "note": "WhatsApp Desktop could not be launched. Open the installed WhatsApp Windows app, not WhatsApp Web.",
+                    "messagesRead": False}
     if mode != "web":
         raise launcher.LaunchError("WhatsApp mode must be desktop or web")
     launcher.open_url("https://web.whatsapp.com/", browser_pref)
@@ -85,7 +98,7 @@ def unread_from_desktop_accessibility(window: windows.WindowInfo) -> int | None:
     UI Automation names can change between WhatsApp releases; absence is
     reported as unknown rather than '0'. No network transfer of UIA text.
     """
-    if not windows.IS_WINDOWS or window.process.casefold() not in DESKTOP_PROCESSES:
+    if not windows.IS_WINDOWS or not locator.matches_desktop_window(window):
         return None
     try:
         import uiautomation as auto
@@ -96,17 +109,17 @@ def unread_from_desktop_accessibility(window: windows.WindowInfo) -> int | None:
         if width < 280 or height < 220:
             return None
         items: list[tuple[str, float, float]] = []
-        for index, (control, _depth) in enumerate(auto.WalkControl(root, maxDepth=12)):
-            if index >= 550:
+        for index, (control, _depth) in enumerate(auto.WalkControl(root, maxDepth=14)):
+            if index >= 900:
                 break
             try:
                 if control.IsOffscreen:
                     continue
                 box = control.BoundingRectangle
                 x, y = float(box.left), float(box.top)
-                if not (left <= x < left + width * 0.44):
+                if not (left <= x < left + width * 0.53):
                     continue
-                if not (top + 18 <= y <= top + min(260, height * 0.38)):
+                if not (top + 12 <= y <= top + min(340, height * 0.43)):
                     continue
                 name = str(control.Name or "").strip()
                 if 0 < len(name) <= 90:
@@ -120,44 +133,51 @@ def unread_from_desktop_accessibility(window: windows.WindowInfo) -> int | None:
 
 
 def check(mode: str, browser_pref: str) -> dict:
-    wins = windows.list_windows()
-    desktop = [w for w in wins if "whatsapp" in w.title.casefold()
-               and w.process.casefold() in DESKTOP_PROCESSES]
-
-    for w in desktop:
-        count = unread_from_desktop_accessibility(w)
+    if mode == "web":
+        opened = open_whatsapp("web", browser_pref)
+        return {"unreadChats": None, "opened": opened.get("opened"),
+                "source": "web-not-verified", "messagesRead": False,
+                "note": "WhatsApp Web opened, but the installed Desktop unread count cannot be inferred from a Chrome tab."}
+    # Native Desktop only: a Chrome/Edge WhatsApp Web tab does not count
+    # as the installed Personal WhatsApp Windows app.
+    desktop = locator.desktop_windows()
+    launch_result = None
+    if mode == "desktop" and not desktop:
+        launch_result = open_whatsapp("desktop", browser_pref)
+        desktop = locator.desktop_windows()
+    if desktop:
+        # Bring the selected app to the foreground, since UIA labels may be
+        # unavailable in an inactive or minimized UWP window.
+        focused = locator.focus_whatsapp()
+        ordered = [focused] if focused else []
+        ordered.extend(w for w in desktop if not focused or w.hwnd != focused.hwnd)
+        for w in ordered:
+            count = unread_from_desktop_accessibility(w)
+            if count is not None:
+                return {
+                    "unreadChats": count, "source": "WhatsApp Desktop Unread filter",
+                    "note": "Count from a visible Unread badge. Message bodies were not accessed.",
+                    "messagesRead": False,
+                }
+        count = unread_from_titles([w.title for w in desktop])
         if count is not None:
             return {
-                "unreadChats": count,
-                "source": "WhatsApp Desktop Unread filter",
-                "note": "Count taken from the visible Unread badge; message contents were not read.",
+                "unreadChats": count, "source": "window title",
+                "note": "Count from the installed WhatsApp Desktop window title; no chats were read.",
                 "messagesRead": False,
             }
-
-    count = unread_from_titles([w.title for w in wins])
-    if count is not None:
-        return {
-            "unreadChats": count,
-            "source": "window title",
-            "note": "Count taken from a numeric WhatsApp window title, not message contents.",
-            "messagesRead": False,
-        }
-    if desktop or any("whatsapp" in w.title.casefold() for w in wins):
-        return {
-            "unreadChats": None,
-            "source": "unavailable",
-            "note": "WhatsApp is open but did not expose a readable Unread badge or numeric title. "
-                    "The count is unknown, not zero. Keep WhatsApp Desktop visible and try again.",
-            "messagesRead": False,
-        }
-
-    opened = open_whatsapp(mode, browser_pref)
-    return {
-        "unreadChats": None,
-        "opened": opened.get("opened"),
-        "note": "WhatsApp was not open, so it has been opened. Ask again after it loads.",
-        "messagesRead": False,
-    }
+        return {"unreadChats": None, "source": "unavailable", "messagesRead": False,
+                "windowDetected": True, "foreground": focused is not None,
+                "note": "WhatsApp Desktop was detected but did not expose a readable Unread badge or numeric title. "
+                        "Its count is UNKNOWN, not zero. Open the Unread filter in the Windows app."}
+    running = locator.running_native_processes()
+    return {"unreadChats": None, "messagesRead": False,
+            "opened": launch_result.get("opened") if launch_result else None,
+            "source": "not-detected", "windowDetected": False,
+            "processRunning": bool(running),
+            "note": "WhatsApp Desktop process is running but its app window is inaccessible. Restore it from the taskbar."
+                    if running else
+                    "WhatsApp Desktop is not detected. Open the installed Windows WhatsApp application (not a Chrome tab), then try again."}
 
 
 def compose(phone: str, message: str, mode: str, browser_pref: str) -> dict:
