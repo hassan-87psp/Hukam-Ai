@@ -264,6 +264,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   add('POST', '/api/projects/:id/notes', true, (c) => projects.saveNote(c.user!.id, c.params.id, null, c.body ?? {}));
   add('PATCH', '/api/projects/:id/notes/:noteId', true, (c) => projects.saveNote(c.user!.id, c.params.id, c.params.noteId, c.body ?? {}));
   add('DELETE', '/api/projects/:id/notes/:noteId', true, (c) => projects.removeNote(c.user!.id, c.params.id, c.params.noteId));
+  add('GET', '/api/projects/:id/tasks', true, (c) => operator.listProjectRuns(c.user!.id,c.params.id));
   add('GET', '/api/projects/:id/messages', true, (c) => projects.messages(c.user!.id, c.params.id));
   add('DELETE', '/api/projects/:id/messages', true, (c) => projects.clearMessages(c.user!.id, c.params.id));
   add('POST', '/api/projects/:id/chat', true, async (c) => {
