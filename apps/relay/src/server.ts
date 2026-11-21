@@ -164,14 +164,60 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
 
   add('GET', '/api/health', false, () => ({ ok: true, version: VERSION, time: nowIso() }));
   add('GET', '/api/system', true, () => ({ version: VERSION, providers: PROVIDER_STATUS, parser: 'deterministic+reviewed Gemini planner', projects: 'persistent', operator: 'supervised' }));
-  // Keys never leave the server. AI chat is intentionally NOT a device/action API.
+  // Keys never leave the server. The model is chat-only; it cannot execute actions.
+  // History comes from owner-scoped server storage, NOT untrusted browser-supplied turns.
   add('GET', '/api/ai/status', true, () => ({ configured: geminiConfigured(), provider: 'gemini' }));
+  const chatProject = (userId: string, value: unknown) => {
+    if (value === undefined || value === null || value === '') return null;
+    if (typeof value !== 'string' || value.length > 120)
+      throw new HttpError(400,'PROJECT_ID','Invalid Project selection');
+    return projects.get(userId,value);
+  };
+  const savedChat = (userId: string, projectId: unknown) => {
+    const p = chatProject(userId,projectId);
+    if (p) return projects.messages(userId,p.id).map(m =>
+      ({id:m.id,role:m.role,text:m.content,at:m.createdAt}));
+    return all(db,`SELECT id,role,content,created_at FROM ai_chat_turns
+      WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 80`,userId).reverse().map(m =>
+      ({id:m.id,role:m.role as 'user'|'assistant',text:m.content as string,at:m.created_at as string}));
+  };
+  add('GET', '/api/ai/history', true, (c) =>
+    savedChat(c.user!.id,c.url.searchParams.get('projectId')));
+  add('DELETE', '/api/ai/history', true, (c) => {
+    const p=chatProject(c.user!.id,c.url.searchParams.get('projectId'));
+    if(p)projects.clearMessages(c.user!.id,p.id);
+    else run(db,'DELETE FROM ai_chat_turns WHERE user_id=?',c.user!.id);
+    return {ok:true};
+  });
   add('POST', '/api/ai/chat', true, async (c) => {
     if (!aiLimit.take('gemini:' + c.user!.id) || !aiDailyLimit.take('gemini:' + c.user!.id))
       throw new HttpError(429, 'AI_RATE_LIMIT', 'AI chat limit reached. Please try again later.');
+    const userId=c.user!.id;
+    const project=chatProject(userId,c.body?.projectId);
+    const history=savedChat(userId,project?.id ?? null).slice(-12)
+      .map(m=>({role:m.role,text:m.text.slice(0,750)}));
+    const notes=project?projects.notes(userId,project.id).slice(0,12):[];
+    const projectContext=project?
+      [project.name,project.description,project.instructions,
+        ...notes.map(n=>n.title+': '+n.content.slice(0,350))].join('\n').slice(0,6500):undefined;
     try {
-      return await chatWithGemini(c.body?.message, c.body?.history,
-        {responseLang:['roman','ur','en'].includes(c.body?.responseLang) ? c.body.responseLang : 'roman'});
+      const ai=await chatWithGemini(c.body?.message,history,
+        {projectContext,responseLang:['roman','ur','en'].includes(c.body?.responseLang) ? c.body.responseLang : 'roman'});
+      const message=String(c.body.message).trim();
+      if(project){
+        projects.appendMessage(userId,project.id,'user',message);
+        projects.appendMessage(userId,project.id,'assistant',ai.reply);
+      } else {
+        const at=nowIso();
+        run(db,'INSERT INTO ai_chat_turns(id,user_id,role,content,created_at) VALUES(?,?,?,?,?)',
+          newId('ai_'),userId,'user',message,at);
+        run(db,'INSERT INTO ai_chat_turns(id,user_id,role,content,created_at) VALUES(?,?,?,?,?)',
+          newId('ai_'),userId,'assistant',ai.reply,at);
+        run(db,`DELETE FROM ai_chat_turns WHERE user_id=? AND id NOT IN
+          (SELECT id FROM ai_chat_turns WHERE user_id=? ORDER BY created_at DESC,rowid DESC LIMIT 80)`,
+          userId,userId);
+      }
+      return ai;
     } catch (e) {
       if (e instanceof GeminiError) throw new HttpError(e.status, e.code, e.message);
       throw new HttpError(502, 'AI_UNAVAILABLE', 'Gemini is temporarily unavailable.');
@@ -222,6 +268,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   });
   add('GET', '/api/operator/pending', true, (c) =>
     operator.pending(c.user!.id, new URL(c.req.url??'/', 'http://localhost').searchParams.get('projectId')));
+  add('GET', '/api/dialogue/pending', true, (c) => relay.pendingCommandDialogue(c.user!.id));
   add('GET', '/api/operator/plans/:id', true, (c) => operator.getPlan(c.user!.id, c.params.id));
   add('POST', '/api/operator/plans/:id/run', true, (c) => operator.start(c.user!.id,c.params.id,c.body?.deviceId));
   add('GET', '/api/operator/runs', true, (c) => operator.listRuns(c.user!.id));
