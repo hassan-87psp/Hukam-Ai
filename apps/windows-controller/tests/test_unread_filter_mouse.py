@@ -122,3 +122,24 @@ def test_missing_unread_filter_does_not_blind_click(monkeypatch):
     with pytest.raises(unread_senders.UnreadSendersUnavailable,match="not accessible"):
         unread_senders.read_unread_senders()
     assert all_button.clicked==0
+
+
+def test_minimized_main_whatsapp_window_is_restored_instead_of_small_popup(monkeypatch):
+    from controller.whatsapp import locator
+    import win32gui
+    monkeypatch.setattr(windows,"IS_WINDOWS",True)
+    popup=windows.WindowInfo(201,"WhatsApp notification","WhatsApp.exe",81)
+    main=windows.WindowInfo(202,"Chats","WhatsApp.exe",81)
+    foreground={"value":popup}
+    monkeypatch.setattr(windows,"active_window",lambda:foreground["value"])
+    monkeypatch.setattr(locator,"desktop_windows",lambda:[popup,main])
+    monkeypatch.setattr(win32gui,"IsIconic",lambda hwnd:hwnd==202)
+    monkeypatch.setattr(win32gui,"GetWindowRect",
+                        lambda hwnd:(0,0,180,120) if hwnd==201 else (-32000,-32000,-31000,-31000))
+    monkeypatch.setattr(win32gui,"GetWindowPlacement",
+                        lambda hwnd:(0,0,0,(0,0),(20,20,970,720)))
+    def restore(w):
+        foreground["value"]=w
+        return True
+    monkeypatch.setattr(windows,"bring_to_front",restore)
+    assert locator.focus_whatsapp()==main
