@@ -66,6 +66,17 @@ describe('Phase 1: owner approvals cannot be bypassed by controller messages', (
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
+  it('shows actual controller connection separately from relay and Gemini configuration', async () => {
+    const r = await api('GET', '/api/runtime/status');
+    expect(r.status).toBe(200);
+    expect(r.data.relay.reachable).toBe(true);
+    expect(r.data.controller.paired).toBe(1);
+    expect(r.data.controller.connected).toBe(1);
+    expect(r.data.gemini.reachable).toBe(null);
+    const anonymous = await fetch(relay.url + '/api/runtime/status');
+    expect(anonymous.status).toBe(401);
+  });
+
   it('ignores forged ACK, started and success result until explicit approval', async () => {
     const created = await api('POST', '/api/commands', { action: 'system.lock', args: {} });
     expect(created.status).toBe(200);
