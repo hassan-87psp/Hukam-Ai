@@ -27,6 +27,14 @@ def words():
     ]
 
 
+def test_whatsapp_capture_does_not_extend_into_user_message_pane():
+    # Owner's actual 1648px WhatsApp window has a ~430px left sidebar.
+    assert vu._sidebar_capture_width(1648, 96) == 410
+    assert vu._sidebar_capture_width(1648, 96) < 430
+    assert vu._sidebar_capture_width(2500, 144) == 615
+    assert vu._sidebar_capture_width(690, 96) < 410
+
+
 def test_ocr_upscales_tiny_whatsapp_text_without_changing_screen_coordinates():
     from PIL import Image
     screenshot = Image.new("RGB", (520, 916), (20, 20, 20))
