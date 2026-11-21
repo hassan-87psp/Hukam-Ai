@@ -60,6 +60,27 @@ describe('approved browser control', () => {
   });
 });
 
+describe('regression: notepad band kro must never open the app', () => {
+  for(const input of ['note pad band kro','notepad band kar do','Notepad close karo',
+    'close notepad','نوٹ پیڈ بند کرو','Notepad quit']){
+    it(input,()=>{
+      expect(c(input)).toMatchObject({action:'app.close',args:{app:'notepad'}});
+      expect(requiresApproval('app.close')).toBe(true);
+    });
+  }
+  it('never exposes a generic process-kill capability',()=>{
+    expect(validateCommand('app.close',{app:'chrome'}).ok).toBe(false);
+    expect(validateCommand('app.close',{app:'notepad'}).ok).toBe(true);
+    expect(parseCommand('Chrome band kro')).toMatchObject({kind:'unsupported',reason:'close'});
+  });
+  it('explains that Save/Cancel remains a user decision',()=>{
+    expect(successMessage('app.close',{app:'notepad'},{windowClosed:false,verified:false}).roman)
+      .toContain('Save/Cancel');
+    expect(successMessage('app.close',{app:'notepad'},{windowClosed:true,verified:true}).roman)
+      .toContain('band ho gayi');
+  });
+});
+
 describe('app intents — same intent for different phrasing', () => {
   for (const t of ['Chrome kholo', 'Chrome open karo', 'Open Google Chrome', 'کروم کھولو', 'chrome', 'Chrome chalao']) {
     it(t, () => {
