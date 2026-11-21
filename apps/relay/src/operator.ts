@@ -97,6 +97,8 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'If time, date, calendar provider, or selected recipient is unknown, ask one question and set steps:[]. Never guess.',
     'WhatsApp is PERSONAL DESKTOP only. whatsapp.read_selected reads visible chat after separate owner approval, do not send contents to Gemini.',
     'whatsapp.draft_reply needs exact selected contact and reply text, types only; never sends.',
+    'whatsapp.send_reviewed is allowed only after an explicit user instruction to send a precise message to the exact selected contact.',
+    'It requires separate final approval. Never auto-retry an uncertain WhatsApp send.',
     'whatsapp.attach_preview needs exact selected contact and fully qualified local file path in an allowed folder; does not send.',
     'For ChatGPT image/banner/script tasks in a saved Project, open browser.profile_open to its exact configured ChatGPT URL,',
     'then chatgpt.prompt_draft for the reviewed prompt. chatgpt.submit_prompt needs separate approval.',
