@@ -202,7 +202,7 @@ def validate(action: str, args: dict) -> dict:
                 raise ValidationError("invalid ChatGPT prompt")
             out["prompt"] = prompt
         return out
-    if action == "whatsapp.draft_reply":
+    if action in ("whatsapp.draft_reply", "whatsapp.send_reviewed"):
         contact = _str(a.get("contact"), "contact", 80)
         message = a.get("message")
         if not isinstance(message, str) or not message.strip() or len(message) > 1000 or re.search(r"[\x00-\x08\x0b-\x1f]", message):
