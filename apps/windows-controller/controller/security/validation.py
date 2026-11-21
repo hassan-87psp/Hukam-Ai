@@ -208,7 +208,7 @@ def validate(action: str, args: dict) -> dict:
         if not isinstance(message, str) or not message.strip() or len(message) > 1000 or re.search(r"[\x00-\x08\x0b-\x1f]", message):
             raise ValidationError("invalid WhatsApp reply")
         return {"contact": contact, "message": message}
-    if action == "whatsapp.attach_preview":
+    if action in ("whatsapp.attach_preview", "whatsapp.send_attachment_reviewed"):
         return {"contact": _str(a.get("contact"), "contact", 80),
                 "path": _str(a.get("path"), "path", 1024)}
     if action == "browser.profile_open":
