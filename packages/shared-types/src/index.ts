@@ -57,6 +57,8 @@ export type ActionName =
   | 'ui.activate'
   | 'ui.scroll'
   | 'desktop.control'
+  | 'email.inbox_open'
+  | 'email.compose_draft'
   | 'calendar.event_draft'
   | 'calendar.save_reviewed'
   | 'chatgpt.prompt_draft'

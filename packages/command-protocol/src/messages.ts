@@ -63,6 +63,10 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('Active app ko scroll karne se pehle approval chahiye.', 'فعال ایپ اسکرول کرنے کے لیے اجازت چاہیے۔', 'Approval required to scroll the foreground application.');
     case 'desktop.control':
       return L('Laptop ke active app mein mouse ya keyboard action karne se pehle approval chahiye.', 'لیپ ٹاپ کے فعال پروگرام میں ماؤس یا کی بورڈ کے لیے منظوری چاہیے۔', 'Approval required for manual foreground mouse or keyboard input.');
+    case 'email.inbox_open':
+      return L('Selected Chrome profile mein Email Inbox kholne ke liye approval chahiye. Emails abhi read nahi honge.', 'ای میل ان باکس کھولنے کے لیے اجازت چاہیے، ای میلز نہیں پڑھی جائیں گی۔', 'Approval required to open your selected Gmail/Outlook inbox. No messages will be read.');
+    case 'email.compose_draft':
+      return L('Email ka recipient, subject aur body draft mein kholne ke liye approval chahiye. Send nahi karunga.', 'ای میل ڈرافٹ کھولنے کے لیے منظوری چاہیے، ارسال نہیں ہوگا۔', 'Approval required to prepare a mail compose draft. HUKM will not click Send.');
     case 'calendar.event_draft':
       return L('Calendar event ka draft browser mein kholne ke liye approval chahiye.', 'کیلنڈر ایونٹ ڈرافٹ کی اجازت چاہیے۔', 'Approval required to open the Calendar event draft.');
     case 'calendar.save_reviewed':
@@ -164,6 +168,10 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Scroll input deliver hua. Actual page movement verify nahi hui.', 'اسکرول بھیج دیا، نتیجے کی تصدیق نہیں ہوئی۔', 'Scroll input delivered; on-screen movement not independently verified.');
     case 'desktop.control':
       return L('Laptop ko mouse/keyboard input bhej diya. Final result independently verify nahi hua.', 'لیپ ٹاپ پر ان پٹ بھیج دیا، نتیجے کی آزاد تصدیق نہیں ہوئی۔', 'Foreground mouse/keyboard input delivered. Final result has not been independently verified.');
+    case 'email.inbox_open':
+      return L('Email Inbox kholne ki request bheji. Login aur mailbox verify nahi hua; koi email read nahi hui.', 'ای میل ان باکس کھولنے کی کوشش ہوئی، لاگ ان کی تصدیق نہیں ہوئی۔', 'Inbox launch requested. Login/inbox not verified and no messages read.');
+    case 'email.compose_draft':
+      return L('Email compose link open hua. Send nahi hui aur draft save ki confirmation nahi.', 'ای میل کا ڈرافٹ کھولا گیا، ارسال یا محفوظ ہونے کی تصدیق نہیں۔', 'Mail compose link requested. Nothing sent; saved draft is not verified.');
     case 'calendar.event_draft':
       return L('Calendar event draft open hua. Event abhi save nahi hua.', 'کیلنڈر ڈرافٹ کھلا ہے مگر محفوظ نہیں ہوا۔', 'Calendar draft opened. Event not yet saved.');
     case 'calendar.save_reviewed':

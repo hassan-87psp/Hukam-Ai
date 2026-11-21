@@ -34,6 +34,9 @@ export function useVoiceInput() {
   const [permission, setPermission] = useState<MicPermission>('unknown');
   const rec = useRef<Recognizer | null>(null);
   const meterOff = useRef<(() => void) | null>(null);
+  // Closing the microphone while getUserMedia is still pending must stop
+  // the late audio stream too (no microphone left live behind the UI).
+  const meterGeneration = useRef(0);
   const supported = recognitionSupported();
 
   useEffect(() => {
@@ -41,6 +44,7 @@ export function useVoiceInput() {
   }, []);
 
   const cleanup = useCallback(() => {
+    meterGeneration.current += 1;
     meterOff.current?.();
     meterOff.current = null;
     setAudioLevel(0);
@@ -61,7 +65,15 @@ export function useVoiceInput() {
     setTranscript('');
     setListening(true);
     if (settings.audioReactiveOrb) {
-      openLevelMeter(setAudioLevel).then((off) => (meterOff.current = off)).catch(() => {});
+      const generation = ++meterGeneration.current;
+      void openLevelMeter(setAudioLevel).then((off) => {
+        if (generation === meterGeneration.current && rec.current) {
+          meterOff.current = off;
+        } else {
+          // User stopped or recognition failed before getUserMedia returned.
+          off();
+        }
+      }).catch(() => {});
     }
     rec.current = startRecognition({
       lang: settings.recognitionLang,
@@ -90,8 +102,10 @@ export function useVoiceInput() {
   const toggle = useCallback(() => (rec.current ? stop() : start()), [start, stop]);
 
   useEffect(() => () => {
+    meterGeneration.current += 1;
     rec.current?.abort();
     meterOff.current?.();
+    meterOff.current = null;
   }, []);
 
   return { supported, listening: store.listening, transcript, error, permission, start, stop, toggle, clearError: () => setError(null) };

@@ -265,6 +265,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           roman:'ChatGPT ka downloaded file verify nahi hua. Chrome Downloads check karein.',
           ur:'چیٹ جی پی ٹی فائل ڈاؤن لوڈ کی تصدیق نہیں ہوئی۔',
           en:'A completed ChatGPT output file could not be verified. Check Chrome Downloads.',
+        } : c.action==='email.inbox_open' ? {
+          roman:'Email Inbox kholne ki request bhej di. Login aur account verify nahi hua; koi email read nahi hui.',
+          ur:'ان باکس کھولنے کی کوشش ہوئی، اکاؤنٹ کی تصدیق نہیں ہوئی اور ای میلز نہیں پڑھی گئیں۔',
+          en:'Email inbox launch requested. Account/login not verified; no mail was read.',
+        } : c.action==='email.compose_draft' ? {
+          roman:'Email compose link open kiya. Recipient, subject aur body khud check karein. Email send nahi hui; draft save verify nahi.',
+          ur:'ای میل ڈرافٹ کھولا، ارسال نہیں ہوئی اور محفوظ ہونے کی تصدیق نہیں ہوئی۔',
+          en:'Email compose requested. Check recipient/subject/body yourself. No email sent; draft save not verified.',
         } : c.action === 'desktop.control' ? {
           roman:'Laptop par mouse/keyboard input bhej diya. Natija abhi verify nahi hua — active window check karein.',
           ur:'ماؤس یا کی بورڈ ان پٹ بھیج دیا گیا، نتیجے کی تصدیق ابھی نہیں ہوئی۔',

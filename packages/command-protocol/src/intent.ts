@@ -49,6 +49,11 @@ export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorR
   }
   if(!t || GREETING.test(t))return 'chat';
   if(desktopWhatsAppWorkflow(t))return 'plan';
+  // Mailboxes have account-specific identities: don't silently treat "send
+  // email" as a harmless web.open or guess which Chrome profile is logged in.
+  if(/\b(?:gmail|email|e-mail|inbox|outlook mail|mailbox)\b/i.test(t) &&
+     /\b(?:draft|compose|likho|send|bhejo|reply|check|read|parho|khol|kholo|open)\b/i.test(t))
+    return 'plan';
   if(WORKFLOWS.test(t))return 'plan';
   // A named WhatsApp chat requires verified selection BEFORE reading.
   // Generic "message" parsing must not downgrade this to unread-count check.

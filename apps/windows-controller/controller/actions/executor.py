@@ -10,7 +10,7 @@ from typing import Callable
 from ..browser import web
 from ..browser import operator as browser_operator
 from ..browser import profiles as browser_profiles
-from ..browser import calendar_draft, chatgpt
+from ..browser import calendar_draft, chatgpt, email_draft
 from ..config import Config
 from ..files import search as files
 from ..screen import capture as screen
@@ -304,6 +304,22 @@ class Executor:
             raise ActionError("DESKTOP_INPUT_REFUSED", str(exc)) from exc
         except RuntimeError as exc:
             raise ActionError("DESKTOP_INPUT_REFUSED", str(exc)) from exc
+
+    def do_email_inbox_open(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Email inbox opening cancelled")
+        try:
+            return email_draft.open_inbox(a)
+        except email_draft.EmailDraftError as exc:
+            raise ActionError("EMAIL_INBOX_FAILED", str(exc)) from exc
+
+    def do_email_compose_draft(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Email drafting cancelled")
+        try:
+            return email_draft.open_compose(a)
+        except email_draft.EmailDraftError as exc:
+            raise ActionError("EMAIL_DRAFT_FAILED", str(exc)) from exc
 
     def do_calendar_event_draft(self, a, cancel):
         if cancel.is_set():
