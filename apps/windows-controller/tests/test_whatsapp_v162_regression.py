@@ -21,7 +21,7 @@ def test_release_version_and_privacy_safe_diagnostics(monkeypatch):
     d=diagnostics.probe(Config(whatsapp_mode="web"))
     assert re.fullmatch(r"\d+\.\d+\.\d+", VERSION)
     setup = (Path(__file__).resolve().parents[1] / "packaging" / "HUKM-Setup.iss").read_text(encoding="utf-8")
-    assert f\'#define HUKM_VERSION "{VERSION}"\' in setup
+    assert f'#define HUKM_VERSION "{VERSION}"' in setup
     assert d["controllerVersion"] == VERSION
     assert d["effectiveWhatsAppDefault"] == "desktop"
     assert d["automaticWhatsAppWebFallback"] is False

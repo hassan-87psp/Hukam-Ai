@@ -193,12 +193,28 @@ def _files(folder: Path, cancel=None) -> dict[str, tuple[int, int]]:
     return result
 
 
+def _partial_download_exists(folder: Path, name: str, cancel=None) -> bool:
+    deadline = time.monotonic() + 3
+    try:
+        with os.scandir(folder) as entries:
+            for n, entry in enumerate(entries):
+                desktop_input._check_cancel(cancel)
+                if n >= 10000 or time.monotonic() >= deadline:
+                    raise ChatGPTError("Downloads partial-file scan incomplete")
+                if entry.name.casefold().startswith(name.casefold()) and Path(entry.name).suffix.casefold() in (".crdownload", ".tmp", ".partial", ".part", ".download"):
+                    return True
+    except OSError as exc:
+        raise ChatGPTError("Cannot inspect partial downloads safely") from exc
+    return False
+
+
 def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
     """Wait for a unique visible ChatGPT Download control after generation.
 
     This is allowed only in the exact user-configured ChatGPT Project tab.
     No blind click, no guessed URL, no Chrome profile switching.
     """
+    desktop_input._check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("chatgpt.download_visible", "visible download")
         return {"downloadVerified": False, "candidateDetected": True, "fileName": "test-image.png",
@@ -237,6 +253,7 @@ def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
         download_deadline = time.monotonic() + 22.0
         stable_name = None
         stable_size = -1
+        stable_mtime = -1
         stable_checks = 0
         while time.monotonic() < download_deadline:
             if cancel is not None and cancel.is_set():
@@ -250,24 +267,23 @@ def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
                 size = current[name][1]
                 # Chrome can expose the target file before writing finishes.
                 # Require a stable nonzero size for several independent polls.
-                try:
-                    partial = any(
-                        p.name.casefold().startswith(name.casefold()) and p.suffix.casefold() in (".crdownload", ".tmp")
-                        for p in downloads.iterdir()
-                    )
-                except OSError:
-                    partial = True
+                partial = _partial_download_exists(downloads, name, cancel)
                 if size > 0 and not partial:
-                    if name == stable_name and size == stable_size:
+                    if name == stable_name and size == stable_size and current[name][0] == stable_mtime:
                         stable_checks += 1
                     else:
                         stable_name, stable_size, stable_checks = name, size, 1
+                        stable_mtime = current[name][0]
                     if stable_checks >= 4:
                         return {"downloadVerified": False, "candidateDetected": True, "fileName": name,
                                 "sizeBytes": size, "verified": False,
                                 "note": "One new stable file appeared in Downloads. Its origin and association with the requested ChatGPT result are not independently verified; review it before saving or sharing."}
                 else:
                     stable_name, stable_size, stable_checks = None, -1, 0
+                    stable_mtime = -1
+            else:
+                stable_name, stable_size, stable_checks = None, -1, 0
+                stable_mtime = -1
             time.sleep(0.4)
         raise ChatGPTError(
             "Download button was clicked but no new finished image/document was detected. "

@@ -135,7 +135,7 @@ async function askGeminiPlan(request:string,context:string,fetcher?:typeof fetch
     'For ChatGPT image/banner/script tasks in a saved Project, open browser.profile_open to its exact configured ChatGPT URL,',
     'then chatgpt.prompt_draft for the reviewed prompt. chatgpt.submit_prompt needs separate approval.',
     'chatgpt.download_visible waits for exactly one visible generated Download button in the saved ChatGPT Project,',
-    'then confirms a new completed file in Downloads. Do not claim completion when no file is detected.',
+    'A new stable Downloads file is only a candidate; exact ChatGPT origin is NOT verified. Never claim generation, saved project asset or verified file attribution solely from that scan.',
     'Any UI Automation failure must be returned as failure/unverified, never fabricated success.',
     'Never invent screen coordinates. Do not use browser.control kind click. Browser control kind scroll:',
     '{"kind":"scroll","steps":-2} scrolls down. browser.control requires a foreground browser.',
