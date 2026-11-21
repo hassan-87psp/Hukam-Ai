@@ -128,3 +128,36 @@ def activate(label: str) -> dict:
         raise
     except Exception as exc:
         raise AccessibilityError("UI Automation could not activate this control") from exc
+
+
+def scroll_active(steps: int) -> dict:
+    """Bounded mouse-wheel input to the active allowlisted Windows app.
+
+    Does not use a screen coordinate supplied by the model; the local
+    Controller computes the center of the actual foreground window.
+    """
+    if not isinstance(steps, int) or isinstance(steps, bool) or steps == 0 or abs(steps) > 5:
+        raise AccessibilityError("scroll must be an integer from -5 to 5, excluding zero")
+    if launcher.SIMULATE:
+        launcher._record("ui.scroll", "wheel")
+        return {"inputDelivered": True, "verified": False, "steps": steps, "simulated": True}
+    active = _active()
+    try:
+        import win32api
+        import win32con
+        import win32gui
+        left, top, right, bottom = win32gui.GetWindowRect(active.hwnd)
+        if right - left < 240 or bottom - top < 180:
+            raise AccessibilityError("Foreground application window is too small to scroll")
+        if win32gui.GetForegroundWindow() != active.hwnd:
+            raise AccessibilityError("Foreground window changed before scrolling")
+        center = (int((left + right) / 2), int((top + bottom) / 2))
+        win32api.SetCursorPos(center)
+        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, steps * 120, 0)
+        return {"inputDelivered": True, "verified": False, "steps": steps,
+                "window": active.title[:100], "process": active.process,
+                "note": "Scroll wheel delivered inside the foreground app; the resulting page movement is not independently verified."}
+    except AccessibilityError:
+        raise
+    except Exception as exc:
+        raise AccessibilityError("Could not scroll the foreground application") from exc
