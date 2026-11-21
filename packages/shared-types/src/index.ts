@@ -65,6 +65,7 @@ export type ActionName =
   | 'whatsapp.draft_reply'
   | 'whatsapp.send_reviewed'
   | 'whatsapp.attach_preview'
+  | 'whatsapp.send_attachment_reviewed'
   | 'browser.control'
   | 'browser.profile_open'
   | 'notepad.type'
