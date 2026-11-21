@@ -159,6 +159,10 @@ export class Relay {
     return state ? {topic:state.topic} : null;
   }
 
+  discardCommandDialogue(userId: string): void {
+    this.clearPendingDialogue(userId);
+  }
+
   constructor(public db: DB, public config: RelayConfig) {
     this.screenshotDir = join(config.dataDir, 'screenshots');
     mkdirSync(this.screenshotDir, { recursive: true });
