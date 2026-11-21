@@ -27,7 +27,7 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
   'whatsapp.unread_senders', 'whatsapp.select_chat', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed',
-  'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft', 'calendar.save_reviewed',
+  'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed', 'ui.inspect', 'ui.activate', 'ui.scroll', 'email.inbox_open', 'email.compose_draft', 'calendar.event_draft', 'calendar.save_reviewed',
   'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
@@ -116,11 +116,15 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'Answer follow-up messages using the original request and most recent answer supplied. Do not ask the same question twice if its answer is present.',
     'Only use these precise action names: app.open, folder.open, folder.list, file.search, file.open, file.reveal,',
     'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
-    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, calendar.event_draft, calendar.save_reviewed,',
+    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, email.inbox_open, email.compose_draft, calendar.event_draft, calendar.save_reviewed,',
     'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
     'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.select_chat, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.send_reviewed, whatsapp.attach_preview, whatsapp.send_attachment_reviewed.',
     'Never use arbitrary shell, file deletion, payments, password/OTP reading or UNREVIEWED WhatsApp Send. Do not pretend a draft was sent.',
-    'calendar.event_draft opens a prefilled Google/Outlook editor only, not a saved event or invitations. Return an honest draft summary.',
+    'email.inbox_open opens only Gmail or Outlook mailbox in an explicitly chosen real Chrome profile; it does not read emails or verify the logged-in account.',
+    'email.compose_draft requires provider google/outlook, a valid single recipient email, nonempty subject/body and a saved Chrome profile. It opens only a prefilled compose URL; it NEVER SENDS or verifies saved draft.',
+    'If the user asks to SEND an email, explain that this system can only prepare a draft for manual review/Send. Never propose automatic email Send or claim delivery.',
+    'Ask for the missing recipient, email subject, body, provider, or exact Chrome profile. Never invent any of these.',
+'calendar.event_draft opens a prefilled Google/Outlook editor only, not a saved event or invitations. Return an honest draft summary.',
     'calendar.save_reviewed can be used only after the owner explicitly asks to SAVE the exact reviewed Calendar event in the correct Chrome profile.',
     'It requires separate final approval; the action tries visible Save but never claims API event ID, attendance invites or successful creation without provider verification.',
     'For creating a meeting, use calendar.event_draft only with explicit provider, title, startUtc, endUtc, timeZone and saved Chrome profile.',
