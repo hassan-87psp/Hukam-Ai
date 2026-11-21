@@ -124,6 +124,21 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Installed one-time EXE version check failed' }
           & $exe status | Out-Null
           if ($LASTEXITCODE -ne 0) { throw 'One-time EXE status check failed' }
+          # Repeat installation in the same isolated directory to confirm backup
+          # and local recovery work without altering pairing or starting a device.
+          $original = (Get-FileHash $exe -Algorithm SHA256).Hash
+          $p = Start-Process -FilePath $setup -ArgumentList $args -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "Repeat setup failed: $($p.ExitCode)" }
+          $previous = Join-Path $target 'hukm-controller.previous.exe'
+          if (!(Test-Path $previous) -or (Get-FileHash $previous -Algorithm SHA256).Hash -ne $original) {
+            throw 'Prior executable backup missing or changed'
+          }
+          $recovery = Join-Path $target 'RESTORE_PREVIOUS.cmd'
+          if (!(Test-Path $recovery)) { throw 'Local recovery helper missing' }
+          $p = Start-Process -FilePath $env:ComSpec -ArgumentList @('/c', ('"' + $recovery + '"')) -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or (Get-FileHash $exe -Algorithm SHA256).Hash -ne $original) {
+            throw 'Local recovery smoke failed'
+          }
           if (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\HUKM*.lnk") {
             throw 'Installer unexpectedly created an Autostart entry'
           }

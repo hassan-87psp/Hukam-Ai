@@ -213,7 +213,7 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
                 : 'Update request finished, but a new Controller version has NOT been verified. Check the laptop installation and reconnect.'}</p>}
           {(lastUpdate.status==='failed' || lastUpdate.status==='timed_out' ||
             lastUpdate.status==='cancelled') &&
-            <p className="text-bad">Updater did not finish: {lastUpdate.error?.message ?? 'Windows command failed or was interrupted'}. Do not repeatedly approve the same failed command.</p>}
+            <p className="text-bad">Updater did not finish: {lastUpdate.error?.message ?? 'Windows command failed or was interrupted'}. Do not repeatedly approve the same failed command. If the previous executable was backed up, close HUKM on the laptop and use the local Restore Previous Controller shortcut.</p>}
           {latestVersion &&
             <a className="text-ice underline" target="_blank" rel="noreferrer"
               href={`https://github.com/hassan-87psp/Hukam-Ai/releases/tag/v${encodeURIComponent(latestVersion)}`}>

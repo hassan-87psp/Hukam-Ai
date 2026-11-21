@@ -175,6 +175,24 @@ def _stage(url: str, target: Path, expected_digest: str, expected_size: int, can
             pass
 
 
+def _verify_installer(path: Path, expected_digest: str, expected_size: int, cancel=None) -> bool:
+    """Recheck locally staged bytes immediately before launch."""
+    _check_cancel(cancel)
+    if not path.is_file() or path.is_symlink() or path.stat().st_size != expected_size:
+        return False
+    digest = hashlib.sha256()
+    total = 0
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            _check_cancel(cancel)
+            total += len(chunk)
+            if total > expected_size or total > MAX_INSTALLER_BYTES:
+                return False
+            digest.update(chunk)
+    _check_cancel(cancel)
+    return total == expected_size and digest.hexdigest() == expected_digest
+
+
 def _local_confirm(version: str) -> bool:
     import ctypes
     # MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 | MB_TOPMOST
@@ -214,19 +232,14 @@ def update_from_website(cancel=None) -> dict:
     log.info("HUKM update stage=checking_checksum")
     expected = _expected_digest(checksum_url, installer.name)
     _check_cancel(cancel)
-    if installer.exists():
-        digest = hashlib.sha256()
-        with installer.open("rb") as f:
-            for chunk in iter(lambda: f.read(1024 * 1024), b""):
-                _check_cancel(cancel)
-                digest.update(chunk)
-        _check_cancel(cancel)
-        if installer.stat().st_size != size or digest.hexdigest() != expected:
-            installer.unlink()
+    if installer.exists() and not _verify_installer(installer, expected, size, cancel):
+        installer.unlink()
     if not installer.exists():
         log.info("HUKM update stage=downloading_installer size_bytes=%d", size)
         _stage(exe_url, installer, expected, size, cancel=cancel)
     _check_cancel(cancel)
+    if not _verify_installer(installer, expected, size, cancel):
+        raise UpdateError("Staged HUKM setup did not match the official checksum and size")
     log.info("HUKM update stage=verified_checksum latest_version=%s", version)
     log.info("HUKM update stage=awaiting_local_windows_confirmation")
     confirmed = _local_confirm(version)
@@ -242,6 +255,8 @@ def update_from_website(cancel=None) -> dict:
         # version is NOT verified until its next authenticated device hello.
         # Separate signed-OS process. No shell, user-supplied arguments or
         # auto-install switches. Setup prompts the local Windows owner.
+        if not _verify_installer(installer, expected, size, cancel):
+            raise UpdateError("Staged HUKM setup changed after confirmation; installer launch refused")
         _check_cancel(cancel)
         subprocess.Popen([str(installer)], close_fds=True)
         log.info("HUKM update stage=installer_launched latest_version=%s", version)

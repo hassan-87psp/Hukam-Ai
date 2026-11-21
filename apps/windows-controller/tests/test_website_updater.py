@@ -122,8 +122,8 @@ def test_owner_cancel_does_not_spawn_installer(monkeypatch,tmp_path):
     monkeypatch.setattr(updater,"_latest_assets",lambda:(
         "1.8.4","https://github.com/hassan-87psp/Hukam-Ai/releases/download/v1.8.4/HUKM-Setup-v1.8.4.exe",
         "https://github.com/hassan-87psp/Hukam-Ai/releases/download/v1.8.4/HUKM-Setup-v1.8.4.exe.sha256",
-        23000000))
-    monkeypatch.setattr(updater,"_expected_digest",lambda *_args:"a"*64)
+        4))
+    monkeypatch.setattr(updater,"_expected_digest",lambda *_args:hashlib.sha256(b"test").hexdigest())
     target=tmp_path/"Updates"/"HUKM-Setup-v1.8.4.exe"
     def stage(url,installer,digest,size,cancel=None):
         installer.parent.mkdir(parents=True,exist_ok=True)
@@ -145,8 +145,8 @@ def test_installer_launch_reports_unverified_until_reconnected(monkeypatch,tmp_p
     monkeypatch.setattr(updater,"_latest_assets",lambda:(
         "1.8.4","https://github.com/hassan-87psp/Hukam-Ai/releases/download/v1.8.4/HUKM-Setup-v1.8.4.exe",
         "https://github.com/hassan-87psp/Hukam-Ai/releases/download/v1.8.4/HUKM-Setup-v1.8.4.exe.sha256",
-        23000000))
-    monkeypatch.setattr(updater,"_expected_digest",lambda *_args:"a"*64)
+        4))
+    monkeypatch.setattr(updater,"_expected_digest",lambda *_args:hashlib.sha256(b"test").hexdigest())
     monkeypatch.setattr(updater,"_stage",lambda _url,installer,_digest,_size,cancel=None:
                         (installer.parent.mkdir(parents=True,exist_ok=True),installer.write_bytes(b"test")))
     monkeypatch.setattr(updater,"_local_confirm",lambda version:True)
@@ -259,3 +259,23 @@ def test_already_cancelled_update_does_not_start_network(monkeypatch):
                         lambda: pytest.fail("Network after cancellation"))
     with pytest.raises(updater.UpdateCancelled):
         updater.update_from_website(cancel=cancel)
+
+def test_blocks_installer_changed_during_local_confirmation(monkeypatch,tmp_path):
+    monkeypatch.setattr(launcher,"SIMULATE",False)
+    monkeypatch.setattr(updater,"IS_WINDOWS",True)
+    monkeypatch.setattr(updater,"data_dir",lambda:tmp_path)
+    target=tmp_path/"Updates"/"HUKM-Setup-v1.8.5.exe"
+    monkeypatch.setattr(updater,"_latest_assets",lambda:(
+        "1.8.5","https://github.com/setup","https://github.com/checksum",4))
+    monkeypatch.setattr(updater,"_expected_digest",lambda *_:hashlib.sha256(b"test").hexdigest())
+    def stage(_url,path,_digest,_size,cancel=None):
+        path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_bytes(b"test")
+    def confirm(_version):
+        target.write_bytes(b"evil")
+        return True
+    monkeypatch.setattr(updater,"_stage",stage)
+    monkeypatch.setattr(updater,"_local_confirm",confirm)
+    monkeypatch.setattr(updater.subprocess,"Popen",lambda *a,**k:pytest.fail("Modified installer launched"))
+    with pytest.raises(updater.UpdateError,match="changed after confirmation"):
+        updater.update_from_website()
