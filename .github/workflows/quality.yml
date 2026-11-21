@@ -156,3 +156,46 @@ jobs:
             HUKM-Setup-v1.7.1.exe.sha256
           retention-days: 14
           if-no-files-found: error
+
+  official-windows-release:
+    name: Publish official versioned setup (main, after all tests)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [web-relay-tests, windows-controller-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: HUKM-One-Time-Setup-v1.8.0
+          path: setup-release
+      - uses: actions/download-artifact@v4
+        with:
+          name: HUKM-Windows-Controller-v1.8.0
+          path: zip-release
+      - name: Publish only one immutable tag for this verified version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag='v1.8.0'
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists. Never replace update assets or checksums."
+            exit 0
+          fi
+          test -s "setup-release/HUKM-Setup-v1.8.0.exe"
+          test -s "setup-release/HUKM-Setup-v1.8.0.exe.sha256"
+          test -s "zip-release/HUKM-Windows-Controller-v1.8.0.zip"
+          cd setup-release
+          sha256sum --check HUKM-Setup-v1.8.0.exe.sha256
+          cd ..
+          gh release create "$tag" \
+            setup-release/HUKM-Setup-v1.8.0.exe \
+            setup-release/HUKM-Setup-v1.8.0.exe.sha256 \
+            zip-release/HUKM-Windows-Controller-v1.8.0.zip \
+            zip-release/HUKM-Windows-Controller-v1.8.0.zip.sha256 \
+            --target "$GITHUB_SHA" --title "HUKM AI v1.8.0" \
+            --notes "Official owner-approved HUKM Windows Controller setup. Unattended auto-install is disabled. The unsigned installer requires local Windows confirmation. Existing pairing remains intact; verify controller version after reconnect."
