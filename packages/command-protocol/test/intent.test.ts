@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCommand, routeIntent, desktopWhatsAppWorkflow } from '../src/index';
+import { parseCommand, routeIntent, desktopWhatsAppWorkflow, namedWhatsAppRead, validateCommand, requiresApproval } from '../src/index';
 
 describe('one HUKM command brain with explicit owner-selected desktop preferences',()=>{
   const cases: Array<[string, 'plan'|'command'|'chat']> = [
@@ -43,6 +43,22 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
     expect(desktopWhatsAppWorkflow('WhatsApp Desktop open and check how many unread')).toBe('count');
     expect(desktopWhatsAppWorkflow('WhatsApp Web kholo')).toBe(null);
     expect(desktopWhatsAppWorkflow('Ali ke WhatsApp message parho')).toBe(null);
+  });
+  it('named WhatsApp message reads create exact-contact reviewed workflows independent of Gemini',()=>{
+    expect(namedWhatsAppRead('Ali ke WhatsApp messages parho')).toBe('Ali');
+    expect(namedWhatsAppRead('WhatsApp par Ali ka msg read karo')).toBe('Ali');
+    expect(namedWhatsAppRead('Sara Khan ke WhatsApp messages parho')).toBe('Sara Khan');
+    expect(namedWhatsAppRead('WhatsApp unread kitne hain')).toBe(null);
+    expect(namedWhatsAppRead('WhatsApp selected chat parho')).toBe(null);
+    expect(routeIntent('Ali ke WhatsApp messages parho',parseCommand('Ali ke WhatsApp messages parho')))
+      .toBe('plan');
+  });
+  it('website update is approved, fixed-source and never accepts arbitrary command arguments',()=>{
+    expect(requiresApproval('controller.update')).toBe(true);
+    expect(validateCommand('controller.update',{}).ok).toBe(true);
+    expect(validateCommand('controller.update',{url:'https://evil.example/bad.exe'}).ok).toBe(true);
+    // Validation canonicalizes to {}, so caller-provided URLs never cross the relay.
+    expect(validateCommand('controller.update',{url:'https://evil.example/bad.exe'})).toMatchObject({args:{}});
   });
   it('default Personal WhatsApp, no accidental browser/profile selection',()=>{
     const a=parseCommand('WhatsApp kholo');
