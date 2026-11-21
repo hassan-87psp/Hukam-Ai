@@ -424,15 +424,51 @@ def test_header_recovery_uses_fresh_crop_and_keeps_first_sender(monkeypatch):
     calls=[]
     monkeypatch.setattr(vu,"_probe_native",lambda *a:{})
     monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(0,0,1000,1000))
-    monkeypatch.setattr(win32gui,"IsZoomed",lambda hwnd:True)
+    monkeypatch.setattr(vu,"_is_maximized",lambda hwnd:True)
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
     monkeypatch.setattr(vu,"_capture_left",lambda hwnd:(image,0,0))
     def enlarged(crop,cancel):
         calls.append(crop.size)
         return labels
     monkeypatch.setattr(vu,"_ocr_enlarged",enlarged)
-    monkeypatch.setattr(vu,"_ocr_words",lambda im,cancel=None:labels+[first])
+    monkeypatch.setattr(vu,"_ocr_words",lambda im,cancel=None:labels+[first] if im.height==920 else [])
     result=vu._recover_before_click(120,image,0,0,[],None)
     assert calls==[(520,312)]
     assert result[4] is not None and result[4].text=="Unread"
     assert first in result[3]
+
+
+def test_maximized_detection_uses_supported_win32_api(monkeypatch):
+    import win32gui
+    import win32con
+    monkeypatch.setattr(win32gui,"GetWindowPlacement",lambda hwnd:(0,win32con.SW_SHOWMAXIMIZED,(0,0),(0,0),(0,0,1200,900)))
+    assert vu._is_maximized(120)
+    monkeypatch.setattr(win32gui,"GetWindowPlacement",lambda hwnd:(0,win32con.SW_SHOWNORMAL,(0,0),(0,0),(0,0,1200,900)))
+    assert not vu._is_maximized(120)
+
+
+def test_raw_header_ocr_recovers_actual_compact_chip_without_enlarging(monkeypatch):
+    from PIL import Image
+    import win32gui
+    image=Image.new("RGB",(520,920))
+    data=[vu.Word("Chats",77,56,50,15),
+          vu.Word("Search",120,107,39,10),
+          vu.Word("All",88,149,16,10),
+          vu.Word("Unread",135,149,40,10),
+          vu.Word("Favourites",217,149,59,10),
+          vu.Word("Groups",308,150,41,12)]
+    calls=[]
+    monkeypatch.setattr(vu,"_probe_native",lambda *a:{})
+    monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(1912,-8,3848,1048))
+    monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
+    monkeypatch.setattr(vu,"_is_maximized",lambda hwnd:True)
+    monkeypatch.setattr(vu,"_capture_left",lambda hwnd:(image,1920,0))
+    def raw(crop,cancel=None):
+        calls.append(crop.size)
+        return data
+    monkeypatch.setattr(vu,"_ocr_words",raw)
+    monkeypatch.setattr(vu,"_ocr_enlarged",lambda *a:pytest.fail("native header already verified"))
+    result=vu._recover_before_click(120,image,1920,0,[],None)
+    assert calls==[(520,312)]
+    assert result[4]==data[3]
+    assert (result[1]+round(result[4].cx),result[2]+round(result[4].cy))==(2075,154)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCommand, parseWhatsAppChoice, validateCommand, requiresApproval, normalize, ackMessage, successMessage, clarifyMessage } from '../src/index';
+import { parseCommand, parseWhatsAppChoice, validateCommand, requiresApproval, normalize, ackMessage, successMessage, clarifyMessage, failureMessage } from '../src/index';
 
 function c(text: string) {
   const r = parseCommand(text);
@@ -309,4 +309,12 @@ describe('owner read-only WhatsApp preference (explicit opt-in)',()=>{
   for (const phrase of ['Kinke messages unread hain?', 'Who has messaged me on WhatsApp?',
     'WhatsApp par new messages batao','Check my unread WhatsApp messages'])
     it(phrase,()=>expect(c(phrase).action).toBe('whatsapp.unread_senders'));
+});
+
+
+describe('WhatsApp failed result messages', () => {
+  it('does not ask to repeat a failed sender scan as an unread-count action', () => {
+    expect(failureMessage({code:'UNVERIFIABLE',message:'could not identify an unambiguous Unread chip'},'whatsapp.unread_senders').roman).toContain('sender names verify nahi hue');
+    expect(failureMessage({code:'UNVERIFIABLE',message:'could not identify an unambiguous Unread chip'},'whatsapp.check').roman).toContain('count verify nahi hua');
+  });
 });

@@ -298,13 +298,18 @@ export function failureMessage(error: CommandError | null, action?:ActionName): 
           'واٹس ایپ بھیجنے والوں کے ناموں کی تصدیق نہیں ہوئی۔',
           'Unread sender names could not be verified. This does not mean zero unread chats. See the command error.');
       }
-      return /unread sender|sender names|chat-row|unread filter/i.test(msg)
+      if(action==='whatsapp.check'){
+        return L('WhatsApp unread count verify nahi hua; ye zero ka result nahi hai. Exact wajah command card mein hai. Wohi failed request dobara dene se pehle Controller ka issue resolve karein.',
+          'واٹس ایپ کی ان ریڈ تعداد کی تصدیق نہیں ہوئی۔ اصل خرابی کمانڈ کارڈ میں ہے۔',
+          'Unread count is unknown, not zero. See the command error and resolve the controller issue before retrying.');
+      }
+      return /unread sender|sender names|chat-row|unread filter|unread chip/i.test(msg)
         ? L('Sir, WhatsApp ki Unread list ke contact names Windows se verify nahi hue. HUKM diagnostics run karein; bina verified names ke koi chat assume nahi karunga.',
             'واٹس ایپ کی ان ریڈ چیٹس کے نام تصدیق نہیں ہو سکے۔ ڈائگناسٹکس چلائیں۔',
             'WhatsApp did not expose verifiable unread chat names. Run HUKM diagnostics.')
-        : L('Sir, Personal WhatsApp Desktop ka unread count verify nahi hua. Ye zero nahi hai. Aap "WhatsApp par kis kis ka unread msg aya" bolein; approval ke baad visible names check karunga.',
+        : L('Result verify nahi hua. Exact wajah command card mein hai. Wohi failed request dobara dene se pehle issue resolve karein.',
             'واٹس ایپ ڈیسک ٹاپ کی ان ریڈ تعداد کی تصدیق نہیں ہوئی۔ یہ صفر نہیں ہے۔',
-            'Personal WhatsApp Desktop unread count is unknown, not zero. Try an approved visible unread sender scan.');
+            'The result was not verified. See the command error before retrying.');
     case 'WHATSAPP_DESKTOP_UNAVAILABLE':
       return L('Sir, installed WhatsApp Desktop open/focus nahi ho saka. Windows Start se WhatsApp kholein, phir HUKM diagnostics chalayein. Main WhatsApp Web automatically nahi kholunga.',
         'واٹس ایپ ڈیسک ٹاپ کھل نہیں سکا۔ ونڈوز اسٹارٹ سے کھول کر ڈائگناسٹکس چلائیں۔',

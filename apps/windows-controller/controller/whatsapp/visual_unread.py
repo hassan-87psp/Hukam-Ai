@@ -134,6 +134,14 @@ def _check_capture_owner(hwnd,left,top,width,height):
             raise VisualUnreadUnavailable("WhatsApp capture area is overlapped by another window")
 
 
+def _is_maximized(hwnd):
+    # pywin32's win32gui does not export IsZoomed on supported builds.
+    # GetWindowPlacement is supported and showCmd uses SW_SHOWMAXIMIZED.
+    import win32gui
+    import win32con
+    return win32gui.GetWindowPlacement(hwnd)[1] == win32con.SW_SHOWMAXIMIZED
+
+
 def _monitor_rect(hwnd):
     import win32api
     return tuple(win32api.GetMonitorInfo(win32api.MonitorFromWindow(hwnd, 2))["Monitor"])
@@ -382,7 +390,7 @@ def _recover_before_click(hwnd,image,left,top,words,cancel):
     _ensure_not_cancelled(cancel)
     _safe_foreground(hwnd)
     import win32con
-    if not win32gui.IsZoomed(hwnd):
+    if not _is_maximized(hwnd):
         # An owner-approved read can restore/maximize its verified app.
         # Never move another application; no mouse click on unknown pixels.
         win32gui.ShowWindow(hwnd,win32con.SW_MAXIMIZE)
@@ -393,9 +401,20 @@ def _recover_before_click(hwnd,image,left,top,words,cancel):
     # Windows diagnostic; keep the full screenshot only for later row reading.
     header_height=min(image.height, max(240, min(400, round(image.width*.6))))
     header=image.crop((0,0,image.width,header_height))
-    words=_ocr_enlarged(header,cancel)
-    _header_diagnostics(words,image,"enlarged-header-retry")
+    try:
+        words=_ocr_words(header,cancel=cancel)
+    except VisualUnreadUnavailable:
+        _ensure_not_cancelled(cancel)
+        words=[]
+    _ensure_not_cancelled(cancel)
+    _header_diagnostics(words,image,"native-header-retry")
     chip=locate_unread(words,image.width,image.height)
+    if chip is None:
+        # A different local OCR preprocessing pass, only if raw header failed.
+        words=_ocr_enlarged(header,cancel)
+        _ensure_not_cancelled(cancel)
+        _header_diagnostics(words,image,"enlarged-header-retry")
+        chip=locate_unread(words,image.width,image.height)
     if chip is not None and _search_header(words,chip)=="search unread chats":
         # Already selected: need fresh full-row OCR, not header-only names.
         _ensure_not_cancelled(cancel)
@@ -550,7 +569,7 @@ def _capture_for_scan(hwnd,cancel):
     _safe_foreground(hwnd)
     import win32gui
     import win32con
-    if win32gui.IsZoomed(hwnd):
+    if _is_maximized(hwnd):
         raise VisualUnreadUnavailable("WhatsApp client is too small even when maximized")
     win32gui.ShowWindow(hwnd,win32con.SW_MAXIMIZE)
     time.sleep(.35)
