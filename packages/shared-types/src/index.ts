@@ -55,6 +55,7 @@ export type ActionName =
   | 'diagnostics.probe'
   | 'ui.inspect'
   | 'ui.activate'
+  | 'ui.activate_observed'
   | 'ui.scroll'
   | 'desktop.control'
   | 'email.inbox_open'
