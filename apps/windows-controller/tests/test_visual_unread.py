@@ -221,3 +221,47 @@ def test_cancelled_before_first_capture_never_interacts(monkeypatch):
     with pytest.raises(vu.VisualUnreadUnavailable,match="cancelled"):
         vu.visual_scan_unread(120,cancel=cancelled)
     assert mouse==[]
+
+
+def test_capture_initializes_dpi_context_before_window_rect(monkeypatch):
+    import mss
+    import win32gui
+    from PIL import Image
+    initialized = False
+    class Screen:
+        def __enter__(self):
+            nonlocal initialized
+            initialized = True
+            return self
+        def __exit__(self, *args):
+            pass
+        def grab(self, rect):
+            assert initialized
+            assert rect["left"] == -1920
+            assert rect["top"] == 0
+            return SimpleNamespace(size=(rect["width"],rect["height"]),
+                bgra=bytes(rect["width"]*rect["height"]*4))
+    def rect(hwnd):
+        assert initialized, "Do not sample logical coordinates before MSS initializes"
+        return (-1920,0,-200,1080)
+    monkeypatch.setattr(mss,"mss",Screen)
+    monkeypatch.setattr(win32gui,"GetWindowRect",rect)
+    monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
+    image,left,top=vu._capture_left(120)
+    assert (left,top)==(-1920,0)
+    assert image.size==(520,920)
+
+
+def test_capture_rejects_window_motion_before_any_ocr(monkeypatch):
+    import mss
+    import win32gui
+    class Screen:
+        def __enter__(self): return self
+        def __exit__(self,*args): pass
+        def grab(self,rect): return None
+    rectangles=iter([(0,0,1200,1000),(8,0,1208,1000)])
+    monkeypatch.setattr(mss,"mss",Screen)
+    monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:next(rectangles))
+    monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
+    with pytest.raises(vu.VisualUnreadUnavailable,match="moved during capture"):
+        vu._capture_left(120)

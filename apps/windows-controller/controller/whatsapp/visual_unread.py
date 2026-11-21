@@ -124,22 +124,28 @@ def _capture_left(hwnd: int):
     import mss
     from PIL import Image
 
-    _safe_foreground(hwnd)
-    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-    window_width = right - left
-    window_height = bottom - top
-    if window_width < 690 or window_height < 530:
-        raise VisualUnreadUnavailable(
-            "WhatsApp Desktop window is too small for safe visual scanning; maximize it."
-        )
-    # Never capture right-hand chat bubbles, images, or message bodies.
-    width = min(520, int(window_width * 0.57))
-    height = min(920, window_height - 12)
+    # Initialize MSS BEFORE sampling any coordinates. On Windows its first
+    # initialization may change process DPI awareness. Sampling a logical
+    # window rectangle first and then grabbing physical pixels can produce
+    # mismatched origins on multi-display setups.
     with mss.mss() as screen:
+        _safe_foreground(hwnd)
+        rect = win32gui.GetWindowRect(hwnd)
+        left, top, right, bottom = rect
+        window_width = right - left
+        window_height = bottom - top
+        if window_width < 690 or window_height < 530:
+            raise VisualUnreadUnavailable(
+                "WhatsApp Desktop window is too small for safe visual scanning; maximize it."
+            )
+        width = min(520, int(window_width * 0.57))
+        height = min(920, window_height - 12)
         raw = screen.grab({"left": left, "top": top,
                            "width": width, "height": height})
+        _safe_foreground(hwnd)
+        if win32gui.GetWindowRect(hwnd) != rect:
+            raise VisualUnreadUnavailable("WhatsApp moved during capture. Maximize it on one monitor and retry.")
         image = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-    _safe_foreground(hwnd)
     return image, left, top
 
 
@@ -321,7 +327,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     after_image, new_left, new_top = _capture_left(active_hwnd)
     if (left, top) != (new_left, new_top):
         raise VisualUnreadUnavailable(
-            "WhatsApp window moved while scanning Unread; no names reported."
+            "WhatsApp window moved while scanning Unread; no names reported. Maximize WhatsApp on one monitor, select All, then retry without moving the window."
         )
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=second_ocr")
