@@ -125,7 +125,7 @@ def launch_personal_whatsapp() -> None:
     # Microsoft Store installs frequently have no ordinary executable path.
     # Query the fixed Windows Start-menu registry rather than a generic URL.
     script = (
-        "Get-StartApps | Where-Object { $_.Name -match '^WhatsApp(?:\\s|$)' } "
+        "Get-StartApps | Where-Object { $_.Name -match '^WhatsApp(?:\s|$)' } "
         "| Select-Object -First 6 Name, AppID | ConvertTo-Json -Compress"
     )
     try:
@@ -145,11 +145,11 @@ def launch_personal_whatsapp() -> None:
                     continue
                 name = str(entry.get("Name", ""))
                 app_id = str(entry.get("AppID", ""))
-                if not re.match(r"^WhatsApp(?:\\s|$)", name, re.I):
+                if not re.match(r"^WhatsApp(?:\s|$)", name, re.I):
                     continue
-                if "whatsapp" not in app_id.casefold() or not re.fullmatch(r"[A-Za-z0-9_.!\\-]{5,190}", app_id):
+                if "whatsapp" not in app_id.casefold() or not re.fullmatch(r"[A-Za-z0-9_.!\-]{5,190}", app_id):
                     continue
-                subprocess.Popen(["explorer.exe", "shell:AppsFolder\\\\" + app_id],
+                subprocess.Popen(["explorer.exe", "shell:AppsFolder\\" + app_id],
                                  close_fds=True)
                 return
     except (OSError, ValueError, TimeoutError, subprocess.TimeoutExpired):
