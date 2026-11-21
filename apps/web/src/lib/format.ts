@@ -28,6 +28,21 @@ export function duration(ms: number | null | undefined): string {
   return `${(ms / 1000).toFixed(1)} s`;
 }
 
+/** Historical pre-fix Controllers may have marked unread checks as Completed.
+ * This UI guard prevents the green badge from lying about those old results.
+ */
+export function whatsappResultUnverified(action: ActionName, result: unknown): boolean {
+  if(action !== 'whatsapp.check' && action !== 'whatsapp.unread_senders') return false;
+  const r = result && typeof result === 'object' && !Array.isArray(result)
+    ? result as Record<string, unknown> : {};
+  if(action === 'whatsapp.check')
+    return !(typeof r.unreadChats === 'number' && Number.isInteger(r.unreadChats) &&
+      r.unreadChats >= 0 && r.unreadChats <= 999 &&
+      (r.source === 'WhatsApp Desktop Unread filter' || r.source === 'window title'));
+  return !(Array.isArray(r.senders) && r.senders.length > 0 &&
+    r.senders.every((x:unknown)=>typeof x === 'string' && !!x.trim()));
+}
+
 export const STATUS_LABEL: Record<CommandStatus, string> = {
   pending: 'Pending',
   awaiting_approval: 'Awaiting approval',
