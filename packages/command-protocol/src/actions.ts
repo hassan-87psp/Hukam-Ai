@@ -237,6 +237,10 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return isErr(t) ? t : ok({ title: t });
     },
   },
+  'diagnostics.probe': {
+    name:'diagnostics.probe', capability:'system', label:'Safe laptop diagnostics',
+    timeoutMs:20000, alwaysApprove:true, validate:()=>ok({}),
+  },
   'ui.inspect': {
     name: 'ui.inspect', capability: 'screen', label: 'Inspect visible app controls',
     timeoutMs: 25000, alwaysApprove: true, validate: () => ok({}),
