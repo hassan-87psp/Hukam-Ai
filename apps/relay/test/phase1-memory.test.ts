@@ -9,6 +9,7 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
   let dir:string;
   let cookie='';
   let plannerError=false;
+  let plannerStage=0;
   let plannerRequests:string[]=[];
   let aiRequests:any[]=[];
   const originalFetch=globalThis.fetch;
@@ -36,9 +37,12 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
         const userPrompt=String(request.contents?.[0]?.parts?.[0]?.text??'');
         plannerRequests.push(userPrompt);
         if(plannerError)return new Response('{}',{status:503});
-        const answer=plannerRequests.length===1
+        const answer=plannerStage===0
           ? {question:'Kis contact ko message bhejna hai?',steps:[]}
-          : {summary:'Open Personal WhatsApp Desktop',steps:[{action:'whatsapp.open',args:{mode:'desktop'}}]};
+          : plannerStage===1
+            ? {question:'Ali ko kya message bhejna hai?',steps:[]}
+            : {summary:'Open Personal WhatsApp Desktop',steps:[{action:'whatsapp.open',args:{mode:'desktop'}}]};
+        plannerStage++;
         return new Response(JSON.stringify({candidates:[{content:{parts:[{text:JSON.stringify(answer)}]}}]}),{status:200});
       }
       aiRequests.push(request);
@@ -116,9 +120,15 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
 
     const resumed=await api('POST','/api/operator/plan',{text:'Ali'});
     expect(resumed.status).toBe(200);
-    expect(resumed.data.steps[0].action).toBe('whatsapp.open');
+    expect(resumed.data.kind).toBe('clarify');
+    expect(resumed.data.question).toContain('kya message');
     expect(plannerRequests.at(-1)).toContain('HUKM asked: Kis contact ko message bhejna hai?');
     expect(plannerRequests.at(-1)).toContain('User replied: Ali');
+    const third=await api('POST','/api/operator/plan',{text:'Kal milte hain'});
+    expect(third.status).toBe(200);
+    expect(third.data.steps[0].action).toBe('whatsapp.open');
+    expect(plannerRequests.at(-1)).toContain('HUKM asked: Ali ko kya message bhejna hai?');
+    expect(plannerRequests.at(-1)).toContain('User replied: Kal milte hain');
     expect((await api('GET','/api/operator/pending')).data).toBe(null);
     expect((await api('GET','/api/ai/history')).data).toHaveLength(4);
     // Clear history must also remove the old deterministic follow-up slot.
