@@ -42,7 +42,7 @@ function UserBubble({ m }: { m: Extract<ChatMessage, { kind: 'user' }> }) {
 }
 
 export default function Chat() {
-  const { chat, commandMap, devices, clearChat, pendingDialogueTopic, restoreOperatorPending, runText } = useStore();
+  const { chat, commandMap, devices, clearChat, pendingDialogueTopic, restoreOperatorPending, hydrateAiHistory, runText } = useStore();
   const end = useRef<HTMLDivElement>(null);
   const [searchParams,setSearchParams] = useSearchParams();
   const [projects,setProjects] = useState<{id:string;name:string}[]>([]);
@@ -52,11 +52,23 @@ export default function Chat() {
   useEffect(()=>{
     let active=true;
     const query=activeProject?'?projectId='+encodeURIComponent(activeProject):'';
-    void get<{question:string;topic:string}|null>('/api/operator/pending'+query)
-      .then(p=>{if(active)restoreOperatorPending(!!p);})
-      .catch(()=>{});
+    // Operator and deterministic clarification are both recovered after refresh.
+    const pending=get<{question:string;topic:string}|null>('/api/operator/pending'+query);
+    const basic=activeProject?Promise.resolve(null):
+      get<{topic:string}|null>('/api/dialogue/pending');
+    void Promise.all([pending,basic]).then(([operator,dialogue])=>{
+      if(active)restoreOperatorPending(operator?'operator-followup':dialogue?.topic??null);
+    }).catch(()=>{});
     return ()=>{active=false;};
   },[activeProject,restoreOperatorPending]);
+  useEffect(()=>{
+    let active=true;
+    const query=activeProject?'?projectId='+encodeURIComponent(activeProject):'';
+    void get<import('../services/store').SavedAiTurn[]>('/api/ai/history'+query)
+      .then(turns=>{if(active)hydrateAiHistory(activeProject||null,turns);})
+      .catch(()=>{});
+    return ()=>{active=false;};
+  },[activeProject,hydrateAiHistory]);
   useEffect(() => {
     end.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [visibleChat.length, activeProject]);
