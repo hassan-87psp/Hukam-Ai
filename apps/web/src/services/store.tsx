@@ -183,7 +183,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     // The cloud service is free/unofficial and can be rate-limited. If it fails
     // or takes too long, the browser immediately uses an available local voice.
     // Selecting a device voice opts out of the experimental cloud synthesis.
-    const cloudUrdu = !s.voiceURI && s.responseLang !== 'en' ? m.ur : undefined;
+    // The Urdu neural voice expects Urdu script, NOT Roman letters.
+    // A Gemini reply with only Roman text falls back to device speech.
+    const cloudUrdu = !s.voiceURI && s.responseLang !== 'en' &&
+      /[\u0600-\u06ff]/.test(m.ur) ? m.ur : undefined;
     speak(
       textForVoice(m, voice, s.responseLang), voice, s.speechRate, s.speechVolume,
       setSpeaking, cloudUrdu,
@@ -459,10 +462,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // A private message-only AI call, never a tool invocation.
           // No cloud AI connection is needed for laptop actions themselves.
           try {
-            const ai = await post<{ kind: 'ai'; provider: 'gemini'; reply: string }>(
-              '/api/ai/chat', { message: t, history },
+            const ai = await post<{ kind: 'ai'; provider: 'gemini'; reply: string; spokenUrdu?: string }>(
+              '/api/ai/chat', { message: t, history, responseLang:settingsRef.current.responseLang },
             );
-            const msg: Localized = { roman: ai.reply, ur: ai.reply, en: ai.reply };
+            const msg: Localized = { roman: ai.reply, ur: ai.spokenUrdu || ai.reply, en: ai.reply };
             agent(msg, 'info', source === 'voice', 'gemini');
           } catch (aiError) {
             if (aiError instanceof ApiError && aiError.code === 'AI_NOT_CONFIGURED') {
