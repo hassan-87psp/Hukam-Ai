@@ -386,8 +386,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const local = parseCommand(t);
       const taskWords = /\b(?:karo|krdo|kerdo|khol|open|add|schedule|likh|type|scroll|check|bhejo|send|create|download|whatsapp|calendar|notepad|note\s+pad|chrome|browser|youtube|file)\b/i.test(t);
       const compound = /\b(?:aur|phir|then|after that|usme|us\s+me|likho.*notepad|notepad.*likho|meeting.*add|schedule.*meeting)\b|(?:notepad|note\s*pad).*?(?:likho|type)/i.test(t);
-      const shouldPlan = !pendingDialogueTopic && taskWords && ((local.kind === 'unsupported' || local.kind === 'reply') || compound);
-      const maybeAi = !pendingDialogueTopic && (local.kind === 'unsupported' || local.kind === 'reply');
+      // Complex desktop workflows must reach the reviewed AI planner even
+      // when the legacy keyword parser incorrectly recognizes a basic action.
+      const taskWorkflow = /(?:calendar|calender|meeting).*(?:add|create|schedule|set|bana|invite)|(?:add|create|schedule|set).*(?:calendar|meeting)|(?:whatsapp|chat).*(?:reply|attach|file|message read|messages parh|msg parh)|(?:chatgpt|banner|image|script).*(?:bana|create|generate|draft|download|save)|(?:screen|window).*(?:dekho|observe|inspect|button)/i.test(t);
+      const shouldPlan = !pendingDialogueTopic && (taskWorkflow || (taskWords &&
+        ((local.kind === 'unsupported' || local.kind === 'reply') || compound)));
+      const maybeAi = !shouldPlan && !pendingDialogueTopic && (local.kind === 'unsupported' || local.kind === 'reply');
       const history = chat
         .flatMap<{ role: 'user' | 'assistant'; text: string }>((m) => m.kind === 'user' && m.aiChat
           ? [{ role: 'user' as const, text: m.text.slice(0, 700) }]
