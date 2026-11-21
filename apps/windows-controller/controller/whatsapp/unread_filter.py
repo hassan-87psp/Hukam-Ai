@@ -41,14 +41,23 @@ class Candidate:
 
 
 def _match(control) -> bool:
+    # Some UIA providers throw on one property but expose others. Probe each
+    # independently so a readable Name is not lost to a missing HelpText.
     try:
         name = " ".join(str(control.Name or "").split()).strip()
+        if _FILTER.fullmatch(name):
+            return True
+    except Exception:
+        pass
+    try:
         automation_id = re.sub(r"[^a-z0-9]", "", str(control.AutomationId or "").casefold())
-        # Some modern WhatsApp WinUI/WebView2 builds expose the action in
-        # AutomationId or HelpText while Name remains empty.
+        if _ID.fullmatch(automation_id):
+            return True
+    except Exception:
+        pass
+    try:
         help_text = " ".join(str(control.HelpText or "").split()).strip()
-        return bool(_FILTER.fullmatch(name) or _ID.fullmatch(automation_id)
-                    or _FILTER.fullmatch(help_text))
+        return bool(_FILTER.fullmatch(help_text))
     except Exception:
         return False
 
