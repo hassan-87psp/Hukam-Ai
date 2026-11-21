@@ -62,6 +62,7 @@ export type ActionName =
   | 'chatgpt.download_visible'
   | 'whatsapp.read_selected'
   | 'whatsapp.draft_reply'
+  | 'whatsapp.send_reviewed'
   | 'whatsapp.attach_preview'
   | 'browser.control'
   | 'browser.profile_open'
