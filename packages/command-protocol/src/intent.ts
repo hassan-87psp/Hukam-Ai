@@ -27,6 +27,18 @@ export function desktopWhatsAppWorkflow(text: string): DesktopWhatsAppWorkflow {
   // always opens/restores Personal Desktop first; Web remains explicit.
   if (/^(?:please\s+)?(?:mera\s+|mere\s+)?whats\s?app\s+(?:desktop\s+)?(?:check|dekho|dekh|dakho)(?:\s+(?:karo|kar do|krdo|kro))?[.!?]*$/i.test(t))
     return 'senders';
+  // "WhatsApp ma unread msg batao kis kis ke hen" is a deterministic
+  // approved desktop workflow, not a Gemini planning question. Users do
+  // not need to repeat "open" before asking who sent unread messages.
+  const asksWho = /\b(?:kis\s+kis|kis\s+ka|kis\s+ke|kiska|kon\s+kon|kaun\s+kaun|who|senders?|naam|names?)\b/.test(t);
+  const mentionsUnread = /\b(?:unread|unseen)\b/.test(t);
+  const wantsList = /\b(?:batao|dikhao|list|check|dekho|dakho|read|parho|aya|aaya)\b/.test(t);
+  const mentionsMessages = /\b(?:msgs?|messages?|chats?|unread)\b/.test(t);
+  if (mentionsMessages && (asksWho || (mentionsUnread && wantsList))) {
+    if (/\b(?:kitne|kitni|count|how\s+many|number|total)\b/.test(t))
+      return 'count';
+    return 'senders';
+  }
   const opening = /\b(?:open|kholo|khol|kholen|start|launch|chalao)\b/.test(t) ||
     /\bdesktop\s+(?:on|in)\s+(?:my\s+)?laptop\b/.test(t) ||
     (/\bdesktop\b/.test(t) && /\b(?:check|dekho|dekh|dakho)\b/.test(t));

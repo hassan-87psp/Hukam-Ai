@@ -5,11 +5,12 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
   const cases: Array<[string, 'plan'|'command'|'chat']> = [
     ['WhatsApp kholo', 'command'],
     ['WhatsApp Desktop kholo', 'command'],
-    ['WhatsApp par check karo kitne unread hain', 'command'],
-    ['Whatsapp par kis kis ka unread msg aya', 'command'],
+    ['WhatsApp par check karo kitne unread hain', 'plan'],
+    ['Whatsapp par kis kis ka unread msg aya', 'plan'],
     ['WhatsApp Web kholo', 'command'],
     ['WhatsApp Desktop on laptop and check msg', 'plan'],
     ['WhatsApp check karo', 'plan'],
+    ['whatsapp ma unread msg batao kis kis ke hen desktop whatsap per', 'plan'],
     ['Whatsapp dekho', 'plan'],
     ['WhatsApp kholo aur msg check kro', 'plan'],
     ['WhatsApp Desktop open and check how many unread', 'plan'],
@@ -45,6 +46,12 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
     expect(desktopWhatsAppWorkflow('Whatsapp dekho')).toBe('senders');
     expect(desktopWhatsAppWorkflow('WhatsApp kholo aur msg check kro')).toBe('senders');
     expect(desktopWhatsAppWorkflow('WhatsApp Desktop open and check how many unread')).toBe('count');
+    expect(desktopWhatsAppWorkflow('whatsapp ma unread msg batao kis kis ke hen desktop whatsap per')).toBe('senders');
+    expect(desktopWhatsAppWorkflow('WhatsApp par kis kis ka unread msg aya')).toBe('senders');
+    expect(desktopWhatsAppWorkflow('WhatsApp par check karo kitne unread hain')).toBe('count');
+    expect(desktopWhatsAppWorkflow('WhatsApp unread names list karo')).toBe('senders');
+    expect(desktopWhatsAppWorkflow('WhatsApp par Ali ka message parho')).toBe(null);
+    expect(desktopWhatsAppWorkflow('WhatsApp Favourites kholo')).toBe(null);
     expect(desktopWhatsAppWorkflow('WhatsApp Web kholo')).toBe(null);
     expect(desktopWhatsAppWorkflow('Ali ke WhatsApp message parho')).toBe(null);
   });

@@ -45,6 +45,25 @@ class Word:
         return self.y + self.height / 2
 
 
+def _prepare_ocr_image(image):
+    """Enlarge tiny desktop text for Windows OCR, preserve original geometry.
+
+    WhatsApp's 2026 dark desktop uses 12-15 px filter labels; native OCR can
+    miss them entirely at 1x. Upscale locally without network calls, then
+    transform recognized rectangles back to the original screenshot units.
+    The OCR bitmap is capped below common WinRT maximum dimensions.
+    """
+    from PIL import Image
+
+    source = image.convert("RGB")
+    scale = min(2.0, 1900.0 / max(source.width, source.height))
+    if 1.0 <= scale <= 1.05:
+        return source, 1.0
+    width = round(source.width * scale)
+    height = round(source.height * scale)
+    return source.resize((width, height), Image.Resampling.LANCZOS), scale
+
+
 def _ocr_words(image) -> list[Word]:
     """Direct Windows.Media.Ocr word rectangles, no model/cloud/wrapper.
 
@@ -56,6 +75,7 @@ def _ocr_words(image) -> list[Word]:
     try:
         import asyncio
         import io
+        prepared_image, scale = _prepare_ocr_image(image)
         from winrt.windows.media import ocr
         from winrt.windows.graphics import imaging
         from winrt.windows.storage import streams
@@ -66,7 +86,7 @@ def _ocr_words(image) -> list[Word]:
                 raise VisualUnreadUnavailable(
                     "No local Windows OCR language pack is available.")
             buffer = io.BytesIO()
-            image.convert("RGB").save(buffer, format="PNG")
+            prepared_image.save(buffer, format="PNG")
             stream = streams.InMemoryRandomAccessStream()
             writer = streams.DataWriter(stream)
             writer.write_bytes(buffer.getvalue())
@@ -83,8 +103,8 @@ def _ocr_words(image) -> list[Word]:
                     b = word.bounding_rect
                     if value and b.width > 0 and b.height > 0:
                         output.append(Word(
-                            value, float(b.x), float(b.y),
-                            float(b.width), float(b.height)))
+                            value, float(b.x) / scale, float(b.y) / scale,
+                            float(b.width) / scale, float(b.height) / scale))
             return output
 
         # PyWinRT can take longer on the first invocation. Bound each OCR
@@ -118,6 +138,50 @@ def _safe_foreground(hwnd: int) -> None:
         )
 
 
+def _sidebar_capture_width(window_width: int, dpi: int = 96) -> int:
+    """Conservatively stay inside WhatsApp's chat list, not its message pane.
+
+    Typical Windows WhatsApp's left list spans about 430 logical pixels.
+    Leave a margin before that divider and scale for per-monitor DPI. This
+    can omit rightmost timestamps on unusual narrow layouts; privacy wins.
+    """
+    scale = max(1.0, min(float(dpi) / 96.0, 2.5))
+    return min(round(410 * scale), int(window_width * .57))
+
+
+def _capture_region(rect, monitors, width: int) -> tuple[int, int, int, int]:
+    """Use actual physical monitor bounds, excluding invisible maximized borders.
+
+    A maximized window can extend eight pixels into the neighboring monitor
+    or above the desktop. Never include those unrelated pixels in OCR, and
+    keep the returned origin in signed virtual-screen coordinates.
+    """
+    left, top, right, bottom = rect
+
+    def overlap(mon):
+        x, y = mon["left"], mon["top"]
+        return (max(0, min(right, x + mon["width"]) - max(left, x))
+                * max(0, min(bottom, y + mon["height"]) - max(top, y)))
+
+    if not monitors:
+        raise VisualUnreadUnavailable("No physical monitor found for WhatsApp capture.")
+    monitor = max(monitors, key=overlap)
+    if not overlap(monitor):
+        raise VisualUnreadUnavailable("WhatsApp window is outside the visible desktop.")
+    x = max(left, monitor["left"])
+    y = max(top, monitor["top"])
+    # Only clipped invisible frame margins are acceptable: if the actual
+    # sidebar is on another screen or offscreen, fail without clicking.
+    if x - left > 24 or y - top > 24:
+        raise VisualUnreadUnavailable("WhatsApp sidebar is clipped; maximize on one monitor.")
+    if x + width > min(right, monitor["left"] + monitor["width"]):
+        raise VisualUnreadUnavailable("WhatsApp sidebar is not fully visible on one monitor.")
+    height = min(920, bottom - y - 12, monitor["top"] + monitor["height"] - y)
+    if height < 400:
+        raise VisualUnreadUnavailable("WhatsApp sidebar is too short for verified capture.")
+    return x, y, width, height
+
+
 def _capture_left(hwnd: int):
     """Return screenshot of ONLY native WhatsApp's left chat/sidebar pane."""
     import win32gui
@@ -132,10 +196,18 @@ def _capture_left(hwnd: int):
         raise VisualUnreadUnavailable(
             "WhatsApp Desktop window is too small for safe visual scanning; maximize it."
         )
-    # Never capture right-hand chat bubbles, images, or message bodies.
-    width = min(520, int(window_width * 0.57))
-    height = min(920, window_height - 12)
-    with mss.mss() as screen:
+    # Do not include WhatsApp's right-hand message pane. Window width is not
+    # the left sidebar width: a 1648px window may have a 430px sidebar.
+    try:
+        import ctypes
+        dpi = int(ctypes.windll.user32.GetDpiForWindow(hwnd)) or 96
+    except (AttributeError, OSError, ValueError):
+        dpi = 96
+    width = _sidebar_capture_width(window_width, dpi)
+    factory = getattr(mss, "MSS", None) or mss.mss
+    with factory() as screen:
+        left, top, width, height = _capture_region(
+            (left, top, right, bottom), screen.monitors[1:], width)
         raw = screen.grab({"left": left, "top": top,
                            "width": width, "height": height})
         image = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
@@ -143,32 +215,89 @@ def _capture_left(hwnd: int):
     return image, left, top
 
 
+def _header_labels(words: list[Word], width: int, height: int) -> dict[str, bool]:
+    """Only diagnostic BOOLEAN flags for fixed UI words, never chat/contact text."""
+    limit_y = min(400, height * .46)
+    header = [w for w in words
+              if 45 <= w.cy <= limit_y and 65 <= w.cx <= min(width - 22, 480)]
+    values = [re.sub(r"\s+", " ", w.text.strip()).casefold() for w in header]
+    return {
+        "all": "all" in values,
+        "unread": any(re.fullmatch(r"unread(?:\s*\d{1,3})?", v) for v in values),
+        "favourites": "favourites" in values or "favorites" in values,
+        "chats": "chats" in values,
+    }
+
+
 def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
-    """Require a visual Unread *between* the All and Favourites chips."""
-    def text(w: Word) -> str:
+    """Find Unread using confirmed left-side anchors, not a blind coordinate.
+
+    WhatsApp's Favourites chip is optional in recent builds and Windows OCR
+    often misses it. Require a unique All + Unread row and, if Favourites
+    wasn't recognized, a separate Chats heading ABOVE the row. Reject
+    uncertain or duplicated rows instead of clicking arbitrary text.
+    Coordinates scale with the captured pane height for Windows DPI settings.
+    """
+    def label(w: Word) -> str:
         return re.sub(r"\s+", " ", w.text.strip()).casefold()
 
-    # Only the chip row, never similarly worded chat previews below it.
     header = [w for w in words
-              if 55 <= w.cy <= min(275, height * .34)
-              and 65 <= w.cx <= min(width - 30, 440)]
+              if 45 <= w.cy <= min(400, height * .46)
+              and 65 <= w.cx <= min(width - 22, 480)]
     unread = [w for w in header
-              if re.fullmatch(r"unread(?:\s*\d{1,3})?", text(w))]
-    all_chips = [w for w in header if text(w) == "all"]
-    favorites = [w for w in header
-                 if text(w) in ("favourites", "favorites")]
-    if len(unread) != 1 or len(all_chips) != 1 or len(favorites) != 1:
+              if re.fullmatch(r"unread(?:\s*\d{1,3})?", label(w))]
+    all_chips = [w for w in header if label(w) == "all"]
+    favourites = [w for w in header if label(w) in ("favourites", "favorites")]
+    if len(unread) != 1 or len(all_chips) != 1 or len(favourites) > 1:
         return None
-    candidate = unread[0]
-    left = all_chips[0]
-    right = favorites[0]
-    if (not (left.cx + 22 < candidate.cx < right.cx - 22) or
-            max(abs(left.cy - candidate.cy),
-                abs(right.cy - candidate.cy)) > 23):
+
+    candidate, left = unread[0], all_chips[0]
+    # Unread is immediately to the right of All on the same chip row.
+    if not (left.cx + 20 < candidate.cx < left.cx + 240
+            and abs(left.cy - candidate.cy) <= 24):
         return None
-    if candidate.width < 28 or candidate.width > 150:
+    # Real 96-DPI Windows OCR reports a 40 x 10 pixel Unread word.
+    # Small words require independent heading evidence, not just a lower size threshold.
+    if not (25 <= candidate.width <= 155 and 8 <= candidate.height <= 44):
         return None
+    if candidate.height < 11:
+        headings = [w for w in header if label(w) == "chats"
+                    and w.cy + 38 < candidate.cy and w.cx < candidate.cx]
+        if len(headings) != 1:
+            return None
+
+    if favourites:
+        right = favourites[0]
+        if not (candidate.cx + 20 < right.cx < candidate.cx + 260
+                and abs(right.cy - candidate.cy) <= 24):
+            return None
+    else:
+        # Two matched chip words alone could be conversation preview text.
+        # A separately recognized Chats heading must precede the chip row.
+        headings = [w for w in header if label(w) == "chats"
+                    and w.cy + 38 < candidate.cy
+                    and w.cx < candidate.cx]
+        if len(headings) != 1:
+            return None
     return candidate
+
+
+def _header_image(image):
+    """OCR the filter row separately from distracting, private chat previews."""
+    height = min(image.height, 400, round(240 * max(1.0, image.width / 410)))
+    return image.crop((0, 0, image.width, height))
+
+
+def _unread_count(words: list[Word], chip: Word) -> int | None:
+    """Only report an observed counter; OCR often splits label and badge."""
+    match = re.fullmatch(r"unread\s*(\d{1,3})", chip.text.strip(), re.I)
+    if match:
+        return int(match.group(1))
+    numbers = [w for w in words
+               if re.fullmatch(r"\d{1,3}", w.text.strip())
+               and abs(w.cy - chip.cy) <= max(5, chip.height * .65)
+               and 0 <= w.x - (chip.x + chip.width) <= 18]
+    return int(numbers[0].text.strip()) if len(numbers) == 1 else None
 
 
 _SKIP = {
@@ -257,17 +386,25 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     image, left, top = _capture_left(active_hwnd)
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_ocr")
-    words = _ocr_words(image)
+    words = _ocr_words(_header_image(image))
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_ocr_complete elapsed=%.1fs",
              time.monotonic() - started)
     chip = locate_unread(words, image.width, image.height)
     if chip is None:
+        evidence = _header_labels(words, image.width, image.height)
+        # Boolean fixed-label diagnostics only; do not log OCR's private chat text.
+        log.info("WhatsApp unread header detected all=%s unread=%s favourites=%s chats=%s",
+                 evidence["all"], evidence["unread"], evidence["favourites"], evidence["chats"])
         raise VisualUnreadUnavailable(
-            "Windows UIA and local visual OCR could not uniquely identify "
-            "the All / Unread / Favourites row. No mouse click was attempted."
+            "Local WhatsApp OCR could not verify the All / Unread chip row "
+            "(All: %s, Unread: %s, Chats heading: %s, Favourites: %s). "
+            "No mouse click was attempted." %
+            tuple("yes" if evidence[k] else "no"
+                  for k in ("all", "unread", "chats", "favourites"))
         )
 
+    total_unread = _unread_count(words, chip)
     x, y = left + round(chip.cx), top + round(chip.cy)
     # Client-area/foreground check, not a guessed screen coordinate.
     rect = win32gui.GetClientRect(active_hwnd)
@@ -333,7 +470,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
         "supported": True,
         "senders": senders,
         "visibleChatCount": len(senders),
-        "totalUnreadChats": None,
+        "totalUnreadChats": total_unread,
         "visibleOnly": True, "messagesRead": False,
         "filterClickAttempted": True,
         "filterSelectedVerified": selection_verified,
