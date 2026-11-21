@@ -94,7 +94,9 @@ def focus_whatsapp() -> windows.WindowInfo | None:
                 try:
                     left, top, right, bottom = win32gui.GetWindowRect(w.hwnd)
                     return max(0, right - left) * max(0, bottom - top)
-                except (OSError, RuntimeError):
+                except Exception:
+                    # pywintypes.error (invalid/stale HWND) is not always an
+                    # OSError subclass. Ignore a stale helper, never crash.
                     return 0
             candidates.sort(key=area, reverse=True)
     except ImportError:
