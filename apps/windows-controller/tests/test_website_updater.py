@@ -125,7 +125,7 @@ def test_owner_cancel_does_not_spawn_installer(monkeypatch,tmp_path):
         23000000))
     monkeypatch.setattr(updater,"_expected_digest",lambda *_args:"a"*64)
     target=tmp_path/"Updates"/"HUKM-Setup-v1.8.4.exe"
-    def stage(url,installer,digest,size):
+    def stage(url,installer,digest,size,cancel=None):
         installer.parent.mkdir(parents=True,exist_ok=True)
         installer.write_bytes(b"test")
     monkeypatch.setattr(updater,"_stage",stage)
@@ -147,7 +147,7 @@ def test_installer_launch_reports_unverified_until_reconnected(monkeypatch,tmp_p
         "https://github.com/hassan-87psp/Hukam-Ai/releases/download/v1.8.4/HUKM-Setup-v1.8.4.exe.sha256",
         23000000))
     monkeypatch.setattr(updater,"_expected_digest",lambda *_args:"a"*64)
-    monkeypatch.setattr(updater,"_stage",lambda _url,installer,_digest,_size:
+    monkeypatch.setattr(updater,"_stage",lambda _url,installer,_digest,_size,cancel=None:
                         (installer.parent.mkdir(parents=True,exist_ok=True),installer.write_bytes(b"test")))
     monkeypatch.setattr(updater,"_local_confirm",lambda version:True)
     launched=[]
@@ -186,3 +186,76 @@ def test_installer_launch_gracefully_stops_previous_exe_after_result(sandbox,mon
                    for m in sent), "Report the launch BEFORE the old EXE exits"
     finally:
         client.pool.shutdown(wait=True)
+
+
+@pytest.mark.parametrize("stage_to_cancel", ["metadata", "checksum", "download", "confirmation"])
+def test_update_cancel_never_launches_installer(monkeypatch, tmp_path, stage_to_cancel):
+    cancel = threading.Event()
+    monkeypatch.setattr(launcher, "SIMULATE", False)
+    monkeypatch.setattr(updater, "IS_WINDOWS", True)
+    monkeypatch.setattr(updater, "data_dir", lambda: tmp_path)
+    calls = []
+    def maybe_cancel(stage):
+        calls.append(stage)
+        if stage_to_cancel == stage:
+            cancel.set()
+    def latest():
+        maybe_cancel("metadata")
+        return ("1.8.5", "https://github.com/setup", "https://github.com/checksum", 4)
+    def checksum(*args):
+        maybe_cancel("checksum")
+        return hashlib.sha256(b"test").hexdigest()
+    def download(url, target, digest, size, cancel=None):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"test")
+        maybe_cancel("download")
+    def confirm(version):
+        maybe_cancel("confirmation")
+        return True
+    monkeypatch.setattr(updater, "_latest_assets", latest)
+    monkeypatch.setattr(updater, "_expected_digest", checksum)
+    monkeypatch.setattr(updater, "_stage", download)
+    monkeypatch.setattr(updater, "_local_confirm", confirm)
+    monkeypatch.setattr(updater.subprocess, "Popen",
+                        lambda *a, **kw: pytest.fail("Cancelled update launched an installer"))
+    with pytest.raises(updater.UpdateCancelled):
+        updater.update_from_website(cancel=cancel)
+    assert calls[-1] == stage_to_cancel
+
+
+def test_cancelled_download_removes_partial_file(monkeypatch, tmp_path):
+    cancel = threading.Event()
+    class Response:
+        def __enter__(self): return self
+        def __exit__(self, *args): pass
+        def read(self, size):
+            cancel.set()
+            return b"test"
+    class Opener:
+        def open(self, *args, **kwargs): return Response()
+    monkeypatch.setattr(updater.urllib.request, "build_opener", lambda *a: Opener())
+    target = tmp_path / "setup.exe"
+    with pytest.raises(updater.UpdateCancelled):
+        updater._stage("https://github.com/setup", target,
+                       hashlib.sha256(b"test").hexdigest(), 4, cancel=cancel)
+    assert not target.exists()
+    assert not target.with_suffix(".partial").exists()
+
+
+def test_executor_forwards_cancellation_event(monkeypatch):
+    cancel = threading.Event()
+    monkeypatch.setattr(updater, "update_from_website",
+                        lambda cancel=None: {"sameEvent": cancel is expected})
+    expected = cancel
+    result = Executor(Config(), lambda: list(ALL_CAPABILITIES)).run(
+        "controller.update", {}, cancel)
+    assert result.ok and result.result["sameEvent"]
+
+
+def test_already_cancelled_update_does_not_start_network(monkeypatch):
+    cancel = threading.Event()
+    cancel.set()
+    monkeypatch.setattr(updater, "_latest_assets",
+                        lambda: pytest.fail("Network after cancellation"))
+    with pytest.raises(updater.UpdateCancelled):
+        updater.update_from_website(cancel=cancel)
