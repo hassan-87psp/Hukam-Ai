@@ -319,6 +319,13 @@ export class Operator {
       result={summary:'Open selected HUKM Project in the configured Chrome profile',
         steps:[validateStep({action:'browser.profile_open',
           args:{profile:project.chromeProfile,url:destination}})]};
+    } else if(!isFollowup && intent==='command' && parsed.kind==='command' && parsed.action==='desktop.control'){
+      // Desktop input is permitted only when the OWNER supplied an explicit
+      // deterministic single-step mouse/keyboard instruction. The model's
+      // structured plan validator intentionally DOES NOT allow this action.
+      const checked=validateCommand(parsed.action,parsed.args);
+      if(!checked.ok)throw new HttpError(400,'BAD_DESKTOP_INPUT',checked.error);
+      result={summary:ACTIONS[parsed.action].label,steps:[{action:'desktop.control',args:checked.args}]};
     } else if(!isFollowup && intent==='command' && parsed.kind==='command' && SAFE_AGENT_ACTIONS.has(parsed.action)){
       result={summary:ACTIONS[parsed.action].label,steps:[validateStep({action:parsed.action,args:parsed.args})]};
     }else{
