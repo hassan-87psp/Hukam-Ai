@@ -271,7 +271,7 @@ export class Operator {
     }
     // Project routing is enforced by the relay, not just written into the AI prompt.
     for(const step of result.steps){
-      if(step.action==='calendar.event_draft' && step.args.profile!==project?.chromeProfile)
+      if((step.action==='calendar.event_draft' || step.action==='calendar.save_reviewed') && step.args.profile!==project?.chromeProfile)
         throw new HttpError(422,'PROJECT_PROFILE_MISMATCH','Calendar must use the selected Project Chrome profile.');
       if(step.action==='browser.profile_open' && String(step.args.url).startsWith('https://chatgpt.com') &&
          project?.chatgptProjectUrl && step.args.url!==project.chatgptProjectUrl)
