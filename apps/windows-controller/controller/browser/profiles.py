@@ -24,7 +24,7 @@ def open_in_profile(url: str, profile: str) -> dict:
         raise ProfileError("Chrome profile must be Default or Profile 1 through Profile 99")
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname not in (
-        "chatgpt.com", "calendar.google.com", "outlook.office.com"
+        "chatgpt.com", "calendar.google.com", "mail.google.com", "outlook.office.com"
     ) or parsed.username or parsed.password:
         raise ProfileError("Only configured ChatGPT/Google/Outlook HTTPS destinations are supported")
     if launcher.SIMULATE:
