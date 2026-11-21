@@ -10,14 +10,17 @@ from typing import Callable
 from ..browser import web
 from ..browser import operator as browser_operator
 from ..browser import profiles as browser_profiles
+from ..browser import calendar_draft, chatgpt
 from ..config import Config
 from ..files import search as files
 from ..screen import capture as screen
+from ..screen import accessibility
 from ..security import validation as v
 from ..system import apps, info, known_folders, launcher, windows
 from ..whatsapp import adapter as wa
 from ..whatsapp import reader as wa_reader
 from ..whatsapp import unread_senders as wa_senders
+from ..whatsapp import desktop_ops as wa_desktop
 
 log = logging.getLogger("hukm.exec")
 
@@ -260,6 +263,54 @@ class Executor:
         return {"query": a["query"], "mode": "search", "url": url,
                 "note": "Could not determine a reliable top video, so the search results were opened instead."}
 
+    # -- approved screen and browser observation ------------------------
+    def do_ui_inspect(self, _a, _c):
+        try:
+            return accessibility.inspect()
+        except accessibility.AccessibilityError as exc:
+            raise ActionError("ACCESSIBILITY_UNAVAILABLE", str(exc)) from exc
+
+    def do_ui_activate(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Action cancelled before click")
+        try:
+            return accessibility.activate(a["label"])
+        except accessibility.AccessibilityError as exc:
+            raise ActionError("ACCESSIBILITY_UNAVAILABLE", str(exc)) from exc
+
+    def do_calendar_event_draft(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Calendar draft cancelled")
+        try:
+            return calendar_draft.open_event_draft(a)
+        except calendar_draft.CalendarDraftError as exc:
+            raise ActionError("CALENDAR_DRAFT_FAILED", str(exc)) from exc
+
+    def do_chatgpt_prompt_draft(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "ChatGPT draft cancelled")
+        try:
+            return chatgpt.draft_prompt(a["projectUrl"], a["prompt"])
+        except chatgpt.ChatGPTError as exc:
+            raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
+
+    def do_chatgpt_submit_prompt(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "ChatGPT submit cancelled")
+        try:
+            return chatgpt.submit_prompt(a["projectUrl"], a["prompt"])
+        except chatgpt.ChatGPTError as exc:
+            raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
+
+    def do_chatgpt_download_visible(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "ChatGPT download cancelled")
+        p = self.folder_path("downloads")
+        try:
+            return chatgpt.download_visible(a["projectUrl"], p)
+        except chatgpt.ChatGPTError as exc:
+            raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
+
     # -- screen ---------------------------------------------------------
     def do_screen_capture(self, _a, _c):
         if not self.cfg.screen_capture:
@@ -284,6 +335,35 @@ class Executor:
             return wa_senders.read_unread_senders()
         except wa_senders.UnreadSendersUnavailable as e:
             raise ActionError("UNVERIFIABLE", str(e)) from e
+
+    def do_whatsapp_read_selected(self, _a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Reading cancelled")
+        try:
+            return wa_desktop.read_selected()
+        except wa_desktop.DesktopWhatsAppError as exc:
+            raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
+
+    def do_whatsapp_draft_reply(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Draft cancelled")
+        try:
+            return wa_desktop.draft_reply(a["contact"], a["message"])
+        except wa_desktop.DesktopWhatsAppError as exc:
+            raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
+
+    def do_whatsapp_attach_preview(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Attachment cancelled")
+        path = v.check_openable(Path(a["path"]), self.root_paths())
+        allowed = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".docx",
+                   ".xlsx", ".pptx", ".txt", ".csv", ".mp4", ".zip"}
+        if not path.is_file() or path.suffix.casefold() not in allowed:
+            raise ActionError("NOT_ALLOWED", "Only a supported file inside allowed local folders can be attached")
+        try:
+            return wa_desktop.attach_preview(a["contact"], str(path))
+        except wa_desktop.DesktopWhatsAppError as exc:
+            raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
     def do_whatsapp_compose(self, a, _c):
         return {"contact": a["contact"], **wa.compose(a["phone"], a["message"], self.cfg.whatsapp_mode, self.cfg.browser)}
