@@ -198,7 +198,10 @@ describe('Gemini authenticated chat', () => {
       expect(result.status).toBe(200);
       expect(result.data).toEqual({ kind: 'ai', provider: 'gemini', reply: 'Ji zaroor! Aapka main goal kya hai?' });
       expect(googleCalls).toBe(1);
-      expect(googleRequest.contents).toHaveLength(3);
+      // Client history is validated but not trusted: the server now owns
+      // conversation history to prevent cross-device/project context spoofing.
+      expect(googleRequest.contents).toHaveLength(1);
+      expect(JSON.stringify(googleRequest.contents)).not.toContain('Good evening');
       expect(googleRequest.tools).toBeUndefined();
       expect((h.relay.db.prepare('SELECT COUNT(*) AS n FROM commands').get() as any).n).toBe(before);
       const status = await api('GET', '/api/ai/status');
