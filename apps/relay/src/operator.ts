@@ -6,7 +6,7 @@
  * credential reading, or model-generated screen coordinates. No action may
  * be reported as verified solely because Windows accepted an input event.
  */
-import { ACTIONS, parseCommand, routeIntent, validateCommand } from '../../../packages/command-protocol/src/index';
+import { ACTIONS, parseCommand, routeIntent, desktopWhatsAppWorkflow, validateCommand } from '../../../packages/command-protocol/src/index';
 import type { ActionName, CommandStatus } from '../../../packages/shared-types/src/index';
 import { HttpError, Relay } from './core';
 import { all, one, run, type DB, type Row } from './db';
@@ -293,7 +293,23 @@ export class Operator {
     const intent=routeIntent(request,parsed);
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/.test(url);
-    if(projectLaunch && !isFollowup){
+    const nativeWhatsAppWorkflow = !isFollowup ? desktopWhatsAppWorkflow(answer) : null;
+    if(nativeWhatsAppWorkflow){
+      // Keep the user's request intact: open the personal desktop app first,
+      // then check either verified numeric unread count or visible unread sender
+      // names (the latter needs a separate owner approval). Never use Web.
+      const inspectAction = nativeWhatsAppWorkflow === 'count'
+        ? 'whatsapp.check' : 'whatsapp.unread_senders';
+      result = {
+        summary: nativeWhatsAppWorkflow === 'count'
+          ? 'Open Personal WhatsApp Desktop and verify unread chat count'
+          : 'Open Personal WhatsApp Desktop and review visible unread chat senders (approval required)',
+        steps: [
+          validateStep({action:'whatsapp.open',args:{mode:'desktop'}}),
+          validateStep({action:inspectAction,args: nativeWhatsAppWorkflow==='count'?{mode:'desktop'}:{}}),
+        ],
+      };
+    } else if(projectLaunch && !isFollowup){
       if(!/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile))
         throw new HttpError(422,'PROJECT_PROFILE_REQUIRED','Set the exact Chrome profile directory in this HUKM Project.');
       const destination=url.startsWith('https://chatgpt.com/')
