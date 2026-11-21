@@ -61,6 +61,7 @@ export type ActionName =
   | 'chatgpt.prompt_draft'
   | 'chatgpt.submit_prompt'
   | 'chatgpt.download_visible'
+  | 'whatsapp.select_chat'
   | 'whatsapp.read_selected'
   | 'whatsapp.draft_reply'
   | 'whatsapp.send_reviewed'
