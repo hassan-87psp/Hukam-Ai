@@ -25,8 +25,8 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "calendar.event_draft", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
-    "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.attach_preview",
+    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
+    "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
 
@@ -35,9 +35,9 @@ CAPABILITY_OF = {
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
     "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.scroll": "input",
-    "calendar.event_draft": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
+    "calendar.event_draft": "browser", "calendar.save_reviewed": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
     "chatgpt.download_visible": "browser", "whatsapp.read_selected": "whatsapp",
-    "whatsapp.draft_reply": "whatsapp", "whatsapp.attach_preview": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
+    "whatsapp.draft_reply": "whatsapp", "whatsapp.send_reviewed": "whatsapp", "whatsapp.attach_preview": "whatsapp", "whatsapp.send_attachment_reviewed": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
     "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp", "whatsapp.unread_senders": "whatsapp",
 }
 
@@ -163,7 +163,7 @@ def validate(action: str, args: dict) -> dict:
         if re.match(r"^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\b|\s)", label, re.I):
             raise ValidationError("sensitive button requires dedicated workflow")
         return {"label": label}
-    if action == "calendar.event_draft":
+    if action in ("calendar.event_draft", "calendar.save_reviewed"):
         provider = a.get("provider")
         if provider not in ("google", "outlook"):
             raise ValidationError("unsupported Calendar provider")
@@ -202,13 +202,13 @@ def validate(action: str, args: dict) -> dict:
                 raise ValidationError("invalid ChatGPT prompt")
             out["prompt"] = prompt
         return out
-    if action == "whatsapp.draft_reply":
+    if action in ("whatsapp.draft_reply", "whatsapp.send_reviewed"):
         contact = _str(a.get("contact"), "contact", 80)
         message = a.get("message")
         if not isinstance(message, str) or not message.strip() or len(message) > 1000 or re.search(r"[\x00-\x08\x0b-\x1f]", message):
             raise ValidationError("invalid WhatsApp reply")
         return {"contact": contact, "message": message}
-    if action == "whatsapp.attach_preview":
+    if action in ("whatsapp.attach_preview", "whatsapp.send_attachment_reviewed"):
         return {"contact": _str(a.get("contact"), "contact", 80),
                 "path": _str(a.get("path"), "path", 1024)}
     if action == "browser.profile_open":

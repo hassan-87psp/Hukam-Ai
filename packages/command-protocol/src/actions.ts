@@ -296,6 +296,14 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({provider:a.provider, title, profile, startUtc, endUtc, timeZone, details, location});
     },
   },
+  'calendar.save_reviewed': {
+    name:'calendar.save_reviewed', capability:'browser', label:'Save reviewed Calendar event (final approval)',
+    timeoutMs:30000, alwaysApprove:true,
+    validate(a){
+      const v = ACTIONS['calendar.event_draft'].validate(a);
+      return v.ok ? ok(v.args) : v;
+    },
+  },
   'chatgpt.prompt_draft': {
     name:'chatgpt.prompt_draft', capability:'browser', label:'Draft prompt in ChatGPT Project',
     timeoutMs:25000, alwaysApprove:true,
@@ -321,8 +329,8 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     },
   },
   'chatgpt.download_visible': {
-    name:'chatgpt.download_visible', capability:'browser', label:'Download visible ChatGPT result',
-    timeoutMs:25000, alwaysApprove:true,
+    name:'chatgpt.download_visible', capability:'browser', label:'Wait for and download ChatGPT result',
+    timeoutMs:115000, alwaysApprove:true,
     validate(a) {
       if(typeof a.projectUrl!=='string' || a.projectUrl.length>500) return fail('invalid project URL');
       let u: URL;
@@ -348,6 +356,19 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({contact,message});
     },
   },
+  'whatsapp.send_reviewed': {
+    name:'whatsapp.send_reviewed',capability:'whatsapp',
+    label:'Send reviewed WhatsApp message (final approval)',
+    timeoutMs:30000,alwaysApprove:true,
+    validate(a){
+      const contact=str(a.contact,'contact',80);
+      if(isErr(contact))return contact;
+      const message=a.message;
+      if(typeof message!=='string'||!message.trim()||message.length>1000||
+         /[\u0000-\u0008\u000b-\u001f]/.test(message))return fail('invalid WhatsApp message');
+      return ok({contact,message});
+    },
+  },
   'whatsapp.attach_preview': {
     name:'whatsapp.attach_preview', capability:'whatsapp', label:'Prepare WhatsApp attachment preview',
     timeoutMs:30000, alwaysApprove:true,
@@ -357,6 +378,15 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       const path=windowsPath(a.path);
       if(isErr(path)) return path;
       return ok({contact,path});
+    },
+  },
+  'whatsapp.send_attachment_reviewed': {
+    name:'whatsapp.send_attachment_reviewed', capability:'whatsapp',
+    label:'Send reviewed WhatsApp file (final approval)',
+    timeoutMs:35000, alwaysApprove:true,
+    validate(a){
+      const v=ACTIONS['whatsapp.attach_preview'].validate(a);
+      return v.ok ? ok(v.args) : v;
     },
   },
   'screen.capture': {

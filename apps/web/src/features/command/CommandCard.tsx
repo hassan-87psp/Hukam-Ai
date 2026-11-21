@@ -13,9 +13,9 @@ export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'app.open': AppWindow, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
   'file.reveal': FolderOpen, 'web.open': Globe, 'web.search': Search, 'youtube.search': Youtube, 'youtube.play': Youtube,
   'device.status': Laptop, 'apps.list': AppWindow, 'window.active': Monitor, 'window.focus': Monitor, 'screen.capture': Monitor,
-  'diagnostics.probe': Monitor, 'ui.inspect': Monitor, 'ui.activate': Monitor, 'ui.scroll': Monitor, 'calendar.event_draft': Globe,
+  'diagnostics.probe': Monitor, 'ui.inspect': Monitor, 'ui.activate': Monitor, 'ui.scroll': Monitor, 'calendar.event_draft': Globe, 'calendar.save_reviewed': Globe,
   'chatgpt.prompt_draft': Pencil, 'chatgpt.submit_prompt': Pencil, 'chatgpt.download_visible': FileText,
-  'whatsapp.read_selected': MessageCircle, 'whatsapp.draft_reply': MessageCircle, 'whatsapp.attach_preview': FileText,
+  'whatsapp.read_selected': MessageCircle, 'whatsapp.draft_reply': MessageCircle, 'whatsapp.send_reviewed': MessageCircle, 'whatsapp.attach_preview': FileText, 'whatsapp.send_attachment_reviewed': FileText,
   'browser.control': Monitor, 'browser.profile_open': Globe, 'notepad.type': Pencil, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.unread_senders': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
 };
 
@@ -215,6 +215,10 @@ export function CommandResult({ c }: { c: Command }) {
         <p>WhatsApp windows: {String(r.whatsappWindowCount ?? 'unknown')}
           · WhatsApp foreground: {r.whatsappForeground ? 'Yes' : 'No'}
         </p>
+        {r.whatsappChromeTabDetected && <p className="rounded-lg bg-warn/10 p-2 text-warn">
+          WhatsApp Web is open in Chrome. This is NOT the installed Personal WhatsApp Desktop app.
+          HUKM will not silently use this browser tab for Desktop commands.
+        </p>}
         {r.whatsappDiagnosis && <p className="rounded-lg bg-field/50 p-2 text-ink">{String(r.whatsappDiagnosis)}</p>}
         {r.whatsappForeground !== true && <button className="btn-ghost px-3 py-2 text-xs"
           onClick={()=>void runAction('whatsapp.open',{mode:'desktop'},{label:'Open installed WhatsApp Desktop on laptop'})}>
@@ -236,6 +240,11 @@ export function CommandResult({ c }: { c: Command }) {
       return <p className="text-xs text-warn">{r.note ?? 'Control activated; outcome unverified.'}</p>;
     case 'calendar.event_draft':
       return <p className="text-xs text-warn">{r.note ?? 'Calendar composer opened; event NOT saved.'}</p>;
+    case 'calendar.save_reviewed':
+      return <div className="space-y-1 text-xs text-warn">
+        <p>{r.note ?? 'Calendar Save may have been clicked; event ID not verified.'}</p>
+        <p>Event ID verified: No · Attendee invites verified: No · Do not retry without checking Calendar first.</p>
+      </div>;
     case 'chatgpt.prompt_draft':
     case 'chatgpt.submit_prompt':
       return <p className="text-xs text-warn">{r.note ?? 'ChatGPT input attempted; output not independently verified.'}</p>;
@@ -247,6 +256,12 @@ export function CommandResult({ c }: { c: Command }) {
         <p className="text-xs text-warn">Visible on-screen text, saved to your private HUKM command history after approval. Not forwarded to Gemini.</p>
         {Array.isArray(r.visibleMessages) && r.visibleMessages.slice(0,8).map((message:string,i:number)=>
           <p key={i} className="whitespace-pre-wrap break-words rounded-lg bg-field/40 p-2">{message}</p>)}
+      </div>;
+    case 'whatsapp.send_attachment_reviewed':
+    case 'whatsapp.send_reviewed':
+      return <div className="space-y-1 text-xs text-warn">
+        <p>{r.note ?? 'Send was attempted, but delivery is not verified. Check the intended WhatsApp chat manually.'}</p>
+        <p>Send attempted: {r.sendAttempted ? 'Yes' : 'No'} · Delivery verified: No · Never retry automatically.</p>
       </div>;
     case 'whatsapp.draft_reply':
     case 'whatsapp.attach_preview':
@@ -304,10 +319,27 @@ function ApprovalBox({ c }: { c: Command }) {
           <dt className="text-ink2">Reply</dt><dd className="whitespace-pre-wrap break-words">{String(a.message)}</dd>
           <dt className="text-ink2">Effect</dt><dd>Types draft in selected WhatsApp Desktop chat, never sends.</dd>
         </>)}
+        {c.action === 'whatsapp.send_reviewed' && (<>
+          <dt className="text-ink2">FINAL SEND APPROVAL — Exact recipient</dt><dd>{String(a.contact)}</dd>
+          <dt className="text-ink2">Exact message</dt><dd className="whitespace-pre-wrap break-words">{String(a.message)}</dd>
+          <dt className="text-ink2">Effect</dt><dd>
+            Will click Send only if the foreground WhatsApp Desktop chat header and existing draft
+            match exactly. This may deliver a message immediately. Never automatically retry.
+          </dd>
+        </>)}
         {c.action === 'whatsapp.attach_preview' && (<>
           <dt className="text-ink2">Verified contact</dt><dd>{String(a.contact)}</dd>
           <dt className="text-ink2">Local file</dt><dd className="break-all">{String(a.path)}</dd>
           <dt className="text-ink2">Effect</dt><dd>Opens attachment preview only. Sending requires separate manual confirmation.</dd>
+        </>)}
+        {c.action === 'calendar.save_reviewed' && (<>
+          <dt className="text-ink2">FINAL CALENDAR SAVE APPROVAL</dt><dd>{String(a.provider)}</dd>
+          <dt className="text-ink2">Exact title</dt><dd>{String(a.title)}</dd>
+          <dt className="text-ink2">Time</dt><dd>{String(a.startUtc)} – {String(a.endUtc)} ({String(a.timeZone)})</dd>
+          <dt className="text-ink2">Chrome profile</dt><dd>{String(a.profile)}</dd>
+          <dt className="text-ink2">Effect</dt><dd>
+            May create a real event. Opens/clicks Save only if the visible editor URL and title match. Invitations and event ID cannot be guaranteed. Never retry automatically.
+          </dd>
         </>)}
         {c.action === 'calendar.event_draft' && (<>
           <dt className="text-ink2">Calendar</dt><dd>{String(a.provider)}</dd>
@@ -396,7 +428,9 @@ export default function CommandCard({ c, deviceName }: { c: Command; deviceName?
       {c.error && c.status !== 'cancelled' && <p className="mt-3 rounded-lg bg-bad/10 px-3 py-2 text-xs text-bad ring-1 ring-bad/20">{c.error.code}: {c.error.message}</p>}
       {c.status === 'completed' && whatsappResultUnverified(c.action,c.result) &&
         <p className="mt-3 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
-          WhatsApp unread result could not be verified. An older Controller incorrectly marked this check as Completed. The unread count is unknown, not zero.
+          {c.action === 'whatsapp.send_reviewed'
+            ? 'WhatsApp Send may have happened, but delivery was not verified. Check the chat before doing anything else. Do NOT retry automatically.'
+            : 'WhatsApp unread result could not be verified. An older Controller incorrectly marked this check as Completed. The unread count is unknown, not zero.'}
         </p>}
       {c.status === 'completed' && <div className="mt-3"><CommandResult c={c} /></div>}
     </div>

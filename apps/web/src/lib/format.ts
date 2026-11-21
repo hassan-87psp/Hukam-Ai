@@ -32,9 +32,11 @@ export function duration(ms: number | null | undefined): string {
  * This UI guard prevents the green badge from lying about those old results.
  */
 export function whatsappResultUnverified(action: ActionName, result: unknown): boolean {
-  if(action !== 'whatsapp.check' && action !== 'whatsapp.unread_senders') return false;
+  if(action !== 'whatsapp.check' && action !== 'whatsapp.unread_senders' && action !== 'whatsapp.send_reviewed' && action !== 'whatsapp.send_attachment_reviewed') return false;
   const r = result && typeof result === 'object' && !Array.isArray(result)
     ? result as Record<string, unknown> : {};
+  if(action === 'whatsapp.send_reviewed' || action === 'whatsapp.send_attachment_reviewed')
+    return r.deliveryVerified !== true;
   if(action === 'whatsapp.check')
     return !(typeof r.unreadChats === 'number' && Number.isInteger(r.unreadChats) &&
       r.unreadChats >= 0 && r.unreadChats <= 999 &&
@@ -84,11 +86,14 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'ui.activate': 'Activate visible control',
   'ui.scroll': 'Scroll active app (approved)',
   'calendar.event_draft': 'Calendar event draft',
+  'calendar.save_reviewed': 'Save reviewed Calendar event',
   'chatgpt.prompt_draft': 'ChatGPT prompt draft',
   'chatgpt.submit_prompt': 'Submit ChatGPT prompt',
   'chatgpt.download_visible': 'Download visible ChatGPT file',
   'whatsapp.read_selected': 'Read selected WhatsApp chat',
   'whatsapp.draft_reply': 'Draft WhatsApp reply',
+  'whatsapp.send_reviewed': 'Send reviewed WhatsApp message',
+  'whatsapp.send_attachment_reviewed': 'Send reviewed WhatsApp attachment',
   'whatsapp.attach_preview': 'WhatsApp file preview',
   'browser.control': 'Browser input (approval)',
   'notepad.type': 'Type into Notepad (approval)',

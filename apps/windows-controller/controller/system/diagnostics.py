@@ -17,6 +17,7 @@ def probe() -> dict:
             "windowsInteractive": True, "uiautomationInstalled": True,
             "whatsappDesktopWindow": True, "whatsappProcessRunning": True,
             "whatsappWindowCount": 1, "whatsappForeground": False,
+            "whatsappChromeTabDetected": False,
             "whatsappDiagnosis": "Desktop window available; focus WhatsApp to inspect unread indicators",
             "chromeProfileDirectories": ["Default", "Profile 1"],
             "activeApp": "chrome.exe", "monitorCount": 2,
@@ -28,7 +29,7 @@ def probe() -> dict:
         "whatsappDesktopWindow": False,
         "whatsappProcessRunning": False,
         "whatsappWindowCount": 0,
-        "whatsappForeground": False,
+        "whatsappForeground": False, "whatsappChromeTabDetected": False,
         "whatsappDiagnosis": "unknown",
         "chromeProfileDirectories": [],
         "activeApp": None,
@@ -46,8 +47,13 @@ def probe() -> dict:
     try:
         active = windows.active_window()
         result["activeApp"] = active.process if active else None
-        whatsapp_windows = wa_locator.desktop_windows()
+        all_windows = windows.list_windows()
+        whatsapp_windows = wa_locator.desktop_windows(all_windows)
         running = wa_locator.running_native_processes()
+        result["whatsappChromeTabDetected"] = any(
+            w.process.casefold() in ("chrome.exe", "msedge.exe")
+            and "whatsapp" in w.title.casefold() for w in all_windows
+        )
         result["whatsappDesktopWindow"] = bool(whatsapp_windows)
         result["whatsappWindowCount"] = len(whatsapp_windows)
         result["whatsappProcessRunning"] = bool(running) or bool(whatsapp_windows)
@@ -60,6 +66,8 @@ def probe() -> dict:
             if whatsapp_windows
             else "WhatsApp process is running, but no accessible top-level window was detected. Restore the app from taskbar."
             if running
+            else "WhatsApp Web/browser tab detected, but the installed Personal WhatsApp Desktop app is NOT detected. Open the real Windows application, not this Chrome tab."
+            if result["whatsappChromeTabDetected"]
             else "No installed WhatsApp Desktop window or process detected. Open the actual WhatsApp Windows app (not a Chrome tab)."
         )
     except Exception:

@@ -81,11 +81,23 @@ def test_calendar_draft_is_not_event_creation(sandbox):
     assert "HUKM+Test+Meeting" in url
     google = run("calendar.event_draft", clean)
     assert google.ok and google.result["eventSaved"] is False and google.result["verified"] is False
+    save = run("calendar.save_reviewed", v.validate("calendar.save_reviewed", args))
+    assert save.ok and save.result["saveAttempted"] is True
+    assert save.result["eventCreatedVerified"] is False
+    assert save.result["verified"] is False
+    editor_url = calendar_draft.event_url("google", args["title"], args["startUtc"],
+        args["endUtc"], args["timeZone"])
+    assert calendar_draft._same_prefilled_editor(editor_url, editor_url)
+    assert not calendar_draft._same_prefilled_editor(
+        editor_url.replace("HUKM+Test+Meeting", "Different+Event"), editor_url)
+    assert not calendar_draft._same_prefilled_editor("https://evil.test/", editor_url)
     args["provider"] = "outlook"
     outlook = run("calendar.event_draft", v.validate("calendar.event_draft", args))
     assert outlook.ok and outlook.result["invitesSent"] is False
     with pytest.raises(v.ValidationError):
         v.validate("calendar.event_draft", {**args, "startUtc": "2001-01-01T03:00:00Z"})
+    with pytest.raises(v.ValidationError):
+        v.validate("calendar.save_reviewed", {**args, "startUtc": "2001-01-01T03:00:00Z"})
 
 
 def test_whatsapp_read_and_draft_are_explicit_and_not_sent(sandbox):
@@ -94,8 +106,14 @@ def test_whatsapp_read_and_draft_are_explicit_and_not_sent(sandbox):
     r = run("whatsapp.draft_reply", args)
     assert r.ok and r.result["sent"] is False
     assert r.result["draftEntered"] is True
+    result = run("whatsapp.send_reviewed", v.validate("whatsapp.send_reviewed", args))
+    assert result.ok and result.result["sendAttempted"] is True
+    assert result.result["deliveryVerified"] is False
+    assert result.result["verified"] is False
     with pytest.raises(v.ValidationError):
         v.validate("whatsapp.draft_reply", {"contact": "Test", "message": ""})
+    with pytest.raises(v.ValidationError):
+        v.validate("whatsapp.send_reviewed", {"contact": "Test", "message": ""})
 
 
 def test_whatsapp_attachment_only_allowed_path_and_preview(sandbox, tmp_path):
@@ -109,6 +127,29 @@ def test_whatsapp_attachment_only_allowed_path_and_preview(sandbox, tmp_path):
     executable = sandbox["downloads"] / "malware.exe"
     executable.write_bytes(b"exe")
     assert not run("whatsapp.attach_preview", {"contact": "Test Contact", "path": str(executable)}).ok
+
+
+def test_stale_whatsapp_attachment_authorization_is_invalidated_on_new_preview(sandbox):
+    # Even if a new preview fails, it must never leave the older file/send
+    # authorized for a different or accidentally retried attachment.
+    desktop_ops._pending_attachment = {
+        "contact": "Previous Contact", "path": "C:\\old\\report.pdf",
+        "hwnd": 123, "createdAt": 0, "sha256": "old", "size": 5,
+    }
+    result = desktop_ops.attach_preview("Ali", "C:\\Users\\Test\\Downloads\\new.pdf")
+    assert result["simulated"] is True
+    assert desktop_ops._pending_attachment is None
+
+
+def test_chatgpt_completed_file_snapshot_requires_known_type_and_size(tmp_path):
+    target = tmp_path / "new-banner.png"
+    target.write_bytes(b"12345")
+    (tmp_path / "image.png.crdownload").write_bytes(b"partial")
+    (tmp_path / "readme.exe").write_bytes(b"danger")
+    files = chatgpt._files(tmp_path)
+    assert files["new-banner.png"][1] == 5
+    assert "image.png.crdownload" not in files
+    assert "readme.exe" not in files
 
 
 def test_chatgpt_project_url_and_draft_constraints(sandbox):

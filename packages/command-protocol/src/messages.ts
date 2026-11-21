@@ -63,6 +63,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('Active app ko scroll karne se pehle approval chahiye.', 'فعال ایپ اسکرول کرنے کے لیے اجازت چاہیے۔', 'Approval required to scroll the foreground application.');
     case 'calendar.event_draft':
       return L('Calendar event ka draft browser mein kholne ke liye approval chahiye.', 'کیلنڈر ایونٹ ڈرافٹ کی اجازت چاہیے۔', 'Approval required to open the Calendar event draft.');
+    case 'calendar.save_reviewed':
+      return L('Calendar event ke exact title/date review karke final Save approval chahiye.', 'کیلنڈر میں محفوظ کرنے کی آخری اجازت چاہیے۔', 'Final approval required before clicking Save in the reviewed Calendar event editor.');
     case 'chatgpt.prompt_draft':
       return L('ChatGPT Project mein prompt type karne ke liye approval chahiye.', 'چیٹ جی پی ٹی میں پرامپٹ لکھنے کی اجازت چاہیے۔', 'Approval required to draft the prompt in ChatGPT.');
     case 'chatgpt.submit_prompt':
@@ -75,6 +77,10 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('WhatsApp mein sirf reply draft karunga, send nahi.', 'واٹس ایپ ریپلائی ڈرافٹ ہوگا، بھیجا نہیں جائے گا۔', 'WhatsApp reply will be drafted, not sent.');
     case 'whatsapp.attach_preview':
       return L('WhatsApp file attachment ka preview tayyar karunga, send nahi.', 'فائل اٹیچمنٹ ڈرافٹ ہوگا، بھیجا نہیں جائے گا۔', 'WhatsApp attachment preview will be prepared, not sent.');
+    case 'whatsapp.send_attachment_reviewed':
+      return L('Exact WhatsApp contact aur file review karke final Send approval chahiye.', 'واٹس ایپ فائل بھیجنے کے لیے آخری اجازت چاہیے۔', 'Final approval required to send the exact reviewed WhatsApp attachment.');
+    case 'whatsapp.send_reviewed':
+      return L('Exact recipient aur message review karke Send ki final approval chahiye.', 'مکمل پیغام بھیجنے کے لیے آخری اجازت چاہیے۔', 'Final approval required to send the exact WhatsApp message to the selected recipient.');
     case 'browser.profile_open':
       return L('Selected Chrome profile kholne se pehle approval chahiye.','منتخب کروم پروفائل کھولنے کی اجازت چاہیے۔','Approval is required to open the saved Chrome profile.');
     case 'notepad.type':
@@ -154,6 +160,8 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Scroll input deliver hua. Actual page movement verify nahi hui.', 'اسکرول بھیج دیا، نتیجے کی تصدیق نہیں ہوئی۔', 'Scroll input delivered; on-screen movement not independently verified.');
     case 'calendar.event_draft':
       return L('Calendar event draft open hua. Event abhi save nahi hua.', 'کیلنڈر ڈرافٹ کھلا ہے مگر محفوظ نہیں ہوا۔', 'Calendar draft opened. Event not yet saved.');
+    case 'calendar.save_reviewed':
+      return L('Calendar Save click attempt hua; event ID verify nahi. Calendar check karein, auto-retry nahi.', 'کیلنڈر محفوظ کرنے کی کوشش ہوئی، تصدیق نہیں ہوئی۔', 'Calendar Save attempted; event ID not verified. Check before retrying.');
     case 'chatgpt.prompt_draft':
       return L('ChatGPT mein prompt draft hua. Abhi send nahi hua.', 'پرامپٹ لکھا گیا، بھیجا نہیں گیا۔', 'ChatGPT prompt drafted but not submitted.');
     case 'chatgpt.submit_prompt':
@@ -166,6 +174,10 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Selected chat mein reply draft hua; send nahi hua.', 'ریپلائی ڈرافٹ ہوا، بھیجا نہیں گیا۔', 'Reply drafted in selected chat; not sent.');
     case 'whatsapp.attach_preview':
       return L('Attachment request hui; send nahi hua. Preview check karein.', 'فائل ڈرافٹ ہوئی، بھیجی نہیں گئی۔', 'Attachment was selected, not sent. Verify the preview.');
+    case 'whatsapp.send_attachment_reviewed':
+      return L('WhatsApp file Send attempt hua; delivery verify nahi hui. Auto-retry mat karein.', 'فائل بھیجنے کی کوشش ہوئی مگر تصدیق نہیں ہوئی۔', 'WhatsApp attachment Send attempted; delivery is not verified. Do not retry automatically.');
+    case 'whatsapp.send_reviewed':
+      return L('WhatsApp Send button press hua; delivery confirm nahi. Chat check karein, auto-retry nahi.', 'واٹس ایپ ارسال کرنے کی کوشش ہوئی، ڈیلیوری کی تصدیق نہیں۔', 'WhatsApp Send was attempted, but delivery is not verified. Check the chat; do not retry automatically.');
     case 'browser.profile_open':
       return L('Chrome profile start kar di. Login/page load verify nahi hua.','کروم پروفائل شروع ہوئی، نتیجہ تصدیق شدہ نہیں۔','Chrome profile launch requested; page and login are not verified.');
     case 'notepad.type':

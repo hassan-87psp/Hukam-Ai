@@ -26,8 +26,8 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'web.open','web.search','youtube.search','youtube.play',
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
-  'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply',
-  'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft',
+  'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed',
+  'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft', 'calendar.save_reviewed',
   'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
@@ -65,6 +65,18 @@ export function validatePlanShape(v:unknown):{summary:string;steps:Step[]} {
   if(!Array.isArray(obj.steps)||obj.steps.length<1||obj.steps.length>5)
     throw new HttpError(400,'BAD_PLAN','A plan must contain 1 to 5 supported actions');
   const steps=obj.steps.map(validateStep);
+  // Final irreversible actions are not safely repeatable. Restrict an AI
+  // plan to at most ONE such action, and only as its final step. After an
+  // uncertain Send/Save, no additional computer commands may follow.
+  const irreversible = new Set<ActionName>([
+    'whatsapp.send_reviewed', 'whatsapp.send_attachment_reviewed',
+    'calendar.save_reviewed',
+  ]);
+  const finalActions = steps.filter(s=>irreversible.has(s.action));
+  if(finalActions.length>1 ||
+      (finalActions.length===1 && !irreversible.has(steps[steps.length-1].action)))
+    throw new HttpError(422,'UNSAFE_PLAN',
+      'WhatsApp Send or Calendar Save must be the only final high-impact action in a plan.');
   return {summary:cleanSummary(obj.summary)||steps.map(x=>ACTIONS[x.action].label).join(', '),steps};
 }
 function restoreJson(text:string):unknown{
@@ -88,19 +100,26 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'Answer follow-up messages using the original request and most recent answer supplied. Do not ask the same question twice if its answer is present.',
     'Only use these precise action names: app.open, folder.open, folder.list, file.search, file.open, file.reveal,',
     'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
-    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, calendar.event_draft,',
+    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, calendar.event_draft, calendar.save_reviewed,',
     'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
-    'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.attach_preview.',
-    'Never use arbitrary shell, file deletion, payments, password/OTP reading or WhatsApp Send. Do not pretend a draft was sent.',
+    'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.send_reviewed, whatsapp.attach_preview, whatsapp.send_attachment_reviewed.',
+    'Never use arbitrary shell, file deletion, payments, password/OTP reading or UNREVIEWED WhatsApp Send. Do not pretend a draft was sent.',
     'calendar.event_draft opens a prefilled Google/Outlook editor only, not a saved event or invitations. Return an honest draft summary.',
+    'calendar.save_reviewed can be used only after the owner explicitly asks to SAVE the exact reviewed Calendar event in the correct Chrome profile.',
+    'It requires separate final approval; the action tries visible Save but never claims API event ID, attendance invites or successful creation without provider verification.',
     'For creating a meeting, use calendar.event_draft only with explicit provider, title, startUtc, endUtc, timeZone and saved Chrome profile.',
     'If time, date, calendar provider, or selected recipient is unknown, ask one question and set steps:[]. Never guess.',
     'WhatsApp is PERSONAL DESKTOP only. whatsapp.read_selected reads visible chat after separate owner approval, do not send contents to Gemini.',
     'whatsapp.draft_reply needs exact selected contact and reply text, types only; never sends.',
+    'whatsapp.send_reviewed is allowed only after an explicit user instruction to send a precise message to the exact selected contact.',
+    'It requires separate final approval. Never auto-retry an uncertain WhatsApp send.',
+    'whatsapp.send_attachment_reviewed needs an exact matching attachment preview in the active Personal WhatsApp Desktop,',
+    'an explicit request to send that selected file, and separate final user approval.',
     'whatsapp.attach_preview needs exact selected contact and fully qualified local file path in an allowed folder; does not send.',
     'For ChatGPT image/banner/script tasks in a saved Project, open browser.profile_open to its exact configured ChatGPT URL,',
     'then chatgpt.prompt_draft for the reviewed prompt. chatgpt.submit_prompt needs separate approval.',
-    'chatgpt.download_visible can only download a currently visible, uniquely identified result after it is ready.',
+    'chatgpt.download_visible waits for exactly one visible generated Download button in the saved ChatGPT Project,',
+    'then confirms a new completed file in Downloads. Do not claim completion when no file is detected.',
     'Any UI Automation failure must be returned as failure/unverified, never fabricated success.',
     'Never invent screen coordinates. Do not use browser.control kind click. Browser control kind scroll:',
     '{"kind":"scroll","steps":-2} scrolls down. browser.control requires a foreground browser.',
@@ -264,9 +283,21 @@ export class Operator {
       this.savePending(userId,key,request,result.question);
       return {kind:'clarify',topic:'operator-followup',question:result.question};
     }
+    // High-impact effects must be supported by the *user's request*, not
+    // merely a model suggestion or untrusted project instructions.
+    for(const step of result.steps){
+      if((step.action==='whatsapp.send_reviewed' || step.action==='whatsapp.send_attachment_reviewed') &&
+         !/(?:\bsend\b|\bsent\b|\bbhej\w*\b|\breply\s*(?:kar\s*do|kardo|kro|karo)\b)/i.test(request))
+        throw new HttpError(422,'WA_SEND_NOT_REQUESTED',
+          'HUKM cannot send a WhatsApp message unless the owner explicitly asks to send/reply.');
+      if(step.action==='calendar.save_reviewed' &&
+         !/(?:\bsave\b|\bschedule\b|\bcreate\b|\badd\b|\bbook\b|\bbana\w*\b|\bconfirm\b)/i.test(request))
+        throw new HttpError(422,'CALENDAR_SAVE_NOT_REQUESTED',
+          'HUKM cannot save a Calendar event without an explicit creation or Save request.');
+    }
     // Project routing is enforced by the relay, not just written into the AI prompt.
     for(const step of result.steps){
-      if(step.action==='calendar.event_draft' && step.args.profile!==project?.chromeProfile)
+      if((step.action==='calendar.event_draft' || step.action==='calendar.save_reviewed') && step.args.profile!==project?.chromeProfile)
         throw new HttpError(422,'PROJECT_PROFILE_MISMATCH','Calendar must use the selected Project Chrome profile.');
       if(step.action==='browser.profile_open' && String(step.args.url).startsWith('https://chatgpt.com') &&
          project?.chatgptProjectUrl && step.args.url!==project.chatgptProjectUrl)

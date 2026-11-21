@@ -143,38 +143,90 @@ def submit_prompt(expected_url: str, expected_prompt: str) -> dict:
         raise ChatGPTError("Unable to submit ChatGPT prompt safely") from exc
 
 
-def _files(folder: Path) -> dict[str, float]:
+def _files(folder: Path) -> dict[str, tuple[float, int]]:
+    """Only completed-type files, with size to detect in-progress writes."""
     allowed = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".txt", ".docx"}
     try:
-        return {p.name: p.stat().st_mtime for p in folder.iterdir()
+        return {p.name: (p.stat().st_mtime, p.stat().st_size) for p in folder.iterdir()
                 if p.is_file() and p.suffix.casefold() in allowed}
     except OSError:
         return {}
 
 
-def download_visible(expected_url: str, downloads: Path) -> dict:
+def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
+    """Wait for a unique visible ChatGPT Download control after generation.
+
+    This is allowed only in the exact user-configured ChatGPT Project tab.
+    No blind click, no guessed URL, no Chrome profile switching.
+    """
     if launcher.SIMULATE:
         launcher._record("chatgpt.download_visible", "visible download")
         return {"downloadVerified": True, "fileName": "test-image.png",
                 "simulated": True}
     try:
-        _active, root = _chrome_context(expected_url)
-        buttons = _interactive(root, "ButtonControl", ("download", "download image", "save image"))
-        if len(buttons) != 1:
-            raise ChatGPTError("Exactly one visible ChatGPT Download button must be available")
+        # ChatGPT image generation can take longer than the next model step;
+        # do not immediately fail just because the Download button is absent.
+        deadline = time.monotonic() + 75.0
+        chosen = None
+        while time.monotonic() < deadline:
+            if cancel is not None and cancel.is_set():
+                raise ChatGPTError("ChatGPT download cancelled before selecting a file")
+            active, root = _chrome_context(expected_url)
+            buttons = _interactive(root, "ButtonControl", ("download", "download image", "save image"))
+            if len(buttons) > 1:
+                raise ChatGPTError("More than one Download button is visible; select the intended result manually")
+            if len(buttons) == 1 and buttons[0].IsEnabled:
+                chosen = (active, buttons[0])
+                break
+            time.sleep(0.85)
+        if chosen is None:
+            raise ChatGPTError(
+                "No single visible Download button appeared before timeout. Generation may still be running."
+            )
+        active, button = chosen
+        if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
+            raise ChatGPTError("Chrome focus changed, so Download was not clicked")
         before = _files(downloads)
-        buttons[0].Click()
-        for _ in range(15):
-            time.sleep(0.3)
+        button.Click()
+        download_deadline = time.monotonic() + 22.0
+        stable_name = None
+        stable_size = -1
+        stable_checks = 0
+        while time.monotonic() < download_deadline:
+            if cancel is not None and cancel.is_set():
+                raise ChatGPTError("Download monitoring stopped; file transfer may still continue in Chrome")
             current = _files(downloads)
             new_files = sorted((x for x in current if x not in before), key=lambda x: current[x], reverse=True)
+            if len(new_files) > 1:
+                raise ChatGPTError("Multiple new downloads appeared. Cannot safely identify the exact generated file.")
             if new_files:
-                path = downloads / new_files[0]
-                if path.stat().st_size > 0:
-                    return {"downloadVerified": True, "fileName": path.name,
-                            "sizeBytes": path.stat().st_size, "verified": True,
-                            "note": "A new file was detected in Downloads after the selected Download click."}
-        raise ChatGPTError("No new supported image/document was detected in Downloads")
+                name = new_files[0]
+                size = current[name][1]
+                # Chrome can expose the target file before writing finishes.
+                # Require a stable nonzero size for several independent polls.
+                try:
+                    partial = any(
+                        p.name.casefold().startswith(name.casefold()) and p.suffix.casefold() in (".crdownload", ".tmp")
+                        for p in downloads.iterdir()
+                    )
+                except OSError:
+                    partial = True
+                if size > 0 and not partial:
+                    if name == stable_name and size == stable_size:
+                        stable_checks += 1
+                    else:
+                        stable_name, stable_size, stable_checks = name, size, 1
+                    if stable_checks >= 4:
+                        return {"downloadVerified": True, "fileName": name,
+                                "sizeBytes": size, "verified": True,
+                                "note": "One newly downloaded file remained stable across multiple checks in Downloads."}
+                else:
+                    stable_name, stable_size, stable_checks = None, -1, 0
+            time.sleep(0.4)
+        raise ChatGPTError(
+            "Download button was clicked but no new finished image/document was detected. "
+            "Check Chrome Downloads; do not assume success."
+        )
     except ChatGPTError:
         raise
     except Exception as exc:

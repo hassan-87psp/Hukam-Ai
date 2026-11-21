@@ -297,6 +297,14 @@ class Executor:
         except calendar_draft.CalendarDraftError as exc:
             raise ActionError("CALENDAR_DRAFT_FAILED", str(exc)) from exc
 
+    def do_calendar_save_reviewed(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Calendar Save cancelled before execution")
+        try:
+            return calendar_draft.save_reviewed(a)
+        except calendar_draft.CalendarDraftError as exc:
+            raise ActionError("CALENDAR_SAVE_NOT_SAFE", str(exc)) from exc
+
     def do_chatgpt_prompt_draft(self, a, cancel):
         if cancel.is_set():
             raise ActionError("CANCELLED", "ChatGPT draft cancelled")
@@ -318,7 +326,7 @@ class Executor:
             raise ActionError("CANCELLED", "ChatGPT download cancelled")
         p = self.folder_path("downloads")
         try:
-            return chatgpt.download_visible(a["projectUrl"], p)
+            return chatgpt.download_visible(a["projectUrl"], p, cancel)
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 
@@ -367,6 +375,14 @@ class Executor:
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
+    def do_whatsapp_send_reviewed(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "WhatsApp Send cancelled before execution")
+        try:
+            return wa_desktop.send_reviewed(a["contact"], a["message"], cancel)
+        except wa_desktop.DesktopWhatsAppError as exc:
+            raise ActionError("WHATSAPP_SEND_NOT_SAFE", str(exc)) from exc
+
     def do_whatsapp_attach_preview(self, a, cancel):
         if cancel.is_set():
             raise ActionError("CANCELLED", "Attachment cancelled")
@@ -379,6 +395,17 @@ class Executor:
             return wa_desktop.attach_preview(a["contact"], str(path))
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
+
+    def do_whatsapp_send_attachment_reviewed(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Attachment Send cancelled before execution")
+        path = v.check_openable(Path(a["path"]), self.root_paths())
+        if not path.is_file():
+            raise ActionError("NOT_ALLOWED", "Attachment no longer exists in allowed folders")
+        try:
+            return wa_desktop.send_attachment_reviewed(a["contact"], str(path), cancel)
+        except wa_desktop.DesktopWhatsAppError as exc:
+            raise ActionError("WHATSAPP_SEND_NOT_SAFE", str(exc)) from exc
 
     def do_whatsapp_compose(self, a, _c):
         return {"contact": a["contact"], **wa.compose(a["phone"], a["message"], self.cfg.whatsapp_mode, self.cfg.browser)}
