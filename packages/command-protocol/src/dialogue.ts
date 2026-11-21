@@ -112,7 +112,7 @@ export function resolveDialogue(
       parsed.topic !== 'empty' && parsed.topic !== 'contact-unknown')
     return { handled: false };
   const fullNewAction = parsed.kind === 'command'
-    && /\b(kholo|khol|open|launch|search|dhoondo|find|play|chalao|lock|check|band|send|bhejo|likho)\b/.test(t);
+    && /\b(kholo|khol|open|launch|search|dhoondo|find|play|chalao|lock|check|band|close|quit|exit|send|bhejo|likho)\b/.test(t);
 
   if (state.topic === 'whatsapp-choice') {
     const choice = parseWhatsAppChoice(text);
