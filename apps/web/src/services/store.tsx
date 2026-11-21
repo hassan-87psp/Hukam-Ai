@@ -22,6 +22,7 @@ import {
   type UserSettings,
 } from '../../../../packages/shared-types/src/index';
 import { api, ApiError, del, get, patch, post, put, uid } from './api';
+import { whatsappResultUnverified } from '../lib/format';
 import { Realtime, type RealtimeState } from './realtime';
 import { listVoices, pickVoice, speak, stopSpeaking, textForVoice } from './voice';
 
@@ -233,7 +234,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!FINAL_STATUSES.includes(c.status)) return;
       announced.current.add(c.id);
       const lang = settingsRef.current.responseLang;
-      if (c.status === 'completed') {
+      if (c.status === 'completed' && whatsappResultUnverified(c.action,c.result)) {
+        agent({
+          roman:'WhatsApp unread count ya names verify nahi ho sake. Ye zero nahi hai. Devices mein Controller version check karein aur HUKM diagnostics chalayein.',
+          ur:'واٹس ایپ کے ان ریڈ میسجز کی تصدیق نہیں ہوئی۔ یہ صفر نہیں ہیں۔',
+          en:'WhatsApp unread count or senders could not be verified. This does not mean zero unread. Check the Controller version and run HUKM diagnostics.',
+        },'warn');
+        setFlash({state:'error',until:Date.now()+2200});
+      } else if (c.status === 'completed') {
         const m = successMessage(c.action, c.args, c.result);
         agent(m, c.result?.ambiguous || c.result?.windowDetected === false || c.result?.mode === 'search' && c.action === 'youtube.play' ? 'warn' : 'ok');
         setFlash({ state: 'success', until: Date.now() + 2200 });

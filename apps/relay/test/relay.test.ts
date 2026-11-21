@@ -327,6 +327,40 @@ describe('commands', () => {
     const done = await waitStatus(r.data.command.id, ['failed']);
     expect(done.error).toEqual({ code: 'NOT_FOUND', message: 'no matching file' });
   });
+  it('fails legacy WhatsApp unknown unread result instead of green Completed', async () => {
+    for(const result of [
+      {unreadChats:null,source:'unavailable',note:'Unread count could not be verified'},
+      {unreadChats:0},
+      {unreadChats:9999,source:'window title'},
+      {unreadChats:null,opened:'desktop',source:'unavailable'},
+    ]) {
+      device.auto = () => ({ok:true,result});
+      const r=await api('POST','/api/commands',{action:'whatsapp.check',args:{mode:'desktop'}});
+      expect(r.status).toBe(200);
+      const finished=await waitStatus(r.data.command.id,['failed']);
+      expect(finished.status).toBe('failed');
+      expect(finished.error.code).toBe('UNVERIFIABLE');
+      expect(finished.error.message).toContain('unknown, NOT zero');
+    }
+  });
+  it('accepts verified WhatsApp zero and nonzero counts', async () => {
+    for(const count of [0,4]){
+      device.auto=()=>({ok:true,result:{unreadChats:count,source:'WhatsApp Desktop Unread filter',messagesRead:false}});
+      const r=await api('POST','/api/commands',{action:'whatsapp.check',args:{mode:'desktop'}});
+      expect(r.status).toBe(200);
+      const finished=await waitStatus(r.data.command.id,['completed']);
+      expect(finished.result.unreadChats).toBe(count);
+    }
+  });
+  it('fails unread sender results without actual readable names', async () => {
+    device.auto=()=>({ok:true,result:{senders:[],visibleOnly:true}});
+    const r=await api('POST','/api/commands',{action:'whatsapp.unread_senders',args:{}});
+    expect(r.status).toBe(200);
+    expect(r.data.command.status).toBe('awaiting_approval');
+    await api('POST',`/api/commands/${r.data.command.id}/approve`);
+    const finished=await waitStatus(r.data.command.id,['failed']);
+    expect(finished.error.code).toBe('UNVERIFIABLE');
+  });
   it('holds sensitive commands for approval, then executes after approval', async () => {
     device.auto = () => ({ ok: true, result: {}, screenshot: { mime: 'image/jpeg', dataBase64: Buffer.from('fakejpeg').toString('base64'), width: 10, height: 10 } });
     const r = await api('POST', '/api/commands', { text: 'screen dikhao' });
