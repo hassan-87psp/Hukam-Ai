@@ -118,7 +118,7 @@ describe('contextual follow-up', () => {
     });
     const withoutSaved = resolveDialogue(state('message-contact'), 'Shahid ka', []);
     expect(withoutSaved).toMatchObject({result:{kind:'clarify',topic:'message-body'},
-      next:{topic:'message-body',contact:'Shahid ka'}});
+      next:{topic:'message-body',contact:'Shahid'}});
     expect(resolveDialogue(state('message-body',{contact:'Shahid'}),'Main kal aaunga',[]))
       .toMatchObject({result:{kind:'command',action:'whatsapp.compose',
         args:{contact:'Shahid',message:'Main kal aaunga'}}});
