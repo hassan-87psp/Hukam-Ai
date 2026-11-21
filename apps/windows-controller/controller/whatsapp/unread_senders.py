@@ -78,6 +78,14 @@ def _unread_filter_selected(control) -> bool | None:
     return None
 
 
+def _assert_same_native_foreground(expected_hwnd: int) -> None:
+    """Fail closed if another app/window takes focus while reading sender titles."""
+    current = windows.active_window()
+    if not current or current.hwnd != expected_hwnd or not locator.matches_desktop_window(current):
+        raise UnreadSendersUnavailable(
+            "WhatsApp Desktop lost focus while checking unread senders; no contact names returned")
+
+
 def read_unread_senders() -> dict:
     if launcher.SIMULATE:
         return {"supported": True, "senders": ["Test Contact"],
@@ -109,7 +117,7 @@ def read_unread_senders() -> dict:
         if width < 360 or height < 350:
             raise UnreadSendersUnavailable("Make WhatsApp Desktop visible and larger before checking senders")
 
-        unread_control = None
+        unread_matches = []
         for index, (ctrl, _depth) in enumerate(auto.WalkControl(root, maxDepth=10)):
             if index >= 650:
                 break
@@ -120,13 +128,19 @@ def read_unread_senders() -> dict:
                 continue
             name = " ".join(str(ctrl.Name or "").split()).strip()
             if _UNREAD.fullmatch(name):
-                unread_control = ctrl
-                break
-        if unread_control is None:
-            raise UnreadSendersUnavailable("WhatsApp did not expose its Unread filter to Windows accessibility")
+                unread_matches.append(ctrl)
+        if len(unread_matches) != 1:
+            raise UnreadSendersUnavailable(
+                "WhatsApp must expose exactly one visible Unread filter; no ambiguous click performed")
 
+        unread_control = unread_matches[0]
+        _assert_same_native_foreground(active.hwnd)
         unread_control.Click()
         time.sleep(0.35)
+        _assert_same_native_foreground(active.hwnd)
+        # Refresh the tree after clicking a React/WinUI filter to avoid
+        # reading stale chat rows from the previous filter.
+        root = auto.ControlFromHandle(active.hwnd)
         selected = _unread_filter_selected(unread_control)
         if selected is False:
             raise UnreadSendersUnavailable(
@@ -167,6 +181,7 @@ def read_unread_senders() -> dict:
                 rows.append((y, name))
             if len(rows) >= 15:
                 break
+        _assert_same_native_foreground(active.hwnd)
         unique = list(dict.fromkeys(v for _, v in sorted(rows, key=lambda r: r[0])))
         if not unique:
             # Could be genuinely empty, but without an exposed numeric unread
