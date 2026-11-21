@@ -20,7 +20,7 @@ function AgentBubble({ m }: { m: Extract<ChatMessage, { kind: 'agent' }> }) {
       <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-blue/15 ring-1 ring-ice/25"><BrainMark className="h-5 w-5" /></span>
       <div className={cx('glass max-w-[85%] rounded-2xl rounded-bl-md px-4 py-2.5 ring-1', tone)}>
         {m.provider === 'gemini' && <span className="mb-1 inline-block text-[10px] font-medium tracking-wide text-ice">GEMINI AI</span>}
-        <p className={cx('whitespace-pre-wrap break-words text-[15px] leading-relaxed', settings.responseLang === 'ur' && m.provider !== 'gemini' && 'urdu text-right')} lang={settings.responseLang === 'ur' && m.provider !== 'gemini' ? 'ur' : undefined}>{text}</p>
+        <p className={cx('whitespace-pre-wrap break-words text-[15px] leading-relaxed', settings.responseLang === 'ur' && 'urdu text-right')} lang={settings.responseLang === 'ur' ? 'ur' : undefined}>{text}</p>
         <div className="mt-1 flex items-center justify-between gap-3">
           <span className="text-[10px] text-ink2">{clock(m.at)}</span>
           <button onClick={() => say(m.msg, true)} className="text-ink2 hover:text-ice" aria-label="Speak this reply"><Volume2 className="h-3.5 w-3.5" /></button>
