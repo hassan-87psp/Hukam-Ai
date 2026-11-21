@@ -1,4 +1,4 @@
-HUKM AI Windows Controller - Consolidated Install/Update (v1.6.3)
+HUKM AI Windows Controller - Consolidated Install/Update (v1.6.4)
 
 1. Extract the ENTIRE ZIP to one temporary folder.
 2. Close any previous HUKM Controller black window. Do not delete old folders yet.

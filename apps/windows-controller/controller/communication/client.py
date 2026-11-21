@@ -33,7 +33,11 @@ class ControllerClient:
         self.enabled_caps: list[str] = list(cfg.capabilities)
         self.executor = Executor(cfg, lambda: self.enabled_caps)
         self.dedupe = DedupeStore(data_dir() / "executed.json")
-        self.pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hukm-act")
+        # Windows UI Automation, keyboard, WhatsApp selection, draft and Send all
+        # share the foreground desktop. Two workers can race on different chats.
+        # Serialize ALL OS actions; a queued action is rechecked for cancellation
+        # by Executor.run before it touches the desktop.
+        self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hukm-act")
         self.cancels: dict[str, threading.Event] = {}
         self.outbox: dict[str, dict] = {}  # results not yet acknowledged by the relay
         self.ws = None
@@ -108,8 +112,11 @@ class ControllerClient:
         cid = str(cmd.get("id", ""))
         action = str(cmd.get("action", ""))
         await self.send({"type": "ack", "commandId": cid})
-        cached = self.dedupe.get(cid)
-        if self.dedupe.seen(cid):
+        # Atomically claim this command ID before any execution. A separate
+        # seen()/mark_started() pair allows duplicate concurrent WebSocket
+        # deliveries to both pass the initial check.
+        if not self.dedupe.mark_started(cid):
+            cached = self.dedupe.get(cid)
             log.info("duplicate delivery of %s ignored", cid)
             if cached:
                 await self.send(cached)
@@ -121,7 +128,6 @@ class ControllerClient:
         if action not in CAPABILITY_OF:
             await self.finish(cid, Outcome(False, error={"code": "NOT_ALLOWED", "message": f"unknown action {action}"}))
             return
-        self.dedupe.mark_started(cid)
         await self.send({"type": "started", "commandId": cid})
         # Never log user-supplied command arguments. WhatsApp content, Calendar
         # invitations and ChatGPT prompts can contain personal/private data.

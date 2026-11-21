@@ -75,6 +75,11 @@ class Executor:
     def run(self, action: str, args: dict, cancel: threading.Event) -> Outcome:
         t0 = time.monotonic()
         try:
+            # Futures queued behind a slow UIA operation can expire while
+            # waiting for the single foreground worker. Never execute an
+            # expired/cancelled instruction after it finally gets a worker.
+            if cancel.is_set():
+                raise ActionError("CANCELLED", "Command cancelled before laptop execution")
             cap = v.CAPABILITY_OF.get(action)
             if cap and cap not in self.cfg.capabilities:
                 raise ActionError("CAPABILITY_DISABLED", f"'{cap}' is turned off in this laptop's controller config")
