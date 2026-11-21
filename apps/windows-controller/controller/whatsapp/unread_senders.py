@@ -16,7 +16,7 @@ import time
 
 from ..config import IS_WINDOWS
 from ..system import launcher, windows
-from . import locator
+from . import locator, unread_filter
 
 _UNREAD = re.compile(r"^unread(?:\s+(?:chats|messages))?(?:\s*[:(•\-]?\s*\d{1,3}\)?)?$", re.I)
 _SKIP = {"unread", "all", "favorites", "favourites", "groups", "search",
@@ -117,34 +117,44 @@ def read_unread_senders() -> dict:
         if width < 360 or height < 350:
             raise UnreadSendersUnavailable("Make WhatsApp Desktop visible and larger before checking senders")
 
-        unread_matches = []
-        for index, (ctrl, _depth) in enumerate(auto.WalkControl(root, maxDepth=10)):
-            if index >= 650:
-                break
-            if not _is_visible(ctrl):
-                continue
-            x, y, _, _ = _bounding(ctrl)
-            if not (left <= x <= left + width * 0.46 and top + 15 <= y <= top + min(270, height * 0.42)):
-                continue
-            name = " ".join(str(ctrl.Name or "").split()).strip()
-            if _UNREAD.fullmatch(name):
-                unread_matches.append(ctrl)
-        if len(unread_matches) != 1:
-            raise UnreadSendersUnavailable(
-                "WhatsApp must expose exactly one visible Unread filter; no ambiguous click performed")
+        # New WhatsApp versions expose the same Unread chip as a Button AND
+        # its child Text, or only as an AutomationId/HelpText. Selecting the
+        # single raw "Unread" label was rejecting a genuine filter as ambiguous.
+        items = unread_filter.candidates(root, (left, top, right, bottom))
+        candidate, reason = unread_filter.choose_unique(items)
+        if candidate is None:
+            message = ("Multiple separate Unread controls were detected; I will not "
+                       "click a guessed position."
+                       if reason == "ambiguous" else
+                       "WhatsApp Desktop's Unread filter is not accessible through "
+                       "Windows UI Automation on this version. No blind mouse click "
+                       "was attempted.")
+            raise UnreadSendersUnavailable(message)
 
-        unread_control = unread_matches[0]
         _assert_same_native_foreground(active.hwnd)
-        unread_control.Click()
-        time.sleep(0.35)
+        # This is a REAL local Windows pointer click on a VERIFIED Unread
+        # control in the visible native app, not an arbitrary remote mouse
+        # coordinate. The app is already restored/focused by locator.
+        try:
+            candidate.control.Click(simulateMove=True)
+        except TypeError:
+            # Compatibility with older UI Automation wrappers.
+            candidate.control.Click()
+        time.sleep(0.4)
         _assert_same_native_foreground(active.hwnd)
-        # Refresh the tree after clicking a React/WinUI filter to avoid
-        # reading stale chat rows from the previous filter.
+        # React/WebView can rebuild UIA controls after selection, therefore
+        # verify a NEW tree rather than trusting a stale pre-click element.
         root = auto.ControlFromHandle(active.hwnd)
-        selected = _unread_filter_selected(unread_control)
+        refreshed = unread_filter.candidates(root, (left, top, right, bottom))
+        current, current_reason = unread_filter.choose_unique(refreshed)
+        if current is None and current_reason == "ambiguous":
+            raise UnreadSendersUnavailable(
+                "Unread filter changed to ambiguous controls after clicking; "
+                "no chat names will be reported as verified unread.")
+        selected = unread_filter.state(current.control) if current else None
         if selected is False:
             raise UnreadSendersUnavailable(
-                "WhatsApp Unread filter was clicked but is not selected. "
+                "The WhatsApp Unread filter is not selected after the mouse click. "
                 "No sender names will be labelled unread.")
 
         rows: list[tuple[float, str]] = []
