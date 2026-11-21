@@ -256,14 +256,36 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     },
   },
   'ui.activate': {
-    name: 'ui.activate', capability: 'input', label: 'Activate exact on-screen control',
+    name: 'ui.activate', capability: 'input', label: 'Legacy UI click (requires a new inspection)',
+    timeoutMs: 25000, alwaysApprove: true,
+    validate: () => fail('Inspect visible controls first; use the observed-control approval instead.'),
+  },
+  'ui.activate_observed': {
+    name: 'ui.activate_observed', capability: 'input',
+    label: 'Activate a verified, inspected on-screen button',
     timeoutMs: 25000, alwaysApprove: true,
     validate(a) {
-      const label = str(a.label, 'label', 100);
-      if (isErr(label)) return label;
-      if (/^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\b|\s)/i.test(label))
-        return fail('sensitive action requires a dedicated workflow');
-      return ok({ label });
+      const label = str(a.label,'label',100);
+      if(isErr(label))return label;
+      const role = a.role;
+      const snapshot = a.snapshot;
+      const allowedRoles=['ButtonControl','TabItemControl','HyperlinkControl','MenuItemControl',
+        'CheckBoxControl','RadioButtonControl','ComboBoxControl'];
+      if(typeof role!=='string'||!allowedRoles.includes(role))return fail('control role must match the inspection');
+      if(typeof snapshot!=='string'||!/^[a-f0-9]{64}$/.test(snapshot))
+        return fail('recent exact window inspection fingerprint is required');
+      const words=label.normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}_]+/gu)??[];
+      const banned=new Set(['send','sending','delete','remove','pay','payment','purchase','buy',
+        'checkout','submit','confirm','approve','authorize','publish','share','transfer',
+        'withdraw','deposit','invite','report','block','unblock','call','join',
+        'upload','install','execute','run','post','book','order','save','accept',
+        'apply','logout','signin','signout','login','erase','clear','reset']);
+      if(words.some(word=>banned.has(word)))return fail('sensitive control needs a dedicated reviewed workflow');
+      const phrase=' '+words.join(' ')+' ';
+      if(['log out','sign out','sign in','place order','check out','video call',
+        'voice call','add payment','make payment'].some(x=>phrase.includes(' '+x+' ')))
+        return fail('sensitive control needs a dedicated reviewed workflow');
+      return ok({label,role,snapshot});
     },
   },
   'desktop.control': {
