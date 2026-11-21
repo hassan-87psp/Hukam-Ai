@@ -237,6 +237,114 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return isErr(t) ? t : ok({ title: t });
     },
   },
+  'ui.inspect': {
+    name: 'ui.inspect', capability: 'screen', label: 'Inspect visible app controls',
+    timeoutMs: 25000, alwaysApprove: true, validate: () => ok({}),
+  },
+  'ui.activate': {
+    name: 'ui.activate', capability: 'input', label: 'Activate exact on-screen control',
+    timeoutMs: 25000, alwaysApprove: true,
+    validate(a) {
+      const label = str(a.label, 'label', 100);
+      if (isErr(label)) return label;
+      if (/^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\b|\s)/i.test(label))
+        return fail('sensitive action requires a dedicated workflow');
+      return ok({ label });
+    },
+  },
+  'calendar.event_draft': {
+    name: 'calendar.event_draft', capability: 'browser', label: 'Prepare Calendar event draft',
+    timeoutMs: 25000, alwaysApprove: true,
+    validate(a) {
+      if (a.provider !== 'google' && a.provider !== 'outlook') return fail('Calendar must be google or outlook');
+      const title = str(a.title, 'title', 100);
+      if (isErr(title)) return title;
+      const profile = str(a.profile, 'profile', 80);
+      if (isErr(profile)) return profile;
+      if (!/^(?:Default|Profile [1-9][0-9]?)$/.test(profile)) return fail('Invalid Chrome profile directory');
+      const startUtc = a.startUtc, endUtc = a.endUtc;
+      const iso = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+      if (typeof startUtc !== 'string' || typeof endUtc !== 'string' ||
+          !iso.test(startUtc) || !iso.test(endUtc)) return fail('Calendar times must be UTC ISO seconds');
+      const begin = Date.parse(startUtc), finish = Date.parse(endUtc);
+      if (!Number.isFinite(begin) || !Number.isFinite(finish) ||
+          finish <= begin || finish - begin > 86400000 ||
+          begin < Date.now() - 300000 || begin > Date.now() + 366*86400000)
+        return fail('Calendar event date or duration invalid');
+      const timeZone = str(a.timeZone, 'timeZone', 70);
+      if (isErr(timeZone)) return timeZone;
+      if (!/^[A-Za-z_]+(?:\/[A-Za-z0-9_+\-]+){0,2}$/.test(timeZone))
+        return fail('Use IANA time zone, such as Asia/Kuala_Lumpur');
+      const details = str(a.details ?? '', 'details', 500, false);
+      if (isErr(details)) return details;
+      const location = str(a.location ?? '', 'location', 120, false);
+      if (isErr(location)) return location;
+      return ok({provider:a.provider, title, profile, startUtc, endUtc, timeZone, details, location});
+    },
+  },
+  'chatgpt.prompt_draft': {
+    name:'chatgpt.prompt_draft', capability:'browser', label:'Draft prompt in ChatGPT Project',
+    timeoutMs:25000, alwaysApprove:true,
+    validate(a) {
+      const url = str(a.projectUrl, 'projectUrl', 500);
+      if (isErr(url)) return url;
+      let u: URL;
+      try { u = new URL(url); } catch { return fail('invalid ChatGPT Project URL'); }
+      if(u.protocol !== 'https:' || u.hostname !== 'chatgpt.com' || u.username || u.password || u.hash)
+        return fail('ChatGPT Project URL must be https://chatgpt.com');
+      const prompt = a.prompt;
+      if(typeof prompt !== 'string' || !prompt.trim() || prompt.length > 1800 ||
+          /[\u0000-\u0008\u000b-\u001f]/.test(prompt)) return fail('invalid ChatGPT prompt');
+      return ok({projectUrl:u.toString(),prompt});
+    },
+  },
+  'chatgpt.submit_prompt': {
+    name:'chatgpt.submit_prompt', capability:'browser', label:'Send reviewed ChatGPT prompt',
+    timeoutMs:25000, alwaysApprove:true,
+    validate(a) {
+      const draft = ACTIONS['chatgpt.prompt_draft'].validate(a);
+      return draft.ok ? ok({projectUrl:draft.args.projectUrl, prompt:draft.args.prompt}) : draft;
+    },
+  },
+  'chatgpt.download_visible': {
+    name:'chatgpt.download_visible', capability:'browser', label:'Download visible ChatGPT result',
+    timeoutMs:25000, alwaysApprove:true,
+    validate(a) {
+      if(typeof a.projectUrl!=='string' || a.projectUrl.length>500) return fail('invalid project URL');
+      let u: URL;
+      try {u = new URL(a.projectUrl);}catch{return fail('invalid project URL');}
+      if(u.protocol!=='https:' || u.hostname!=='chatgpt.com' || u.username||u.password||u.hash)
+        return fail('ChatGPT Project URL must be https://chatgpt.com');
+      return ok({projectUrl:u.toString()});
+    },
+  },
+  'whatsapp.read_selected': {
+    name:'whatsapp.read_selected', capability:'whatsapp', label:'Read currently visible WhatsApp chat',
+    timeoutMs:30000, alwaysApprove:true,validate:()=>ok({}),
+  },
+  'whatsapp.draft_reply': {
+    name:'whatsapp.draft_reply', capability:'whatsapp', label:'Draft reply in selected WhatsApp chat',
+    timeoutMs:30000, alwaysApprove:true,
+    validate(a) {
+      const contact = str(a.contact,'contact',80);
+      if(isErr(contact)) return contact;
+      const message=a.message;
+      if(typeof message!=='string'||!message.trim()||message.length>1000||
+         /[\u0000-\u0008\u000b-\u001f]/.test(message))return fail('invalid WhatsApp message');
+      return ok({contact,message});
+    },
+  },
+  'whatsapp.attach_preview': {
+    name:'whatsapp.attach_preview', capability:'whatsapp', label:'Prepare WhatsApp attachment preview',
+    timeoutMs:30000, alwaysApprove:true,
+    validate(a) {
+      const contact=str(a.contact,'contact',80);
+      if(isErr(contact)) return contact;
+      const path=windowsPath(a.path);
+      if(isErr(path)) return path;
+      return ok({contact,path});
+    },
+  },
   'screen.capture': {
     name: 'screen.capture', capability: 'screen', label: 'Capture screenshot', timeoutMs: 20000, defaultApprove: true,
     validate: () => ok({}),
