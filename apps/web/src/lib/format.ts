@@ -50,6 +50,8 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
       return !(r.downloadVerified === true && r.verified === true &&
         typeof r.fileName === 'string' && !!r.fileName &&
         typeof r.sizeBytes === 'number' && r.sizeBytes > 0);
+    case 'desktop.control':
+      return r.verified !== true;
     case 'whatsapp.check':
       return !(typeof r.unreadChats === 'number' && Number.isInteger(r.unreadChats) &&
         r.unreadChats >= 0 && r.unreadChats <= 999 &&
@@ -103,6 +105,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'ui.inspect': 'Inspect visible controls',
   'ui.activate': 'Activate visible control',
   'ui.scroll': 'Scroll active app (approved)',
+  'desktop.control': 'Desktop mouse/keyboard (approved)',
   'calendar.event_draft': 'Calendar event draft',
   'calendar.save_reviewed': 'Save reviewed Calendar event',
   'chatgpt.prompt_draft': 'ChatGPT prompt draft',
@@ -154,6 +157,12 @@ export function describeArgs(action: ActionName, args: Record<string, unknown>):
     case 'whatsapp.read_selected': return a.contact ? 'verify contact: ' + String(a.contact) : 'currently selected chat';
     case 'whatsapp.draft_reply': return 'to ' + String(a.contact ?? '');
     case 'whatsapp.attach_preview': return 'file for ' + String(a.contact ?? '');
+    case 'desktop.control':
+      return ['click','double_click','right_click'].includes(a.kind) ? `${a.kind} (${a.x}, ${a.y})`
+        : a.kind==='drag' ? `drag (${a.x}, ${a.y}) to (${a.toX}, ${a.toY})`
+        : a.kind==='scroll' ? `scroll ${a.steps}`
+        : a.kind==='key' ? `press ${a.key}`
+        : 'type ('+String(a.text??'').length+' characters)';
     case 'browser.control': return a.kind === 'click' ? `click (${a.x}, ${a.y})` : a.kind === 'scroll' ? `scroll ${a.steps}` : a.kind === 'key' ? `press ${a.key}` : 'type into browser';
     default: return '';
   }
