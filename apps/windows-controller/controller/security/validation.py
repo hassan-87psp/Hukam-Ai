@@ -25,7 +25,7 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "desktop.control", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
+    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
     "whatsapp.select_chat", "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
@@ -35,7 +35,7 @@ CAPABILITY_OF = {
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
     "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.scroll": "input", "desktop.control": "input",
-    "calendar.event_draft": "browser", "calendar.save_reviewed": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
+    "email.inbox_open": "browser", "email.compose_draft": "browser", "calendar.event_draft": "browser", "calendar.save_reviewed": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
     "chatgpt.download_visible": "browser", "whatsapp.select_chat": "whatsapp", "whatsapp.read_selected": "whatsapp",
     "whatsapp.draft_reply": "whatsapp", "whatsapp.send_reviewed": "whatsapp", "whatsapp.attach_preview": "whatsapp", "whatsapp.send_attachment_reviewed": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
     "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp", "whatsapp.unread_senders": "whatsapp",
@@ -196,6 +196,21 @@ def validate(action: str, args: dict) -> dict:
         if re.match(r"^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\b|\s)", label, re.I):
             raise ValidationError("sensitive button requires dedicated workflow")
         return {"label": label}
+    if action in ("email.inbox_open", "email.compose_draft"):
+        provider = a.get("provider")
+        if provider not in ("google", "outlook"):
+            raise ValidationError("Email provider must be google or outlook")
+        profile = _str(a.get("profile"), "profile", 80)
+        if not re.fullmatch(r"(?:Default|Profile [1-9][0-9]?)", profile):
+            raise ValidationError("invalid Chrome profile directory")
+        values = {"provider": provider, "profile": profile}
+        if action == "email.compose_draft":
+            recipient = _str(a.get("to"), "to", 254)
+            if not re.fullmatch(r"[A-Za-z0-9.!#$%&'*+/=?^`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+", recipient):
+                raise ValidationError("one valid email recipient is required")
+            values.update({"to": recipient, "subject": _str(a.get("subject"), "subject", 120),
+                           "body": _str(a.get("body"), "body", 1000)})
+        return values
     if action in ("calendar.event_draft", "calendar.save_reviewed"):
         provider = a.get("provider")
         if provider not in ("google", "outlook"):
