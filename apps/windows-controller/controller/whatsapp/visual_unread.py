@@ -45,7 +45,7 @@ class Word:
         return self.y + self.height / 2
 
 
-def _ocr_words(image) -> list[Word]:
+def _ocr_words_native(image) -> list[Word]:
     """Direct Windows.Media.Ocr word rectangles, no model/cloud/wrapper.
 
     The WinRT APIs are an on-device last resort when WhatsApp UIAutomation
@@ -105,6 +105,12 @@ def _ocr_words(image) -> list[Word]:
             "Windows on-device OCR could not initialize or recognize the "
             "WhatsApp chat pane. Check local Windows OCR language support."
         ) from exc
+
+def _ocr_words(image, cancel=None) -> list[Word]:
+    # Native asynchronous WinRT calls can hang beyond asyncio cancellation.
+    # A read-only child process is disposable, unlike the serial input worker.
+    from ..screen.ocr_process import recognize_isolated
+    return recognize_isolated(image, cancel=cancel)
 
 def _safe_foreground(hwnd: int) -> None:
     import win32gui
@@ -285,7 +291,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     image, left, top = _capture_left(active_hwnd)
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_ocr")
-    words = _ocr_words(image)
+    words = _ocr_words(image, cancel=cancel)
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_ocr_complete elapsed=%.1fs",
              time.monotonic() - started)
@@ -347,7 +353,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
         )
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=second_ocr")
-    second_words = _ocr_words(after_image)
+    second_words = _ocr_words(after_image, cancel=cancel)
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=second_ocr_complete elapsed=%.1fs",
              time.monotonic() - started)

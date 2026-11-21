@@ -118,7 +118,7 @@ def test_unread_visual_scan_requires_verified_native_foreground(monkeypatch):
     after=Image.new("RGB",(520,920),(40,42,42))
     screenshots=iter([(before,0,0),(after,0,0)])
     monkeypatch.setattr(vu,"_capture_left",lambda hwnd:next(screenshots))
-    monkeypatch.setattr(vu,"_ocr_words",lambda img: words())
+    monkeypatch.setattr(vu,"_ocr_words",lambda img, cancel=None: words())
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd: None if hwnd==120 else (_ for _ in ()).throw(RuntimeError("wrong HWND")))
     monkeypatch.setattr(win32gui,"GetClientRect",lambda hwnd:(0,0,520,920))
     monkeypatch.setattr(win32gui,"ClientToScreen",lambda hwnd,pos:pos)
@@ -149,7 +149,7 @@ def test_no_mouse_if_ocr_misses_header(monkeypatch):
     import win32api
     monkeypatch.setattr(vu,"_capture_left",
                         lambda hwnd:(Image.new("RGB",(520,920)),0,0))
-    monkeypatch.setattr(vu,"_ocr_words",lambda image:[vu.Word("Unread",153,180,60,20)])
+    monkeypatch.setattr(vu,"_ocr_words",lambda image, cancel=None:[vu.Word("Unread",153,180,60,20)])
     event=[]
     monkeypatch.setattr(win32api,"mouse_event",lambda *args:event.append(args))
     with pytest.raises(vu.VisualUnreadUnavailable,match="No mouse click"):
@@ -184,7 +184,7 @@ def test_cancellation_after_first_ocr_prevents_mouse_click(monkeypatch):
     cancelled=threading.Event()
     image=Image.new("RGB",(520,920),(28,28,28))
     monkeypatch.setattr(vu,"_capture_left",lambda hwnd:(image,0,0))
-    def ocr_result(_image):
+    def ocr_result(_image, cancel=None):
         cancelled.set()
         return words()
     monkeypatch.setattr(vu,"_ocr_words",ocr_result)
@@ -204,7 +204,7 @@ def test_cancellation_after_click_does_not_return_names(monkeypatch):
     cancelled=threading.Event()
     image=Image.new("RGB",(520,920),(28,28,28))
     monkeypatch.setattr(vu,"_capture_left",lambda hwnd:(image,0,0))
-    monkeypatch.setattr(vu,"_ocr_words",lambda image:words())
+    monkeypatch.setattr(vu,"_ocr_words",lambda image, cancel=None:words())
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
     monkeypatch.setattr(win32gui,"GetClientRect",lambda hwnd:(0,0,520,920))
     monkeypatch.setattr(win32gui,"ClientToScreen",lambda hwnd,p:p)

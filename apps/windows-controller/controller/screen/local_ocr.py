@@ -24,7 +24,7 @@ def read_monitor(monitor: int, cancel=None) -> dict:
         if launcher.SIMULATE:
             text, limited = "Synthetic screen text for testing only", False
         else:
-            text, limited = bounded_text(_ocr_words(img))
+            text, limited = bounded_text(_ocr_words(img, cancel=cancel))
         _cancel(cancel)
         return {"ocrRead": True, "text": text, "monitor": monitor,
                 "monitorCount": count, "sourceBounds": bounds,

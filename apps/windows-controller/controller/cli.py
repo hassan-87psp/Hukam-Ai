@@ -136,6 +136,12 @@ def interactive_first_run() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Read-only private child entry point. No pairing, remote connection,
+    # filesystem access to user data, or desktop input is initiated here.
+    actual_args = sys.argv[1:] if argv is None else argv
+    if actual_args == ["--local-ocr-worker"]:
+        from .screen.ocr_process import worker_main
+        return worker_main()
     p = argparse.ArgumentParser(prog="hukm-controller", description="HUKM AI Windows controller")
     p.add_argument("--version", action="version", version=VERSION)
     sub = p.add_subparsers(dest="cmd")
