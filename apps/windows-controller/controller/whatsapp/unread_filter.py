@@ -15,8 +15,9 @@ _FILTER = re.compile(
     r"[:(•\-]?\s*\d{1,3}\)?|\d{1,3}\s+unread(?:\s+(?:chats|messages))?)$",
     re.I,
 )
-_ID = re.compile(r"^(?:unread|unreadfilter|unreadchats|unreadmessages|filterunread)"
-                 r"(?:button|tab|chip|filter)?$", re.I)
+_ID = re.compile(r"^(?:btn|button|tab|chip|filter)?"
+                 r"(?:unread|unreadchats|unreadmessages)"
+                 r"(?:filter)?(?:btn|button|tab|chip)?$", re.I)
 ROLES = {"ButtonControl", "TabItemControl", "RadioButtonControl",
          "TextControl", "CheckBoxControl", "GroupControl"}
 
