@@ -130,22 +130,28 @@ function AccountMenu() {
 
 function EmergencyStop({ compact }: { compact?: boolean }) {
   const { devices, toast, refresh } = useStore();
+  const [stopping,setStopping]=useState(false);
   if (!devices.length) return null;
   const allPaused = devices.every((d) => d.paused);
   return (
     <button
       onClick={async () => {
-        if (allPaused) return;
-        const r = await post<{ paused: number }>('/api/emergency-stop');
-        toast({ title: 'Emergency stop', body: `${r.paused} device(s) paused and all running commands cancelled. Resume from Devices.`, tone: 'warn' });
-        refresh();
+        if(stopping)return;
+        setStopping(true);
+        try{
+          const r=await post<{paused:number}>('/api/emergency-stop');
+          toast({title:'Emergency stop requested',body:r.paused+' paired device(s) paused on relay. Previously delivered input cannot be undone. Resume from Devices.',tone:'warn'});
+          await refresh();
+        }catch(e){toast({title:'Stop not confirmed',body:e instanceof Error?e.message:'Check connection and stop HUKM locally.',tone:'bad'});}
+        finally{setStopping(false);}
       }}
-      disabled={allPaused}
-      title="Emergency stop: pause all devices and cancel running commands"
+      disabled={stopping}
+      aria-label="Emergency stop all paired devices"
+      title="Emergency stop: pause paired devices and cancel open commands"
       className={cx('flex items-center gap-1.5 rounded-xl font-semibold ring-1 transition', allPaused ? 'text-ink2 ring-line/15' : 'text-bad ring-bad/40 hover:bg-bad/10', compact ? 'h-10 w-10 justify-center' : 'h-10 px-3 text-sm')}
     >
       <OctagonX className="h-[18px] w-[18px]" />
-      {!compact && (allPaused ? 'Paused' : 'Stop')}
+      {!compact && (stopping ? 'Stopping…' : 'Stop')}
     </button>
   );
 }
@@ -205,7 +211,7 @@ function MobileDrawer({ open, onClose }: { open: boolean; onClose: () => void })
           <Logo small />
           <button onClick={onClose} className="rounded-lg p-2 text-ink2" aria-label="Close menu"><X className="h-5 w-5" /></button>
         </div>
-        <nav className="flex flex-col gap-1">
+        <nav className="min-h-0 flex-1 overflow-y-auto scroll-thin flex flex-col gap-1" aria-label="Mobile menu">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} onClick={onClose} className={({ isActive }) => cx('nav-item', isActive && 'active')}>
               <n.icon className="h-5 w-5" /> {n.label}
@@ -258,7 +264,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-[70] lg:hidden">
       <div className="absolute inset-0 bg-bg/70 backdrop-blur-sm" onClick={onClose} />
-      <div className="glass-strong safe-bottom absolute inset-x-0 bottom-0 animate-fade-up rounded-t-3xl p-4 pb-6">
+      <div className="glass-strong safe-bottom absolute inset-x-0 bottom-0 max-h-[80dvh] overflow-y-auto animate-fade-up rounded-t-3xl p-4 pb-6">
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-ink2/30" />
         <div className="grid grid-cols-3 gap-3">
           {items.map((n) => (
@@ -302,10 +308,11 @@ export default function AppShell() {
           </div>
         </header>
         {/* mobile header */}
-        <header className="safe-top sticky top-0 z-30 flex items-center justify-between gap-2 px-4 py-3 backdrop-blur-md lg:hidden" style={{ background: 'linear-gradient(180deg, rgb(var(--bg)/.92), rgb(var(--bg)/.55))' }}>
+        <header className="safe-top sticky top-0 z-30 flex items-center justify-between gap-1 px-2 py-3 backdrop-blur-md sm:gap-2 sm:px-4 lg:hidden" style={{ background: 'linear-gradient(180deg, rgb(var(--bg)/.92), rgb(var(--bg)/.55))' }}>
           <button onClick={() => setDrawer(true)} className="grid h-10 w-10 place-items-center rounded-xl text-ink2" aria-label="Open menu"><Menu className="h-6 w-6" /></button>
           <Logo small />
           <div className="flex items-center gap-2">
+            <EmergencyStop compact />
             <DevicePill />
             <Notifications />
           </div>

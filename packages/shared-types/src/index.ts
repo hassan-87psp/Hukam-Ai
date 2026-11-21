@@ -134,7 +134,7 @@ export interface Device {
   capabilitiesEnabled: Capability[];
   controllerConfig: ControllerConfigSummary | null;
   lastCommand: { action: ActionName; status: CommandStatus; at: string } | null;
-  stats: { cpu?: number; memory?: number; battery?: number | null; plugged?: boolean | null } | null;
+  stats: { cpu?: number; memory?: number; battery?: number | null; plugged?: boolean | null; controllerCpuPercent?:number; controllerMemoryMb?:number } | null;
 }
 
 export interface ControllerConfigSummary {
