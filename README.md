@@ -3,6 +3,10 @@
 
 ## Current development release — v1.7.0 (21 Nov 2026)
 
+**New in v1.7.0:** Owner-clicked live Gemini chat/planner diagnostics on Settings > AI engine, corrected live controller/backend version comparison, and an **experimental one-file HUKM Setup EXE** (CI-built, unsigned) alongside the legacy ZIP. The one-file installer requires a real Windows acceptance check and a trusted direct website download channel before broad release. **Automatic website-managed updates are not implemented yet.**
+
+Read [the Gemini + one-time installer audit](docs/v170-gemini-and-one-time-setup-audit.md) for verified vs pending items.
+
 > **Automated CI is not a real-laptop acceptance test.** This repository contains the verified-at-build-time implementation, not a guarantee that WhatsApp, third-party websites, Gmail or Calendar work end to end on the owner's actual Windows machine.
 
 | System | Current scope |
