@@ -39,6 +39,8 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
   const r = result && typeof result === 'object' && !Array.isArray(result)
     ? result as Record<string, unknown> : {};
   switch (action) {
+    case 'app.close':
+      return !(r.windowClosed === true && r.verified === true);
     case 'whatsapp.send_reviewed':
     case 'whatsapp.send_attachment_reviewed':
       return r.deliveryVerified !== true;
@@ -92,6 +94,7 @@ export const STATUS_TONE: Record<CommandStatus, 'info' | 'ok' | 'warn' | 'bad' |
 
 export const ACTION_LABEL: Record<ActionName, string> = {
   'app.open': 'Open app',
+  'app.close': 'Close Notepad (approved)',
   'folder.open': 'Open folder',
   'folder.list': 'List folder',
   'file.search': 'Search files',
@@ -140,7 +143,8 @@ export const ACTION_LABEL: Record<ActionName, string> = {
 export function describeArgs(action: ActionName, args: Record<string, unknown>): string {
   const a = args as Record<string, any>;
   switch (action) {
-    case 'app.open': return String(a.app ?? '');
+    case 'app.open':
+    case 'app.close': return String(a.app ?? '');
     case 'folder.open':
     case 'folder.list': return String(a.folder ?? '');
     case 'file.search':
