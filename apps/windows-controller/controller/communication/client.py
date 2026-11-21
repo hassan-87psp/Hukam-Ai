@@ -157,7 +157,15 @@ class ControllerClient:
             return
         # Atomically claim the ID before any input. A previously claimed ID
         # is NEVER executed twice, even after a WebSocket reconnect.
-        if not self.dedupe.mark_started(cid):
+        try:
+            claimed = self.dedupe.mark_started(cid)
+        except OSError:
+            await self.send(Outcome(False, error={
+                "code": "JOURNAL_UNAVAILABLE",
+                "message": "Cannot persist command claim. No Windows action started; check local storage.",
+            }).to_message(cid))
+            return
+        if not claimed:
             cached = self.dedupe.get(cid)
             log.info("duplicate delivery of %s ignored", cid)
             if cached:
@@ -239,7 +247,11 @@ class ControllerClient:
 
     async def finish(self, cid: str, out: Outcome) -> None:
         msg = out.to_message(cid)
-        self.dedupe.store_result(cid, msg)
+        try:
+            self.dedupe.store_result(cid, msg)
+        except OSError:
+            # The already durable start marker remains. Do not repeat the action.
+            log.warning("Could not persist result; retaining in-memory delivery only")
         self.outbox[cid] = msg
         await self.send(msg)
 

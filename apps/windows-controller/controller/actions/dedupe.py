@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import threading
 from collections import OrderedDict
 from pathlib import Path
@@ -17,8 +19,10 @@ class DedupeStore:
             data = json.loads(path.read_text(encoding="utf-8"))
             for k, val in data:
                 self._items[k] = val
-        except (OSError, ValueError, TypeError):
+        except FileNotFoundError:
             pass
+        except (OSError, ValueError, TypeError) as exc:
+            raise RuntimeError("Command recovery journal cannot be read safely; do not automatically reset it") from exc
 
     def seen(self, cid: str) -> bool:
         with self._lock:
@@ -33,8 +37,13 @@ class DedupeStore:
         with self._lock:
             if cid in self._items:
                 return False
+            previous = self._items.copy()
             self._items[cid] = None
-            self._trim_and_save()
+            try:
+                self._trim_and_save()
+            except OSError:
+                self._items = previous
+                raise
             return True
 
     def store_result(self, cid: str, message: dict) -> None:
@@ -46,9 +55,15 @@ class DedupeStore:
     def _trim_and_save(self) -> None:
         while len(self._items) > self.capacity:
             self._items.popitem(last=False)
+        tmp = None
         try:
-            tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(list(self._items.items())), encoding="utf-8")
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.path.parent,
+                                             prefix=".executed-", suffix=".tmp", delete=False) as f:
+                tmp = Path(f.name)
+                json.dump(list(self._items.items()), f)
+                f.flush()
+                os.fsync(f.fileno())
             tmp.replace(self.path)
-        except OSError:
-            pass
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)

@@ -5,6 +5,12 @@ on:
     branches: [main, hukm-comprehensive-v11-audit]
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_verified_release:
+        description: 'Publish only after documented owner acceptance and rollback verification'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -49,7 +55,10 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: apps/windows-controller/requirements-dev.txt
+          cache-dependency-path: |
+            apps/windows-controller/requirements-dev.txt
+            apps/windows-controller/requirements.txt
+            apps/windows-controller/constraints-windows-py312.txt
       - run: npm ci --include=dev
       - run: python -m pip install -r apps/windows-controller/requirements-dev.txt
       - name: Python syntax check
@@ -82,7 +91,7 @@ jobs:
           Copy-Item apps/windows-controller/README.md release/README.txt
           Copy-Item apps/windows-controller/packaging/*.cmd release/
           Copy-Item apps/windows-controller/packaging/ONE_ZIP_SETUP.txt release/
-          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.8.4.zip -Force
+          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.9.0.zip -Force
       - name: Smoke test consolidated installer in isolated sandbox
         shell: pwsh
         run: |
@@ -108,13 +117,13 @@ jobs:
           if (!(Test-Path $compiler)) { throw 'Inno Setup compiler missing' }
           & $compiler 'apps/windows-controller/packaging/HUKM-Setup.iss'
           if ($LASTEXITCODE -ne 0) { throw 'HUKM one-file setup compilation failed' }
-          if (!(Test-Path 'HUKM-Setup-v1.8.4.exe')) { throw 'One-file setup executable missing' }
+          if (!(Test-Path 'HUKM-Setup-v1.9.0.exe')) { throw 'One-file setup executable missing' }
       - name: Smoke test one-file setup in isolated Windows profile
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $target = Join-Path $env:RUNNER_TEMP 'hukm-one-time-install'
-          $setup = Join-Path $PWD 'HUKM-Setup-v1.8.4.exe'
+          $setup = Join-Path $PWD 'HUKM-Setup-v1.9.0.exe'
           $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="' + $target + '"'))
           $p = Start-Process -FilePath $setup -ArgumentList $args -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "One-time setup returned $($p.ExitCode)" }
@@ -145,38 +154,38 @@ jobs:
       - name: Generate installer SHA-256 integrity checksum
         shell: pwsh
         run: |
-          $zip = 'HUKM-Windows-Controller-v1.8.4.zip'
+          $zip = 'HUKM-Windows-Controller-v1.9.0.zip'
           if (!(Test-Path $zip)) { throw 'HUKM installer ZIP missing' }
           $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zip" | Set-Content -Path "$zip.sha256" -Encoding ascii
           if (!(Test-Path "$zip.sha256")) { throw 'HUKM installer checksum missing' }
       - uses: actions/upload-artifact@v4
         with:
-          name: HUKM-Windows-Controller-v1.8.4
+          name: HUKM-Windows-Controller-v1.9.0
           path: |
-            HUKM-Windows-Controller-v1.8.4.zip
-            HUKM-Windows-Controller-v1.8.4.zip.sha256
+            HUKM-Windows-Controller-v1.9.0.zip
+            HUKM-Windows-Controller-v1.9.0.zip.sha256
           retention-days: 14
           if-no-files-found: error
       - name: SHA-256 one-file setup checksum
         shell: pwsh
         run: |
-          $file = 'HUKM-Setup-v1.8.4.exe'
+          $file = 'HUKM-Setup-v1.9.0.exe'
           $hash = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $file" | Set-Content -Path "$file.sha256" -Encoding ascii
           if (!(Test-Path "$file.sha256")) { throw 'Standalone EXE checksum missing' }
       - uses: actions/upload-artifact@v4
         with:
-          name: HUKM-One-Time-Setup-v1.8.4
+          name: HUKM-One-Time-Setup-v1.9.0
           path: |
-            HUKM-Setup-v1.8.4.exe
-            HUKM-Setup-v1.8.4.exe.sha256
+            HUKM-Setup-v1.9.0.exe
+            HUKM-Setup-v1.9.0.exe.sha256
           retention-days: 14
           if-no-files-found: error
 
   official-windows-release:
     name: Publish official versioned setup (main, after all tests)
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_verified_release == true
     needs: [web-relay-tests, windows-controller-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -185,11 +194,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: HUKM-One-Time-Setup-v1.8.4
+          name: HUKM-One-Time-Setup-v1.9.0
           path: setup-release
       - uses: actions/download-artifact@v4
         with:
-          name: HUKM-Windows-Controller-v1.8.4
+          name: HUKM-Windows-Controller-v1.9.0
           path: zip-release
       - name: Publish only one immutable tag for this verified version
         env:
@@ -198,21 +207,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag='v1.8.4'
+          tag='v1.9.0'
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists. Never replace update assets or checksums."
             exit 0
           fi
-          test -s "setup-release/HUKM-Setup-v1.8.4.exe"
-          test -s "setup-release/HUKM-Setup-v1.8.4.exe.sha256"
-          test -s "zip-release/HUKM-Windows-Controller-v1.8.4.zip"
+          test -s "setup-release/HUKM-Setup-v1.9.0.exe"
+          test -s "setup-release/HUKM-Setup-v1.9.0.exe.sha256"
+          test -s "zip-release/HUKM-Windows-Controller-v1.9.0.zip"
           cd setup-release
-          sha256sum --check HUKM-Setup-v1.8.4.exe.sha256
+          sha256sum --check HUKM-Setup-v1.9.0.exe.sha256
+          cd ../zip-release
+          sha256sum --check HUKM-Windows-Controller-v1.9.0.zip.sha256
           cd ..
           gh release create "$tag" \
-            setup-release/HUKM-Setup-v1.8.4.exe \
-            setup-release/HUKM-Setup-v1.8.4.exe.sha256 \
-            zip-release/HUKM-Windows-Controller-v1.8.4.zip \
-            zip-release/HUKM-Windows-Controller-v1.8.4.zip.sha256 \
-            --target "$GITHUB_SHA" --title "HUKM AI v1.8.4" \
+            setup-release/HUKM-Setup-v1.9.0.exe \
+            setup-release/HUKM-Setup-v1.9.0.exe.sha256 \
+            zip-release/HUKM-Windows-Controller-v1.9.0.zip \
+            zip-release/HUKM-Windows-Controller-v1.9.0.zip.sha256 \
+            --target "$GITHUB_SHA" --title "HUKM AI v1.9.0" \
             --notes "Official owner-approved HUKM Windows Controller setup. Unattended auto-install is disabled. The unsigned installer requires local Windows confirmation. Existing pairing remains intact; verify controller version after reconnect."
