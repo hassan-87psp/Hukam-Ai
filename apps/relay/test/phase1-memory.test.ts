@@ -119,6 +119,16 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     expect(health.data.version).toBe('1.6.2');
   });
 
+  it('creates a reviewed owner-only desktop input plan without asking Gemini to invent coordinates',async()=>{
+    const before=plannerRequests.length;
+    const response=await api('POST','/api/operator/plan',{text:'mouse right click -850 220'});
+    expect(response.status).toBe(200);
+    expect(response.data.steps).toEqual([{action:'desktop.control',args:{
+      kind:'right_click',x:-850,y:220
+    }}]);
+    expect(plannerRequests.length).toBe(before);
+  });
+
   it('restores deterministic and AI follow-up slots after a real Relay database restart',async()=>{
     const basic=await api('POST','/api/commands',{text:'folder kholo'});
     expect(basic.data.kind).toBe('clarify');
