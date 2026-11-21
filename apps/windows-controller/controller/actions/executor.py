@@ -263,6 +263,9 @@ class Executor:
         return {"query": a["query"], "mode": "search", "url": url,
                 "note": "Could not determine a reliable top video, so the search results were opened instead."}
 
+    def do_diagnostics_probe(self, _a, _c):
+        return diagnostics.probe()
+
     # -- approved screen and browser observation ------------------------
     def do_ui_inspect(self, _a, _c):
         try:
