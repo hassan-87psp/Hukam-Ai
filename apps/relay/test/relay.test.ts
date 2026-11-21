@@ -245,6 +245,36 @@ describe('supervised AI computer operator', () => {
     expect(()=>validatePlanShape({summary:'click',steps:[{action:'browser.control',args:{kind:'click',x:100,y:200}}]})).toThrow();
     expect(()=>validatePlanShape({summary:'delete',steps:[{action:'file.delete',args:{path:'C:/x'}}]})).toThrow();
   });
+  it('always honors saved Chrome profile and ChatGPT URL for selected Projects',async()=>{
+    const p=await api('POST','/api/projects',{
+      name:'Gold Banner Project',
+      chromeProfile:'Profile 16',
+      chatgptProjectUrl:'https://chatgpt.com/g/g-p-private-hukm-project',
+      instructions:'Use this saved Chrome profile for every ChatGPT banner.',
+    });
+    expect(p.status).toBe(200);
+    try {
+      const chatgpt=await api('POST','/api/operator/plan',{
+        text:'ChatGPT kholo',projectId:p.data.id,
+      });
+      expect(chatgpt.status).toBe(200);
+      expect(chatgpt.data.steps).toEqual([{
+        action:'browser.profile_open',args:{
+          profile:'Profile 16',url:'https://chatgpt.com/g/g-p-private-hukm-project',
+        },
+      }]);
+      const calendar=await api('POST','/api/operator/plan',{
+        text:'Google Calendar kholo',projectId:p.data.id,
+      });
+      expect(calendar.status).toBe(200);
+      expect(calendar.data.steps[0]).toMatchObject({
+        action:'browser.profile_open',args:{profile:'Profile 16'},
+      });
+    }finally{
+      await api('DELETE','/api/projects/'+p.data.id);
+    }
+  });
+
   it('asks natural WhatsApp follow-ups, persists slots and never sends without a plan review',async()=>{
     const originalFetch=globalThis.fetch;
     const oldKey=process.env.GEMINI_API_KEY;
