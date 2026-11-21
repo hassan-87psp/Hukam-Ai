@@ -65,7 +65,43 @@ def _ensure_target(hwnd: int) -> None:
         raise DesktopInputError("Target window lost focus; input stopped")
 
 
-def control(args: dict) -> dict:
+def _check_cancel(cancel) -> None:
+    if cancel is not None and cancel.is_set():
+        raise DesktopInputError("Desktop input interrupted by Stop, timeout or disconnect")
+
+
+def _check_pointer(hwnd, point, expected_rect, cancel) -> None:
+    """Recheck bounds and actual topmost hit target before sending a mouse event."""
+    import win32gui
+    _check_cancel(cancel)
+    _ensure_target(hwnd)
+    if _client_rect(hwnd) != expected_rect or not inside_client(point, expected_rect):
+        raise DesktopInputError("Foreground window moved or resized; refresh the target")
+    hit = win32gui.WindowFromPoint(point)
+    # GA_ROOT = 2. Child controls are valid; an overlapping foreign window isn't.
+    if not hit or win32gui.GetAncestor(hit, 2) != hwnd:
+        raise DesktopInputError("Mouse target is obscured by another window")
+
+
+def _check_typing_focus(hwnd, cancel) -> None:
+    _check_cancel(cancel)
+    _ensure_target(hwnd)
+    try:
+        import uiautomation as auto
+        focused = auto.GetFocusedControl()
+        flag = getattr(focused, "IsPassword", None)
+        if focused is None or flag is None or bool(flag):
+            raise DesktopInputError("Unknown or password input field; typing blocked")
+    except DesktopInputError:
+        raise
+    except Exception as exc:
+        raise DesktopInputError("Could not verify focused input field safety") from exc
+    _ensure_target(hwnd)
+    _check_cancel(cancel)
+
+
+def control(args: dict, cancel=None) -> dict:
+    _check_cancel(cancel)
     kind = args["kind"]
     if launcher.SIMULATE:
         # Never include typed content or coordinates in logs.
@@ -87,61 +123,66 @@ def control(args: dict) -> dict:
         destination = (args["toX"], args["toY"]) if kind == "drag" else None
         if destination and not inside_client(destination, rect):
             raise DesktopInputError("Drag destination must remain inside the same window")
-        _ensure_target(active.hwnd)
+        _check_pointer(active.hwnd, origin, rect, cancel)
+        if destination:
+            _check_pointer(active.hwnd, destination, rect, cancel)
         win32api.SetCursorPos(origin)
         if kind == "click" or kind == "double_click":
             count = 2 if kind == "double_click" else 1
             for _ in range(count):
-                _ensure_target(active.hwnd)
+                _check_pointer(active.hwnd, origin, rect, cancel)
+                if win32api.GetCursorPos() != origin:
+                    raise DesktopInputError("Mouse position changed before click")
                 win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
                 win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
                 if count == 2:
                     time.sleep(0.065)
         elif kind == "right_click":
+            _check_pointer(active.hwnd, origin, rect, cancel)
+            if win32api.GetCursorPos() != origin:
+                raise DesktopInputError("Mouse position changed before click")
             win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTDOWN, 0, 0, 0, 0)
             win32api.mouse_event(win32con.MOUSEEVENTF_RIGHTUP, 0, 0, 0, 0)
         else:
             held = False
             try:
+                _check_pointer(active.hwnd, origin, rect, cancel)
+                if win32api.GetCursorPos() != origin:
+                    raise DesktopInputError("Mouse position changed before drag")
                 win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
                 held = True
                 for i in range(1, 13):
-                    _ensure_target(active.hwnd)
                     x = round(origin[0] + (destination[0] - origin[0]) * i / 12)
                     y = round(origin[1] + (destination[1] - origin[1]) * i / 12)
+                    _check_pointer(active.hwnd, (x, y), rect, cancel)
                     win32api.SetCursorPos((x, y))
                     time.sleep(0.012)
             finally:
                 if held:
                     win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
     elif kind == "scroll":
-        _ensure_target(active.hwnd)
         center = ((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
+        _check_pointer(active.hwnd, center, rect, cancel)
         win32api.SetCursorPos(center)
+        _check_pointer(active.hwnd, center, rect, cancel)
+        if win32api.GetCursorPos() != center:
+            raise DesktopInputError("Mouse position changed before scrolling")
         win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL, 0, 0, args["steps"] * 120, 0)
     elif kind == "type":
-        # Never type into an element reported as a password field.
-        try:
-            import uiautomation as auto
-            focused = auto.GetFocusedControl()
-            if focused is not None and getattr(focused, "IsPassword", False):
-                raise DesktopInputError("Typing into password fields is blocked")
-        except DesktopInputError:
-            raise
-        except Exception:
-            # UIA inability to inspect the input focus is not permission to
-            # type into an unknown field.
-            raise DesktopInputError("Could not verify focused input field safety")
-        _ensure_target(active.hwnd)
-        keyboard._send_unicode(args["text"])
+        # Check just before each character, including after focus changes.
+        for character in args["text"]:
+            _check_typing_focus(active.hwnd, cancel)
+            keyboard._send_unicode(character)
     elif kind == "key":
         if args["key"] not in KEYS:
             raise DesktopInputError("Unsupported keyboard shortcut")
+        _check_cancel(cancel)
         _ensure_target(active.hwnd)
         keyboard._press_key(args["key"])
     else:
         raise DesktopInputError("Unsupported desktop input operation")
 
+    _check_cancel(cancel)
     return {"kind": kind, "window": active.title[:100], "process": active.process,
             "inputDelivered": True, "verified": False,
             "note": "Input delivered to the foreground app. The resulting document or website state is not independently verified."}

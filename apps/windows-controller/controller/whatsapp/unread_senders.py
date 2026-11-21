@@ -113,8 +113,8 @@ def read_unread_senders(cancel=None) -> dict:
     # *visual* fallback until the relay's 30-second deadline had already
     # passed. Instead, observe the actual left chat pane locally FIRST.
     #
-    # The visual scanner only clicks a chip whose OCR text is bracketed by
-    # independently recognized All and Favourites labels. It never uses
+    # The visual scanner only clicks a unique Unread chip supported by All
+    # and either Favourites or an independent Chats heading. It never uses
     # a fixed coordinate, inspects chat message bodies, or claims unread
     # names unless the result can be supported by the visible layout.
     try:

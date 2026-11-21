@@ -130,7 +130,9 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Update cancelled before laptop execution")
         try:
-            return updater.update_from_website()
+            return updater.update_from_website(cancel=cancel)
+        except updater.UpdateCancelled as exc:
+            raise ActionError("CANCELLED", str(exc)) from exc
         except updater.UpdateError as exc:
             raise ActionError("UPDATE_UNAVAILABLE", str(exc)) from exc
 
@@ -331,7 +333,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Desktop input cancelled before execution")
         try:
-            return desktop_input.control(a)
+            return desktop_input.control(a, cancel=cancel)
         except desktop_input.DesktopInputError as exc:
             raise ActionError("DESKTOP_INPUT_REFUSED", str(exc)) from exc
         except RuntimeError as exc:

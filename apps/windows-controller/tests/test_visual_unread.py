@@ -50,17 +50,40 @@ def test_unread_button_between_verified_all_and_favourites():
     assert label is not None and "unread" in label.text.lower()
 
 
-def test_no_click_without_all_or_favourites_anchor():
-    all_words=words()
+def test_missing_favourites_uses_independent_chats_heading():
+    x = [w for w in words() if w.text != "Favourites"]
+    label = vu.locate_unread(x, 520, 920)
+    assert label is not None and label.text == "Unread 8"
+
+
+def test_no_click_without_independent_header_anchors():
+    x = words()
     assert vu.locate_unread(
-        [w for w in all_words if w.text!="All"],520,920) is None
+        [w for w in x if w.text != "All"], 520, 920) is None
     assert vu.locate_unread(
-        [w for w in all_words if w.text!="Favourites"],520,920) is None
+        [w for w in x if w.text not in ("Favourites", "Chats")], 520, 920) is None
     assert vu.locate_unread([
-        vu.Word("Unread",170,490,70,21),
-        vu.Word("All",108,491,25,21),
-        vu.Word("Favourites",250,490,80,21),
-    ],520,920) is None
+        vu.Word("Unread", 170, 490, 70, 21),
+        vu.Word("All", 108, 491, 25, 21),
+        vu.Word("Favourites", 250, 490, 80, 21),
+    ], 520, 920) is None
+
+
+def test_fallback_rejects_bad_geometry_and_conflicting_anchors():
+    x = [w for w in words() if w.text != "Favourites"]
+    assert vu.locate_unread(x + [vu.Word("Unread", 180, 185, 67, 18)], 520, 920) is None
+    assert vu.locate_unread(x + [vu.Word("Chats", 96, 102, 60, 21)], 520, 920) is None
+    assert vu.locate_unread(x + [vu.Word("Groups", 85, 185, 50, 20)], 520, 920) is None
+    assert vu.locate_unread(x + [vu.Word("Favourites", 257, 240, 86, 20)], 520, 920) is None
+    far = [w for w in x if not w.text.startswith("Unread")]
+    assert vu.locate_unread(far + [vu.Word("Unread", 340, 183, 72, 19)], 520, 920) is None
+    off_row = [w for w in x if not w.text.startswith("Unread")]
+    assert vu.locate_unread(off_row + [vu.Word("Unread", 163, 220, 72, 19)], 520, 920) is None
+
+
+def test_fallback_accepts_aligned_groups_to_right():
+    x = [w for w in words() if w.text != "Favourites"]
+    assert vu.locate_unread(x + [vu.Word("Groups", 257, 184, 60, 20)], 520, 920) is not None
 
 
 def test_no_click_if_two_unread_candidates_or_wrong_order():
