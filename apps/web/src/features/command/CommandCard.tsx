@@ -174,6 +174,14 @@ export function CommandResult({ c }: { c: Command }) {
       );
     case 'browser.profile_open':
       return <p className="text-xs text-ink2">{r.note ?? 'Chrome profile launched, page unverified.'}</p>;
+    case 'diagnostics.probe':
+      return <div className="space-y-1 text-xs text-ink2">
+        <p>WhatsApp Desktop: {r.whatsappDesktopWindow ? 'detected' : 'not detected'}</p>
+        <p>UI Automation: {r.uiautomationInstalled ? 'available' : 'unavailable'}</p>
+        <p>Chrome profiles: {Array.isArray(r.chromeProfileDirectories) ? r.chromeProfileDirectories.join(', ') : 'unknown'}</p>
+        <p>Monitors: {String(r.monitorCount ?? 'unknown')} · Foreground: {String(r.activeApp ?? 'none')}</p>
+        <p>Private messages and screenshots were not collected.</p>
+      </div>;
     case 'ui.inspect':
       return <div className="space-y-1 text-xs text-ink2">
         <p>{r.window} · {Array.isArray(r.controls) ? r.controls.length : 0} interactive controls</p>
