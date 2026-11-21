@@ -116,7 +116,7 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     ]);
     expect(plannerRequests.length).toBe(before);
     const health=await api('GET','/api/health');
-    expect(health.data.version).toBe('1.7.1');
+    expect(health.data.version).toBe('1.8.0');
   });
 
   it('creates a reviewed owner-only desktop input plan without asking Gemini to invent coordinates',async()=>{
@@ -136,6 +136,20 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     expect(result.data.steps).toEqual([{action:'app.close',args:{app:'notepad'}}]);
     expect(plannerRequests.length).toBe(before);
     // This is a proposed task only; the execution still requires explicit owner approval.
+  });
+
+  it('routes exact named WhatsApp Desktop message reads without Gemini',async()=>{
+    const before=plannerRequests.length;
+    const result=await api('POST','/api/operator/plan',{
+      text:'Ali ke WhatsApp messages parho'
+    });
+    expect(result.status).toBe(200);
+    expect(result.data.steps).toEqual([
+      {action:'whatsapp.select_chat',args:{contact:'Ali'}},
+      {action:'whatsapp.read_selected',args:{contact:'Ali'}},
+    ]);
+    expect(plannerRequests.length).toBe(before);
+    // Real Windows remains approval-gated and contact-header verified.
   });
 
   it('restores deterministic and AI follow-up slots after a real Relay database restart',async()=>{

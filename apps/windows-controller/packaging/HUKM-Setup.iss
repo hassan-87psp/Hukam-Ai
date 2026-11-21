@@ -2,7 +2,7 @@
 ; Purpose: remove the need to manually unpack the inner controller ZIP.
 ; IMPORTANT: currently unsigned. Distribute only after real Windows testing
 ; and code signing. No silent autostart or uncontrolled auto-update.
-#define HUKM_VERSION "1.7.1"
+#define HUKM_VERSION "1.8.0"
 
 [Setup]
 AppId=HUKM.AI.Personal.WindowsController
@@ -31,6 +31,11 @@ Source: "..\dist\hukm-controller.exe"; DestDir: "{app}"; DestName: "hukm-control
 [Icons]
 Name: "{userprograms}\HUKM AI\Controller Status"; Filename: "{app}\hukm-controller.exe"; Parameters: "status"
 Name: "{userprograms}\HUKM AI\Pair Controller"; Filename: "{app}\hukm-controller.exe"; Parameters: "pair"
+
+[Run]
+; Only an interactive owner installation can offer controller restart. Silent
+; isolated CI smoke tests never launch a connected live controller.
+Filename: "{app}\hukm-controller.exe"; Parameters: "run"; Description: "Start HUKM Windows Controller"; Flags: nowait postinstall skipifsilent
 
 [Code]
 procedure CurStepChanged(CurStep: TSetupStep);

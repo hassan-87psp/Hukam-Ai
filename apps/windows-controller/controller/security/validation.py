@@ -23,7 +23,7 @@ BLOCKED_OPEN_EXTS = {
 }
 
 ACTIONS = {
-    "app.open", "app.close", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
+    "controller.update", "app.open", "app.close", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
     "diagnostics.probe", "ui.inspect", "ui.activate", "ui.activate_observed", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
     "whatsapp.select_chat", "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
@@ -31,7 +31,7 @@ ACTIONS = {
 }
 
 CAPABILITY_OF = {
-    "app.open": "apps", "app.close": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
+    "controller.update": "system", "app.open": "apps", "app.close": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
     "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.activate_observed": "input", "ui.scroll": "input", "desktop.control": "input",
@@ -128,6 +128,10 @@ def validate(action: str, args: dict) -> dict:
     if not isinstance(args, dict):
         raise ValidationError("args must be an object")
     a = args
+    if action == "controller.update":
+        if a:
+            raise ValidationError("HUKM updater accepts no URL, executable path or arguments")
+        return {}
     if action == "app.open":
         return {"app": _str(a.get("app"), "app", 40)}
     if action == "app.close":

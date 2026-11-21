@@ -33,6 +33,32 @@ export function desktopWhatsAppWorkflow(text: string): DesktopWhatsAppWorkflow {
 }
 
 
+/** Parse an explicitly requested *named* WhatsApp message read.
+
+    This is deliberately narrower than a generic "check WhatsApp" request.
+    Names are exact, never guessed from message contents or conversations.
+    It works without Gemini; execution still needs owner approval per step.
+*/
+export function namedWhatsAppRead(input:string):string|null {
+  const t=input.trim().replace(/\s+/g,' ');
+  if(!/\bwhats\s?app\b/i.test(t) ||
+      !/\b(?:read|parho|parh|padho|sunao|dikhao|show)\b/i.test(t) ||
+      !/\b(?:msg|msgs|messages?|chats?)\b/i.test(t))return null;
+  const patterns=[
+    /^(?:please\s+)?([\p{L}\p{M}][\p{L}\p{M}0-9 .'+-]{0,59})\s+(?:ka|ke|ki|se|from)\s+whats\s?app\s+(?:ke\s+)?(?:msg|msgs|messages?|chats?)\s+(?:read|parho|parh|padho|sunao|dikhao|show)(?:\s+karo)?$/iu,
+    /^whats\s?app\s+(?:par|pe|mein|me)\s+([\p{L}\p{M}][\p{L}\p{M}0-9 .'+-]{0,59})\s+(?:ka|ke|ki)\s+(?:msg|msgs|messages?|chats?)\s+(?:read|parho|parh|padho|sunao|dikhao|show)(?:\s+karo)?$/iu,
+  ];
+  for(const re of patterns){
+    const match=t.match(re);
+    if(match){
+      const contact=match[1].trim();
+      if(contact && !/^(?:selected|current|all|sab|koi|kis|whatsapp|web)$/i.test(contact))
+        return contact;
+    }
+  }
+  return null;
+}
+
 const TASK_VERBS = /\b(?:karo|kro|kar do|krdo|kerdo|kholen?|kholo|open|chalao|run|perform|type|likho|likh|bhejo|send|attach|download|save|create|generate|banao|bana|add|schedule|scroll|click|press|check|dakho|dekho|parho|padho|read|reply|draft|search|dhoondo|execute|handle)\b/i;
 const COMPOUND = /\b(?:aur|phir|then|after that|us\s*me|iske baad|afterwards|and then)\b|(?:notepad|note\s*pad).*?(?:likho|type)|(?:likho|type).*?(?:notepad|note\s*pad)/i;
 const WORKFLOWS = /\b(?:calendar|calender|meeting)\b.*?\b(?:add|create|schedule|set|bana|invite|reschedule)|\b(?:add|create|schedule|set)\b.*?\b(?:calendar|meeting)\b|\b(?:whatsapp|chats?|messages?|msgs?)\b.*?\b(?:reply|attach|file|read|parho|padho|send|bhejo|likho|draft)|\b(?:chatgpt|banner|image|script|poster|pic)\b.*?\b(?:bana|create|generate|draft|download|save|design)|\b(?:screen|window)\b.*?\b(?:dekho|dakho|observe|inspect|button|samjho)/i;
@@ -49,6 +75,7 @@ export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorR
   }
   if(!t || GREETING.test(t))return 'chat';
   if(desktopWhatsAppWorkflow(t))return 'plan';
+  if(namedWhatsAppRead(t))return 'plan';
   // Mailboxes have account-specific identities: don't silently treat "send
   // email" as a harmless web.open or guess which Chrome profile is logged in.
   if(/\b(?:gmail|email|e-mail|inbox|outlook mail|mailbox)\b/i.test(t) &&

@@ -1,4 +1,4 @@
-import { Copy, History, KeyRound, Laptop, Pause, Pencil, Play, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Copy, Download, History, KeyRound, Laptop, Pause, Pencil, Play, Plus, ShieldCheck, Trash2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { ALL_CAPABILITIES, type Capability, type Device } from '../../../../packages/shared-types/src/index';
 import { LaptopArt } from '../components/Illustrations';
@@ -116,7 +116,7 @@ function CopyLine({ text, mono }: { text: string; mono?: boolean }) {
 }
 
 function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null }) {
-  const { toast, setDevices, devices } = useStore();
+  const { toast, setDevices, devices, runAction } = useStore();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(d.name);
   const [confirm, setConfirm] = useState(false);
@@ -132,6 +132,11 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
     }
   };
   const status = d.online ? (d.paused ? 'Paused (emergency stop)' : 'Online') : 'Offline';
+  const supportsWebUpdate = /^\d+\.\d+\.\d+$/.test(d.controllerVersion ?? '') &&
+    (d.controllerVersion ?? '').split('.').map(Number).reduce(
+      (v,n,i)=>v+n*[10000,100,1][i],0) >= 10800;
+  const versionMismatch = Boolean(d.controllerVersion && latestVersion &&
+    d.controllerVersion !== latestVersion);
 
   return (
     <Card className="overflow-hidden p-0">
@@ -156,6 +161,11 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
           ) : (
             <button className="btn-ghost" onClick={() => act(() => post(`/api/devices/${d.id}/pause`), 'Device paused')}><Pause className="h-4 w-4" /> Pause control</button>
           )}
+          {versionMismatch && supportsWebUpdate && d.online && !d.paused &&
+            <button className="btn-primary" onClick={()=>void runAction('controller.update',{},
+                {source:'ui',deviceId:d.id,label:'Update HUKM Controller from official verified release'})}>
+              <Download className="h-4 w-4" /> Update from website
+            </button>}
           <button className="btn-ghost text-bad" onClick={() => setConfirm(true)}><Trash2 className="h-4 w-4" /> Remove</button>
         </div>
       </div>
@@ -167,8 +177,10 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
             {d.controllerVersion && latestVersion && d.controllerVersion!==latestVersion&&
               <p className="mt-1 text-xs text-warn">
                 Controller version v{d.controllerVersion} differs from backend v{latestVersion}.
-                Do not delete existing pairing. One-time installer updates are being prepared;
-                automatic website updates are not yet active.
+                Do not delete existing pairing.
+                {supportsWebUpdate
+                  ? ' Use Update from website. HUKM will verify the official release, ask for owner approval and request local installer confirmation; reconnect to verify success.'
+                  : ' A one-time v1.8.0 Windows Setup installation is required to enable future website-initiated updates. No automatic/unsigned silent install.'}
               </p>}
             {d.controllerVersion && latestVersion && d.controllerVersion===latestVersion&&
               <p className="mt-1 text-xs text-ok">Controller and backend version match. Real laptop operation still needs testing.</p>}

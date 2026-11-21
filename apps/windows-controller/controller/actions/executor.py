@@ -17,7 +17,7 @@ from ..screen import capture as screen
 from ..screen import accessibility
 from ..system import desktop_input
 from ..security import validation as v
-from ..system import apps, info, known_folders, launcher, windows, diagnostics
+from ..system import apps, info, known_folders, launcher, windows, diagnostics, updater
 from ..whatsapp import adapter as wa
 from ..whatsapp import reader as wa_reader
 from ..whatsapp import unread_senders as wa_senders
@@ -125,6 +125,14 @@ class Executor:
             if focused or seen:
                 res["windowTitle"] = (focused or seen).title
         return res
+
+    def do_controller_update(self, _a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Update cancelled before laptop execution")
+        try:
+            return updater.update_from_website()
+        except updater.UpdateError as exc:
+            raise ActionError("UPDATE_UNAVAILABLE", str(exc)) from exc
 
     def do_app_close(self, a, cancel):
         if cancel.is_set():

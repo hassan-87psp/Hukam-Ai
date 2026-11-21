@@ -11,6 +11,8 @@ import { post } from '../../services/api';
 
 function unverifiedReason(action: ActionName): string {
   switch(action) {
+    case 'controller.update':
+      return 'HUKM installer may have launched, but the update is NOT complete until the Windows device reconnects with the new version. No silent install.';
     case 'app.close':
       return 'Notepad close requested, but the actual window was not verified closed. If Save/Cancel is visible, decide on the laptop.';
     case 'whatsapp.send_reviewed':
@@ -28,7 +30,7 @@ function unverifiedReason(action: ActionName): string {
 }
 
 export const ACTION_ICON: Record<ActionName, typeof Globe> = {
-  'app.open': AppWindow, 'app.close': AppWindow, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
+  'app.open': AppWindow, 'app.close': AppWindow, 'controller.update': Laptop, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
   'file.reveal': FolderOpen, 'web.open': Globe, 'web.search': Search, 'youtube.search': Youtube, 'youtube.play': Youtube,
   'device.status': Laptop, 'apps.list': AppWindow, 'window.active': Monitor, 'window.focus': Monitor, 'screen.capture': Monitor,
   'diagnostics.probe': Monitor, 'ui.inspect': Monitor, 'ui.activate': Monitor, 'ui.activate_observed': Monitor, 'ui.scroll': Monitor, 'desktop.control': Monitor, 'email.inbox_open': Globe, 'email.compose_draft': Pencil, 'calendar.event_draft': Globe, 'calendar.save_reviewed': Globe,

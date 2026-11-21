@@ -6,7 +6,7 @@
  * credential reading, or model-generated screen coordinates. No action may
  * be reported as verified solely because Windows accepted an input event.
  */
-import { ACTIONS, parseCommand, routeIntent, desktopWhatsAppWorkflow, validateCommand } from '../../../packages/command-protocol/src/index';
+import { ACTIONS, parseCommand, routeIntent, desktopWhatsAppWorkflow, namedWhatsAppRead, validateCommand } from '../../../packages/command-protocol/src/index';
 import type { ActionName, CommandStatus } from '../../../packages/shared-types/src/index';
 import { HttpError, Relay } from './core';
 import { all, one, run, type DB, type Row } from './db';
@@ -258,13 +258,13 @@ export class Operator {
     if(projectId)this.projects.get(userId,projectId);
     this.clearPending(userId,this.dialogueKey(projectId));
   }
-  private savePending(userId:string,key:string,request:string,question:string){
+  private savePending(userId:string,key:string,request:string,question:string,ttlMs=12*60*60_000){
     const stamp=nowIso();
     run(this.db,`INSERT INTO operator_dialogues(user_id,project_key,request,question,topic,created_at,updated_at,expires_at)
       VALUES(?,?,?,?,'operator-followup',?,?,?)
       ON CONFLICT(user_id,project_key) DO UPDATE SET request=excluded.request,
         question=excluded.question,updated_at=excluded.updated_at,expires_at=excluded.expires_at`,
-      userId,key,request.slice(0,1800),question,stamp,stamp,addMs(12*60*60_000));
+      userId,key,request.slice(0,1800),question,stamp,stamp,addMs(ttlMs));
   }
   async plan(userId:string,text:unknown,projectId:unknown):Promise<Plan|Clarification|Cancelled> {
     if(typeof text!=='string'||text.trim().length<2||text.length>1200)
@@ -326,6 +326,37 @@ export class Operator {
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|mail\.google\.com|outlook\.office\.com)\/)/.test(url);
     const nativeWhatsAppWorkflow = !isFollowup ? desktopWhatsAppWorkflow(answer) : null;
+    const selectedWhatsAppContact = !isFollowup ? namedWhatsAppRead(answer) : null;
+    // After an approved read the user may simply say "reply likho: ...".
+    // Exact contact is recovered from the scoped, expiring verified-read
+    // dialogue, not guessed from Gemini or arbitrary message text.
+    const previousRequest=isFollowup && last ? String(last.request) : '';
+    const recentVerifiedContact=previousRequest.startsWith('HUKM_VERIFIED_WHATSAPP_CONTACT:')
+      ? previousRequest.slice('HUKM_VERIFIED_WHATSAPP_CONTACT:'.length).split('\n')[0].trim()
+      : '';
+    const draftPrefix='HUKM_APPROVED_WHATSAPP_DRAFT:';
+    let reviewedDraft:{contact:string;message:string}|null=null;
+    if(isFollowup && previousRequest.startsWith(draftPrefix)){
+      try{
+        const stored=JSON.parse(previousRequest.slice(draftPrefix.length)) as unknown;
+        if(stored && typeof stored==='object' && !Array.isArray(stored)){
+          const d=stored as Record<string,unknown>;
+          if(typeof d.contact==='string' && typeof d.message==='string' &&
+             d.contact.length>0 && d.contact.length<=80 &&
+             d.message.length>0 && d.message.length<=1000)
+            reviewedDraft={contact:d.contact,message:d.message};
+        }
+      }catch { /* malformed saved dialogue is never grounds to send */ }
+    }
+    const afterUnreadNames=isFollowup && previousRequest.startsWith(
+      'The owner opened Personal WhatsApp Desktop and reviewed visible unread chat names.');
+    const namedFollowup=afterUnreadNames ?
+      answer.replace(/\s+(?:ka|ke|ki)$/i,'').trim() : '';
+    const safeName=(value:string)=>/^[\p{L}\p{M}0-9 .'+()\-]{1,80}$/u.test(value) &&
+      !/^(?:yes|haan|nahi|no|ok|okay|send|bhejo)$/i.test(value);
+    const replyDraft=recentVerifiedContact && safeName(recentVerifiedContact)
+      ? answer.replace(/^(?:isko\s+)?(?:reply|jawab|message|msg)\s*(?:likho|karo|do|kar do|draft)?\s*(?:[:\-]|ke)?\s*/i,'').trim()
+      : '';
     if(!isFollowup && parsed.kind==='command' && parsed.action==='app.close'){
       // A model must never reverse "band kro" into "app.open".
       result = {summary:'Close the selected verified Notepad window (never discard unsaved changes)',
@@ -343,6 +374,36 @@ export class Operator {
         steps: [
           validateStep({action:'whatsapp.open',args:{mode:'desktop'}}),
           validateStep({action:inspectAction,args: nativeWhatsAppWorkflow==='count'?{mode:'desktop'}:{}}),
+        ],
+      };
+    } else if(reviewedDraft){
+      // Explicit owner confirmation is NECESSARY but NOT SUFFICIENT:
+      // this creates only the separately approval-gated final send action.
+      // An ambiguous outcome will never be automatically retried.
+      if(!/^(?:haan|han|yes|ok|okay)(?:[, ]+(?:bhej(?:\s+do|do)?|send(?:\s+karo|\s+now)?))?$|^(?:bhej\s+do|send\s+(?:karo|now))$/i.test(answer))
+        return {kind:'clarify',topic:'operator-followup',
+          question:'Sir, '+reviewedDraft.contact+' ka drafted message send karna hai? "Haan bhej do" bolein ya "Cancel".'};
+      result={summary:'Final reviewed WhatsApp Send for '+reviewedDraft.contact+' — separate approval required',
+        steps:[validateStep({action:'whatsapp.send_reviewed',args:reviewedDraft})]};
+    } else if(recentVerifiedContact && safeName(recentVerifiedContact)){
+      if(!replyDraft || /^(?:haan|yes|ok|okay|send|bhej\w*|nahi|no)$/i.test(replyDraft))
+        return {kind:'clarify',topic:'operator-followup',
+          question:'Sir, '+recentVerifiedContact+' ko kya reply likhna hai? Exact message batayein; Send approval alag hogi.'};
+      result={summary:'Draft a reply to verified Personal WhatsApp contact '+recentVerifiedContact+' (do not Send)',
+        steps:[validateStep({action:'whatsapp.draft_reply',
+          args:{contact:recentVerifiedContact,message:replyDraft}})]};
+    } else if(namedFollowup && safeName(namedFollowup)){
+      result={summary:'Select and read visible Personal WhatsApp Desktop messages for '+namedFollowup,
+        steps:[
+          validateStep({action:'whatsapp.select_chat',args:{contact:namedFollowup}}),
+          validateStep({action:'whatsapp.read_selected',args:{contact:namedFollowup}}),
+        ]};
+    } else if(selectedWhatsAppContact){
+      result={
+        summary:'Select and verify '+selectedWhatsAppContact+' in Personal WhatsApp Desktop, then read only the visible messages',
+        steps:[
+          validateStep({action:'whatsapp.select_chat',args:{contact:selectedWhatsAppContact}}),
+          validateStep({action:'whatsapp.read_selected',args:{contact:selectedWhatsAppContact}}),
         ],
       };
     } else if(projectLaunch && !isFollowup){
@@ -459,6 +520,8 @@ export class Operator {
     this.running.add(taskId);
     let unverified=false,ids:string[]=[];
     let visibleUnreadSendersReviewed=false;
+    let verifiedContactRead:string|null=null;
+    let verifiedDraft:{contact:string;message:string}|null=null;
     try{
       for(let i=0;i<plan.steps.length;i++){
         if(this.getRun(userId,taskId).status==='cancelled')return;
@@ -482,11 +545,36 @@ export class Operator {
           Array.isArray(data.senders) && data.senders.length>0){
           visibleUnreadSendersReviewed=true;
         }
+        if(step.action==='whatsapp.read_selected' &&
+          data.messagesRead===true && typeof step.args.contact==='string'){
+          verifiedContactRead=String(step.args.contact);
+        }
+        if(step.action==='whatsapp.draft_reply' &&
+          data.draftEntered===true && data.recipientVerified===true && data.sent===false &&
+          typeof step.args.contact==='string' && typeof step.args.message==='string'){
+          verifiedDraft={contact:String(step.args.contact),message:String(step.args.message)};
+        }
         if(data.verified!==true)unverified=true;
       }
       this.update(taskId,unverified?'unverified':'completed',unverified?
         'Actions reported success, but their final on-screen outcome was not independently verified.':null,
         plan.steps.length,ids);
+      if(verifiedDraft){
+        // Explicit send has a ten-minute owner-scoped confirmation window.
+        // Draft body is already stored in authenticated command history; do
+        // NOT pass this saved state to Gemini or an external model.
+        this.savePending(userId,this.dialogueKey(plan.projectId),
+          'HUKM_APPROVED_WHATSAPP_DRAFT:'+JSON.stringify(verifiedDraft),
+          'Sir, '+verifiedDraft.contact+' ko drafted message send karna hai? "Haan bhej do" ya "Cancel" bolein.',
+          10*60_000);
+      }
+      if(verifiedContactRead){
+        // Save only the verified recipient name in the pending workflow.
+        // No private message bodies or unseen chats are sent to Gemini.
+        this.savePending(userId,this.dialogueKey(plan.projectId),
+          'HUKM_VERIFIED_WHATSAPP_CONTACT:'+verifiedContactRead,
+          'Sir, '+verifiedContactRead+' ke liye kya reply draft karun? Exact message likh dein.');
+      }
       if(visibleUnreadSendersReviewed){
         // Follow-up is an owner-scoped *question* only. Never persist sender
         // names or private message text in the planner's Gemini prompt.
