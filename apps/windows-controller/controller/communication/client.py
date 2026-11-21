@@ -60,6 +60,11 @@ class ControllerClient:
         if count:
             log.warning("cancelled %d active/queued laptop action(s): %s", count, reason)
 
+    def invalidate_connection(self, reason: str) -> None:
+        """Invalidate every command from the old socket on the event-loop thread."""
+        self.connection_epoch += 1
+        self.cancel_active(reason)
+
     # ---- protocol ---------------------------------------------------
     def hello(self) -> dict:
         os_name, os_ver = info.os_info()
@@ -247,11 +252,10 @@ class ControllerClient:
             finally:
                 # Any command that has not registered a cancellation Event yet
                 # also fails due to the epoch mismatch on its next await.
-                self.connection_epoch += 1
                 # The relay may already have timed out/cancelled these
                 # commands. Do not permit old queued actions to execute while
                 # this device is offline or after it reconnects.
-                self.cancel_active("WebSocket disconnected")
+                self.invalidate_connection("WebSocket disconnected")
                 hb.cancel()
                 self.ws = None
 
@@ -288,8 +292,7 @@ class ControllerClient:
 
     def stop(self) -> None:
         if self.loop:
-            self.loop.call_soon_threadsafe(setattr, self, "connection_epoch", self.connection_epoch + 1)
-            self.loop.call_soon_threadsafe(self.cancel_active, "controller stopping")
+            self.loop.call_soon_threadsafe(self.invalidate_connection, "controller stopping")
             self.loop.call_soon_threadsafe(self.stop_event.set)
             if self.ws is not None:
                 asyncio.run_coroutine_threadsafe(self.ws.close(), self.loop)
