@@ -748,7 +748,7 @@ export class Relay {
 
   private dispatchQueued(deviceId: string) {
     if (!this.isOnline(deviceId)) return;
-    const dev = one(this.db, 'SELECT paused,capabilities_enabled,capabilities_reported FROM devices WHERE id = ? AND status=\'paired\'', deviceId);
+    const dev = one(this.db, 'SELECT paused,capabilities_enabled,capabilities_reported,controller_version FROM devices WHERE id = ? AND status=\'paired\'', deviceId);
     if (!dev || dev.paused) return;
     const enabled=parseJson<Capability[]>(dev.capabilities_enabled,[]);
     const reported=parseJson<Capability[]>(dev.capabilities_reported,[]);
@@ -760,6 +760,16 @@ export class Relay {
         continue;
       }
       if(r.requires_approval&&!r.approved_at)continue;
+      const args=parseJson<Record<string,unknown>>(r.args,{});
+      // Legacy controllers silently ignore these new fields. Never dispatch
+      // a request with altered target semantics to an older controller.
+      const version=String(dev.controller_version??'').match(/^(\d+)\.(\d+)\.(\d+)$/);
+      const supported=!!version&&(Number(version[1])>1||(Number(version[1])===1&&Number(version[2])>=9));
+      if(!supported&&((r.action==='screen.capture'&&Number(args.monitor??1)>1)||
+        (r.action==='chatgpt.download_visible'&&args.assetFolder!==undefined))){
+        this.finish(r.id,'cancelled',null,{code:'CONTROLLER_UPDATE_REQUIRED',message:'Update to HUKM v1.9.0 or later before using this target-specific action'});
+        continue;
+      }
       // Persist dispatch intent BEFORE handing input to the socket. A crash
       // between persistence and send sacrifices availability, not at-most-once safety.
       run(this.db,'UPDATE commands SET dispatched_at=? WHERE id=?',nowIso(),r.id);

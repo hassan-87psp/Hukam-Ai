@@ -276,6 +276,14 @@ def validate(action: str, args: dict) -> dict:
         if parsed.scheme != "https" or parsed.hostname != "chatgpt.com" or parsed.username or parsed.password or parsed.fragment:
             raise ValidationError("Only HTTPS ChatGPT Project URLs are supported")
         out = {"projectUrl": url}
+        if action == "chatgpt.download_visible" and "assetFolder" in a:
+            folder = a["assetFolder"]
+            if (not isinstance(folder, str) or len(folder)>350
+                    or not re.fullmatch(r'[A-Za-z]:[\\/][^\x00-\x1f<>:"|?*]+', folder)
+                    or any(not part or part in (".","..") or part.endswith((" ","."))
+                           for part in re.split(r"[\\/]", folder[3:]))):
+                raise ValidationError("Asset folder must be an existing absolute Windows directory")
+            out["assetFolder"] = folder
         if action != "chatgpt.download_visible":
             prompt = a.get("prompt")
             if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1800 or re.search(r"[\x00-\x08\x0b-\x1f]", prompt):

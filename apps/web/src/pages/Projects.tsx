@@ -292,8 +292,8 @@ export default function Projects(){
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block text-sm">Chrome profile directory<input className="field mt-1 w-full" value={edit.chromeProfile} maxLength={100}
               onChange={e=>setEdit(v=>({...v,chromeProfile:e.target.value}))} placeholder="Profile 1 or Default"/></label>
-            <label className="block text-sm">Asset folder label<input className="field mt-1 w-full" value={edit.assetFolder} maxLength={350}
-              onChange={e=>setEdit(v=>({...v,assetFolder:e.target.value}))} placeholder="Designs / PipSePaisa"/></label>
+            <label className="block text-sm">Asset folder (existing local Windows path)<input className="field mt-1 w-full" value={edit.assetFolder} maxLength={350}
+              onChange={e=>setEdit(v=>({...v,assetFolder:e.target.value}))} placeholder="C:\Users\You\Documents\PipSePaisa\Designs"/></label>
           </div>
           <label className="block text-sm">Preferred Windows laptop
             <select className="field mt-1 w-full" value={edit.preferredDeviceId??''}

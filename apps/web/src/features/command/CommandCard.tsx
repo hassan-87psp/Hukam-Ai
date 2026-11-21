@@ -282,7 +282,8 @@ export function CommandResult({ c }: { c: Command }) {
       return <p className="text-xs text-warn">{r.note ?? 'ChatGPT input attempted; output not independently verified.'}</p>;
     case 'chatgpt.download_visible':
       return <div className="text-xs text-ink2"><p>{r.note ?? 'Download checked.'}</p>
-        {r.fileName && <p>File: {String(r.fileName)}</p>}</div>;
+        {r.fileName && <p>Candidate file: {String(r.fileName)}</p>}
+        {r.assetSaved===true&&<p className="break-all">Owner-reviewed local copy: {String(r.savedPath)}</p>}</div>;
     case 'whatsapp.read_selected':
       return <div className="space-y-2 text-sm">
         <p className="text-xs text-warn">Visible on-screen text, saved to your private HUKM command history after approval. Not forwarded to Gemini.</p>
@@ -383,6 +384,7 @@ function ApprovalBox({ c }: { c: Command }) {
         {['chatgpt.prompt_draft','chatgpt.submit_prompt','chatgpt.download_visible'].includes(c.action) && (<>
           <dt className="text-ink2">ChatGPT Project</dt><dd className="break-all">{String(a.projectUrl)}</dd>
           {typeof a.prompt === 'string' && <><dt className="text-ink2">Exact prompt</dt><dd className="whitespace-pre-wrap break-words">{a.prompt}</dd></>}
+          {typeof a.assetFolder==='string' && <><dt className="text-ink2">Save candidate copy to</dt><dd className="break-all">{a.assetFolder}</dd><dt className="text-ink2">Local confirmation</dt><dd>Review the exact downloaded file on Windows before copying. No existing file will be overwritten.</dd></>}
           <dt className="text-ink2">Effect</dt><dd>Only the reviewed action will run in the verified Chrome tab.</dd>
         </>)}
         {c.action === 'ui.inspect' && (<><dt className="text-ink2">Privacy</dt><dd>Foreground interactive button labels only; no text fields or hidden apps.</dd></>)}

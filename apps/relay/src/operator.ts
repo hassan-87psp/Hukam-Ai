@@ -465,6 +465,18 @@ export class Operator {
       if(['chatgpt.prompt_draft','chatgpt.submit_prompt','chatgpt.download_visible'].includes(step.action) &&
          step.args.projectUrl!==project?.chatgptProjectUrl)
         throw new HttpError(422,'PROJECT_URL_MISMATCH','ChatGPT actions must match this HUKM Project URL.');
+      if(step.action==='chatgpt.download_visible'){
+        // Only an explicit save request can use the owner-configured path.
+        // A model-supplied destination is never authoritative.
+        if(/\b(?:save|folder mein|folder me|folder main|folder me[n]?|folder mai)\b/i.test(answer)){
+          const dest=project?.assetFolder;
+          const check=validateCommand(step.action,{projectUrl:step.args.projectUrl,assetFolder:dest??''});
+          if(!check.ok)throw new HttpError(422,'ASSET_FOLDER_REQUIRED','Set the exact existing Windows asset folder in Projects first.');
+          step.args=check.args;
+        }else{
+          delete step.args.assetFolder;
+        }
+      }
     }
     const plan=this.persistPlan(userId,project?.id??null,request,result);
     this.clearPending(userId,key);

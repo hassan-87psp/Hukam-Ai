@@ -435,13 +435,20 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
   },
   'chatgpt.download_visible': {
     name:'chatgpt.download_visible', capability:'browser', label:'Wait for and download ChatGPT result',
-    timeoutMs:115000, alwaysApprove:true,
+    timeoutMs:150000, alwaysApprove:true,
     validate(a) {
       if(typeof a.projectUrl!=='string' || a.projectUrl.length>500) return fail('invalid project URL');
       let u: URL;
       try {u = new URL(a.projectUrl);}catch{return fail('invalid project URL');}
       if(u.protocol!=='https:' || u.hostname!=='chatgpt.com' || u.username||u.password||u.hash)
         return fail('ChatGPT Project URL must be https://chatgpt.com');
+      if(a.assetFolder!==undefined){
+        if(typeof a.assetFolder!=='string'||a.assetFolder.length>350||
+          !/^[A-Za-z]:[\\/][^\x00-\x1f<>:"|?*]+$/.test(a.assetFolder)||
+          a.assetFolder.slice(3).split(/[\\/]/).some(p=>!p||p==='.'||p==='..'||/[ .]$/.test(p)))
+          return fail('Asset folder must be an existing absolute Windows directory');
+        return ok({projectUrl:u.toString(),assetFolder:a.assetFolder});
+      }
       return ok({projectUrl:u.toString()});
     },
   },

@@ -405,7 +405,18 @@ class Executor:
             raise ActionError("CANCELLED", "ChatGPT download cancelled")
         p = self.folder_path("downloads")
         try:
-            return chatgpt.download_visible(a["projectUrl"], p, cancel)
+            if "assetFolder" in a:
+                from ..browser.project_asset import checked_directory, copy_reviewed_candidate
+                target = checked_directory(Path(a["assetFolder"]), self.root_paths())
+            else:
+                target = None
+            result = chatgpt.download_visible(a["projectUrl"], p, cancel)
+            candidate_mtime = result.pop("_candidateMtimeNs", None)
+            if target is not None and not result.get("simulated"):
+                result.update(copy_reviewed_candidate(
+                    p, target, self.root_paths(), result.get("fileName"),
+                    result.get("sizeBytes"), candidate_mtime, cancel))
+            return result
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 

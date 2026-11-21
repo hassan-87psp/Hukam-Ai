@@ -276,7 +276,7 @@ def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
                         stable_mtime = current[name][0]
                     if stable_checks >= 4:
                         return {"downloadVerified": False, "candidateDetected": True, "fileName": name,
-                                "sizeBytes": size, "verified": False,
+                                "sizeBytes": size, "_candidateMtimeNs": stable_mtime, "verified": False,
                                 "note": "One new stable file appeared in Downloads. Its origin and association with the requested ChatGPT result are not independently verified; review it before saving or sharing."}
                 else:
                     stable_name, stable_size, stable_checks = None, -1, 0
