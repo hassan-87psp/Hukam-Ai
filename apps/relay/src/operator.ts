@@ -15,6 +15,7 @@ import { geminiConfigured } from './gemini';
 import type { Projects } from './projects';
 import { addMs, newId, nowIso } from './util';
 import { agentToolInstruction, isAgentTool } from './agent-tools';
+import { freshTask, boundedFollowup, numberWritingPlan, specialistHint, isExplicitSend, isPrivateFollowup } from './brain-context';
 
 type Step = {action:ActionName;args:Record<string,unknown>};
 type Proposal = {summary:string;steps:Step[]} | {question:string};
@@ -106,7 +107,8 @@ async function askGeminiPlan(request:string,context:string,fetcher?:typeof fetch
     'You are the COMMAND UNDERSTANDING PLANNER for HUKM, a remotely paired Windows PC.',
     'Return ONLY a JSON object. For an executable task: {"summary":"what will be done","steps":[{"action":"name","args":{}}]}.',
     'For an incomplete task: {"question":"one concise Roman Urdu follow-up question","steps":[]}.',
-    'Ask ONLY the one necessary missing detail, and retain the rest from context. Never invent contacts, files, dates, titles or Chrome profiles.',
+    'Ask ONLY the one necessary missing detail in natural Pakistani Roman Urdu, and retain the rest from context. Never invent contacts, files, dates, titles or Chrome profiles. Do not ask for information already supplied.',
+    'Do not address the user as Sir repeatedly. Distinguish a proposal, input delivery, and verified outcome. Never claim all work is done.',
     'Answer follow-up messages using the original request and most recent answer supplied. Do not ask the same question twice if its answer is present.',
     agentToolInstruction(),
     'Never use arbitrary shell, file deletion, payments, password/OTP reading or UNREVIEWED WhatsApp Send. Do not pretend a draft was sent.',
@@ -157,7 +159,7 @@ async function askGeminiPlan(request:string,context:string,fetcher?:typeof fetch
       headers:{'content-type':'application/json','x-goog-api-key':key},
       body:JSON.stringify({systemInstruction:{parts:[{text:policy}]},
         contents:[{role:'user',parts:[{text:'Current UTC date/time: '+new Date().toISOString()+
-          '. Default user time zone: Asia/Kuala_Lumpur (unless Project says otherwise).\nProject preferences:\n'+context.slice(0,4500)+
+          '. Default user time zone: Asia/Kuala_Lumpur (unless Project says otherwise).\nFixed workflow guidance: '+specialistHint(request)+'\nProject preferences:\n'+context.slice(0,4500)+
           '\n\nUser command:\n'+request}]}],
         generationConfig:{temperature:0.1,maxOutputTokens:650,responseMimeType:'application/json'}}),
       signal:controller.signal,
@@ -277,14 +279,11 @@ export class Operator {
       } else {
         // Keep the pending question until we successfully create a new question/plan.
         // A model error or quota timeout MUST NOT discard the user's unfinished task.
-        const freshParsed=parseCommand(answer);
-        const fresh=(freshParsed.kind==='command' && freshParsed.action==='app.close') ||
-          /^(?:whatsapp|chrome|notepad|youtube|calendar|google|outlook|browser|open|khol|new task)\b.*\b(?:kholo|open|start|check|karo|band|close|quit)$/i.test(answer);
-        if(!fresh) {
+        if(!freshTask(answer)) {
           isFollowup=true;
-          request=(String(last.request).slice(0,1300)+
-            '\nHUKM asked: '+String(last.question).slice(0,250)+
-            '\nUser replied: '+answer).slice(0,1800);
+          // Private reviewed contact/draft state must never be sent to the model.
+          request=isPrivateFollowup(String(last.request)) ? answer :
+            boundedFollowup(String(last.request),String(last.question),answer);
         }
       }
     }
@@ -320,6 +319,7 @@ export class Operator {
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|mail\.google\.com|outlook\.office\.com)\/)/.test(url);
     const nativeWhatsAppWorkflow = !isFollowup ? desktopWhatsAppWorkflow(answer) : null;
     const selectedWhatsAppContact = !isFollowup ? namedWhatsAppRead(answer) : null;
+    const localNumberPlan = !isFollowup ? numberWritingPlan(answer) : null;
     // After an approved read the user may simply say "reply likho: ...".
     // Exact contact is recovered from the scoped, expiring verified-read
     // dialogue, not guessed from Gemini or arbitrary message text.
@@ -373,15 +373,15 @@ export class Operator {
       // Explicit owner confirmation is NECESSARY but NOT SUFFICIENT:
       // this creates only the separately approval-gated final send action.
       // An ambiguous outcome will never be automatically retried.
-      if(!/^(?:haan|han|yes|ok|okay)(?:[, ]+(?:bhej(?:\s+do|do)?|send(?:\s+karo|\s+now)?))?$|^(?:bhej\s+do|send\s+(?:karo|now))$/i.test(answer))
+      if(!isExplicitSend(answer))
         return {kind:'clarify',topic:'operator-followup',
-          question:'Sir, '+reviewedDraft.contact+' ka drafted message send karna hai? "Haan bhej do" bolein ya "Cancel".'};
+          question:''+reviewedDraft.contact+' ka drafted message send karna hai? "Haan bhej do" bolein ya "Cancel".'};
       result={summary:'Final reviewed WhatsApp Send for '+reviewedDraft.contact+' — separate approval required',
         steps:[validateStep({action:'whatsapp.send_reviewed',args:reviewedDraft})]};
     } else if(recentVerifiedContact && safeName(recentVerifiedContact)){
-      if(!replyDraft || /^(?:haan|yes|ok|okay|send|bhej\w*|nahi|no)$/i.test(replyDraft))
+      if(!/^(?:isko\s+)?(?:reply|jawab|message|msg)\s+(?:likho|likh do|draft)\s*[:\-]/i.test(answer) || !replyDraft || /^(?:haan|yes|ok|okay|send|bhej\w*|nahi|no)$/i.test(replyDraft))
         return {kind:'clarify',topic:'operator-followup',
-          question:'Sir, '+recentVerifiedContact+' ko kya reply likhna hai? Exact message batayein; Send approval alag hogi.'};
+          question:''+recentVerifiedContact+' ko kya reply likhna hai? Exact message batayein; Send approval alag hogi.'};
       result={summary:'Draft a reply to verified Personal WhatsApp contact '+recentVerifiedContact+' (do not Send)',
         steps:[validateStep({action:'whatsapp.draft_reply',
           args:{contact:recentVerifiedContact,message:replyDraft}})]};
@@ -391,6 +391,10 @@ export class Operator {
           validateStep({action:'whatsapp.select_chat',args:{contact:namedFollowup}}),
           validateStep({action:'whatsapp.read_selected',args:{contact:namedFollowup}}),
         ]};
+    } else if(isFollowup && isPrivateFollowup(previousRequest)){
+      return {kind:'clarify',topic:'operator-followup',question:String(last.question)};
+    } else if(localNumberPlan){
+      result=validatePlanShape(localNumberPlan);
     } else if(selectedWhatsAppContact){
       result={
         summary:'Select and verify '+selectedWhatsAppContact+' in Personal WhatsApp Desktop, then read only the visible messages',
@@ -430,7 +434,7 @@ export class Operator {
     // merely a model suggestion or untrusted project instructions.
     for(const step of result.steps){
       if((step.action==='whatsapp.send_reviewed' || step.action==='whatsapp.send_attachment_reviewed') &&
-         !/(?:\bsend\b|\bsent\b|\bbhej\w*\b|\breply\s*(?:kar\s*do|kardo|kro|karo)\b)/i.test(request))
+         !/(?:\bsend\b|\bbhej\w*\b)/i.test(isFollowup && isPrivateFollowup(previousRequest) ? answer : request))
         throw new HttpError(422,'WA_SEND_NOT_REQUESTED',
           'HUKM cannot send a WhatsApp message unless the owner explicitly asks to send/reply.');
       if(step.action==='calendar.save_reviewed' &&
@@ -534,15 +538,15 @@ export class Operator {
           return;
         }
         const data=final.result?JSON.parse(final.result):{};
-        if(step.action==='whatsapp.unread_senders' &&
+        if(i===plan.steps.length-1 && data.simulated!==true && step.action==='whatsapp.unread_senders' &&
           Array.isArray(data.senders) && data.senders.length>0){
           visibleUnreadSendersReviewed=true;
         }
-        if(step.action==='whatsapp.read_selected' &&
+        if(i===plan.steps.length-1 && data.simulated!==true && step.action==='whatsapp.read_selected' &&
           data.messagesRead===true && typeof step.args.contact==='string'){
           verifiedContactRead=String(step.args.contact);
         }
-        if(step.action==='whatsapp.draft_reply' &&
+        if(i===plan.steps.length-1 && data.simulated!==true && step.action==='whatsapp.draft_reply' &&
           data.draftEntered===true && data.recipientVerified===true && data.sent===false &&
           typeof step.args.contact==='string' && typeof step.args.message==='string'){
           verifiedDraft={contact:String(step.args.contact),message:String(step.args.message)};
@@ -558,7 +562,7 @@ export class Operator {
         // NOT pass this saved state to Gemini or an external model.
         this.savePending(userId,this.dialogueKey(plan.projectId),
           'HUKM_APPROVED_WHATSAPP_DRAFT:'+JSON.stringify(verifiedDraft),
-          'Sir, '+verifiedDraft.contact+' ko drafted message send karna hai? "Haan bhej do" ya "Cancel" bolein.',
+          ''+verifiedDraft.contact+' ko drafted message send karna hai? "Haan bhej do" ya "Cancel" bolein.',
           10*60_000);
       }
       if(verifiedContactRead){
@@ -566,7 +570,7 @@ export class Operator {
         // No private message bodies or unseen chats are sent to Gemini.
         this.savePending(userId,this.dialogueKey(plan.projectId),
           'HUKM_VERIFIED_WHATSAPP_CONTACT:'+verifiedContactRead,
-          'Sir, '+verifiedContactRead+' ke liye kya reply draft karun? Exact message likh dein.');
+          ''+verifiedContactRead+' ke liye reply draft karne ke liye likhein: Reply likho: [message].');
       }
       if(visibleUnreadSendersReviewed){
         // Follow-up is an owner-scoped *question* only. Never persist sender
@@ -576,7 +580,7 @@ export class Operator {
           'The owner opened Personal WhatsApp Desktop and reviewed visible unread chat names. '+
           'Now ask which exact contact to select and read. Use only whatsapp.select_chat '+
           'then whatsapp.read_selected with the SAME contact; never send a message.',
-          'Sir, kis contact ka visible message parhun? Contact ka naam batayein.');
+          'kis contact ka visible message parhun? Contact ka naam batayein.');
       }
     }finally{this.running.delete(taskId);}
   }

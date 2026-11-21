@@ -78,7 +78,7 @@ export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorR
     if(GREETING.test(t) || ASIDE_QUESTION.test(t))return 'chat';
     return 'plan';
   }
-  if(!t || GREETING.test(t))return 'chat';
+  if(!t || GREETING.test(t) || ASIDE_QUESTION.test(t))return 'chat';
   if(desktopWhatsAppWorkflow(t))return 'plan';
   if(namedWhatsAppRead(t))return 'plan';
   // Mailboxes have account-specific identities: don't silently treat "send
