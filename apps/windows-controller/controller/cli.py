@@ -142,6 +142,9 @@ def main(argv: list[str] | None = None) -> int:
     if actual_args == ["--local-ocr-worker"]:
         from .screen.ocr_process import worker_main
         return worker_main()
+    if len(actual_args)==2 and actual_args[0]=="--whatsapp-uia-worker":
+        from .whatsapp.uia_probe import worker_main
+        return worker_main(actual_args[1])
     p = argparse.ArgumentParser(prog="hukm-controller", description="HUKM AI Windows controller")
     p.add_argument("--version", action="version", version=VERSION)
     sub = p.add_subparsers(dest="cmd")

@@ -150,6 +150,7 @@ def test_no_mouse_if_ocr_misses_header(monkeypatch):
     monkeypatch.setattr(vu,"_capture_left",
                         lambda hwnd:(Image.new("RGB",(520,920)),0,0))
     monkeypatch.setattr(vu,"_ocr_words",lambda image, cancel=None:[vu.Word("Unread",153,180,60,20)])
+    monkeypatch.setattr(vu,"_recover_before_click",lambda hwnd,img,left,top,words,cancel:(img,left,top,words,None,{}))
     event=[]
     monkeypatch.setattr(win32api,"mouse_event",lambda *args:event.append(args))
     with pytest.raises(vu.VisualUnreadUnavailable,match="No mouse click"):
@@ -317,3 +318,26 @@ def test_compact_layout_extracts_actual_sender_rows_without_mock():
     chip=vu.locate_unread(x,520,920)
     assert chip is not None
     assert vu._visible_titles_for_layout(x,520,chip)==["Sample One","Sample Two"]
+
+def test_adaptive_filter_needs_only_one_sibling_and_independent_header():
+    # Newer narrow UI: Favourites is clipped; ordinary Search contains
+    # the word unread in a different row. No hardcoded actual screen point.
+    x=[vu.Word("Chats",16,5,35,14),vu.Word("Search",20,42,31,11),
+       vu.Word("unread",55,42,36,11),vu.Word("chats",94,42,24,11),
+       vu.Word("All",25,80,15,11),vu.Word("Unread",68,80,41,11)]
+    assert vu.locate_unread(x,260,600)==x[-1]
+    assert vu.locate_unread(x+[vu.Word("Unread",128,80,41,11)],260,600) is None
+    assert vu.locate_unread([x[-1]],260,600) is None
+
+def test_zero_requires_explicit_label_or_adjacent_badge():
+    chip=vu.Word("Unread",60,80,42,12)
+    assert vu._verified_badge_count([chip],chip) is None
+    assert vu._verified_badge_count([chip,vu.Word("0",107,81,7,10)],chip)==0
+    assert vu._verified_badge_count([chip,vu.Word("0",107,130,7,10)],chip) is None
+
+def test_uia_bounds_must_be_inside_the_original_capture():
+    from PIL import Image
+    image=Image.new("RGB",(400,700))
+    native={"bounds":[-1860,80,-1780,110],"selected":True}
+    assert vu._chip_from_probe(native,-1920,0,image).x==60
+    assert vu._chip_from_probe(native,0,0,image) is None

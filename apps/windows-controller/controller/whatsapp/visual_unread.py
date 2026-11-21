@@ -253,12 +253,131 @@ def _compact_unread(words,width,height):
     return hits[0] if len(hits)==1 else None
 
 
-def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
-    old=_legacy_unread(words,width,height)
-    compact=_compact_unread(words,width,height)
-    if old is not None and compact is not None and old!=compact:
+
+def _adaptive_unread(words,width,height):
+    """Resolve local sibling geometry, not a fixed set of five exact labels."""
+    candidates=[]
+    for chip in words:
+        if not re.fullmatch(r"unread(?:\s*[:(]?\d{1,3}\)?)?",_text(chip)):
+            continue
+        h=chip.height
+        if not (6<=h<=65 and 1.8*h<=chip.width<=13*h and
+                0<=chip.x<width-chip.width and 10<=chip.cy<=min(height*.42,420)):
+            continue
+        # Require an actual Chats heading and a separate Search anchor ABOVE
+        # the candidate. The Unread word inside a Search placeholder is not
+        # itself a filter. Nearby row labels use scale-relative spacing.
+        heads=[w for w in words if _text(w)=="chats" and
+               1.8*h<=chip.cy-w.cy<=22*h and 0<=w.x<=chip.x+2*h]
+        searches=[w for w in words if re.fullmatch(r"search(?:\s+.*)?",_text(w)) and
+                  .9*h<=chip.cy-w.cy<=14*h and 0<=w.x<=chip.x+4*h]
+        if len(heads)!=1 or not any(heads[0].cy+0.4*h<w.cy for w in searches):
+            continue
+        aligned=[w for w in words if abs(w.cy-chip.cy)<=max(4,.5*h)]
+        left=[w for w in aligned if _text(w)=="all" and
+              -h*.15<=chip.x-w.x-w.width<=7*h]
+        right=[w for w in aligned if _text(w) in ("favourites","favorites","groups") and
+               -h*.15<=w.x-chip.x-chip.width<=13*h]
+        # At least one adjacent known filter plus independent top-of-pane
+        # anchors. Never accept an isolated word or two distinct targets.
+        if len(left)>1 or not (len(left)==1 or right):
+            continue
+        candidates.append(chip)
+    return candidates[0] if len(candidates)==1 else None
+
+
+def _header_diagnostics(words,image,stage):
+    # Redact all names, previews, timestamps and arbitrary OCR text. Only
+    # allowlisted UI labels and positions appear in the diagnostic log.
+    labels=[]
+    for w in words:
+        name=_text(w)
+        if name in ("chats","all","unread","favourites","favorites","groups","search","search chats","search unread chats","search all chats") or re.fullmatch(r"unread\s+\d{1,3}",name):
+            if w.cy<=min(image.height*.45,440):
+                labels.append((re.sub(r"\d+","#",name),round(w.x),round(w.y),round(w.width),round(w.height)))
+    log.info("WhatsApp recognition stage=%s crop=%dx%d words=%d known_header_geometry=%s",
+             stage,image.width,image.height,len(words),labels[:24])
+
+
+def _ocr_enlarged(image,cancel):
+    # Different image preprocessing, not a repeated identical attempt.
+    from PIL import Image, ImageOps
+    factor=min(2.5,2560/max(image.size))
+    if factor<1.15:
+        factor=1.0
+    contrast=ImageOps.autocontrast(image.convert("L")).convert("RGB")
+    if factor!=1:
+        contrast=contrast.resize((round(image.width*factor),round(image.height*factor)),Image.Resampling.LANCZOS)
+    return [Word(w.text,w.x/factor,w.y/factor,w.width/factor,w.height/factor)
+            for w in _ocr_words(contrast,cancel=cancel)]
+
+
+def _probe_native(hwnd,cancel):
+    from .uia_probe import probe
+    _ensure_not_cancelled(cancel)
+    return probe(hwnd,cancel=cancel)
+
+
+def _chip_from_probe(probe,left,top,image):
+    box=probe.get("bounds")
+    if not isinstance(box,list) or len(box)!=4:
         return None
-    return old if old is not None else compact
+    x,y,r,b=box
+    x-=left;r-=left;y-=top;b-=top
+    if not (0<=x<r<=image.width and 0<=y<b<=image.height and
+            b-y>=8 and r-x>=12):
+        return None
+    return Word("Unread",x,y,r-x,b-y)
+
+
+def _recover_before_click(hwnd,image,left,top,words,cancel):
+    """One native probe and one different, fresh local OCR attempt, no click."""
+    _header_diagnostics(words,image,"initial-miss")
+    native=_probe_native(hwnd,cancel)
+    chip=_chip_from_probe(native,left,top,image)
+    if chip is not None:
+        log.info("WhatsApp recognition path=bounded-native-accessibility")
+        return image,left,top,words,chip,native
+    _ensure_not_cancelled(cancel)
+    _safe_foreground(hwnd)
+    import win32gui
+    import win32con
+    if not win32gui.IsZoomed(hwnd):
+        # An owner-approved read can restore/maximize its verified app.
+        # Never move another application; no mouse click on unknown pixels.
+        win32gui.ShowWindow(hwnd,win32con.SW_MAXIMIZE)
+        time.sleep(.35)
+    _ensure_not_cancelled(cancel)
+    image,left,top=_capture_left(hwnd)
+    words=_ocr_enlarged(image,cancel)
+    _header_diagnostics(words,image,"enlarged-retry")
+    chip=locate_unread(words,image.width,image.height)
+    return image,left,top,words,chip,{}
+
+
+def _verified_badge_count(words,chip):
+    combined=re.fullmatch(r"unread\s*[:(]?\s*(\d{1,3})\)?",_text(chip))
+    if combined:
+        return int(combined.group(1))
+    if _text(chip)!="unread":
+        return None
+    digits=[w for w in words if re.fullmatch(r"\d{1,3}",_text(w)) and
+            abs(w.cy-chip.cy)<=max(3,chip.height*.5) and
+            0<=w.x-chip.x-chip.width<=chip.height*1.5]
+    return int(_text(digits[0])) if len(digits)==1 else None
+
+def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
+    matches=[w for w in (_legacy_unread(words,width,height),
+                         _compact_unread(words,width,height),
+                         _adaptive_unread(words,width,height)) if w is not None]
+    if not matches or any(w!=matches[0] for w in matches[1:]):
+        return None
+    # A second same-row Unread candidate remains ambiguous, even if another
+    # method selected only one. Ignore labels in separate Search rows.
+    target=matches[0]
+    peers=[w for w in words if re.fullmatch(r"unread(?:\s*[:(]?\d{1,3}\)?)?",_text(w))
+           and abs(w.cy-target.cy)<=max(4,target.height*.5)]
+    return target if len(peers)==1 else None
 
 
 def _visible_titles_for_layout(words, width, chip):
@@ -372,26 +491,41 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     image, left, top = _capture_left(active_hwnd)
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_ocr")
-    words = _ocr_words(image, cancel=cancel)
+    try:
+        words = _ocr_words(image, cancel=cancel)
+    except VisualUnreadUnavailable:
+        _ensure_not_cancelled(cancel)
+        words=[]
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_ocr_complete elapsed=%.1fs",
              time.monotonic() - started)
     chip = locate_unread(words, image.width, image.height)
+    native={}
+    if chip is None:
+        image,left,top,words,chip,native=_recover_before_click(active_hwnd,image,left,top,words,cancel)
     if chip is None:
         raise VisualUnreadUnavailable(
-            "Windows UIA and local visual OCR could not uniquely identify "
-            "an unambiguous Unread chip with independent header anchors. No mouse click was attempted. "
-            "Keep Chats, Search, All, Unread and Favourites visible; layout not confirmed."
+            "Unread filter not identified after bounded local OCR, native UIA and enlarged OCR recovery. "
+            "No mouse click was attempted; see privacy-safe header geometry in controller logs."
         )
+    badge=native.get("count") if native.get("count") is not None else (_verified_badge_count(words,chip) if not native else None)
+    if badge==0:
+        # Explicit observed badge, not a missing label or an empty OCR result.
+        _safe_foreground(active_hwnd)
+        _ensure_not_cancelled(cancel)
+        return {"supported":True,"senders":[],"visibleChatCount":0,
+                "totalUnreadChats":0,"unreadCountVerified":True,"totalUnreadMessages":0,
+                "visibleOnly":False,"messagesRead":False,"filterClickAttempted":False,
+                "filterSelectedVerified":True,"source":"Explicit WhatsApp Unread zero badge"}
 
-    if _search_header(words,chip)=="search unread chats":
+    if native.get("selected") is True or _search_header(words,chip)=="search unread chats":
         senders=_visible_titles_for_layout(words,image.width,chip)
         _ensure_not_cancelled(cancel)
         _safe_foreground(active_hwnd)
         if not senders:
             raise VisualUnreadUnavailable("Unread filter is visible but sender rows could not be verified. No names guessed.")
         return {"supported":True,"senders":senders,"visibleChatCount":len(senders),
-                "totalUnreadChats":None,"visibleOnly":True,"messagesRead":False,
+                "totalUnreadChats":badge,"unreadCountVerified":badge is not None,"visibleOnly":True,"messagesRead":False,
                 "filterClickAttempted":False,"filterSelectedVerified":True,
                 "source":"Local Windows visual OCR of existing Personal WhatsApp Unread filter",
                 "note":"Existing Unread search placeholder confirms the visible filter; no additional click."}
@@ -452,16 +586,25 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     log.info("WhatsApp unread visual stage=second_ocr_complete elapsed=%.1fs",
              time.monotonic() - started)
     selected_chip = locate_unread(second_words, after_image.width, after_image.height)
+    native_after={}
+    if selected_chip is None or native:
+        native_after=_probe_native(active_hwnd,cancel)
+        selected_chip=selected_chip or _chip_from_probe(native_after,left,top,after_image)
     if selected_chip is None:
         raise VisualUnreadUnavailable(
-            "Unread was clicked but the filter row could not be reverified visually."
+            "Unread click attempted but filter could not be independently reverified; no repeat click."
         )
     after = _chip_background(after_image, selected_chip)
-    selection_verified = (_search_header(second_words,selected_chip)=="search unread chats" or
-                          (before >= 0 and after >= before + 7))
+    selection_verified = (native_after.get("selected") is True or
+                          _search_header(second_words,selected_chip)=="search unread chats" or
+                          (not native and before >= 0 and after >= before + 7))
+    if native_after.get("selected") is False:
+        selection_verified=False
+    count_after=native_after.get("count") if native_after.get("count") is not None else (
+        _verified_badge_count(second_words,selected_chip) if not native_after else None)
     # If the chip already appeared selected, a click could have changed it.
     # Never label names 'verified unread' without positive visual evidence.
-    if _search_header(second_words,selected_chip)!="search unread chats" and after >= 0 and before >= 0 and after + 7 < before:
+    if native_after.get("selected") is False or (native_after.get("selected") is not True and _search_header(second_words,selected_chip)!="search unread chats" and after >= 0 and before >= 0 and after + 7 < before):
         raise VisualUnreadUnavailable(
             "Unread filter appears to have switched off; no unread sender names reported."
         )
@@ -477,7 +620,8 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
         "supported": True,
         "senders": senders,
         "visibleChatCount": len(senders),
-        "totalUnreadChats": None,
+        "totalUnreadChats": count_after if selection_verified else None,
+        "unreadCountVerified": count_after is not None and selection_verified,
         "visibleOnly": True, "messagesRead": False,
         "filterClickAttempted": True,
         "filterSelectedVerified": selection_verified,

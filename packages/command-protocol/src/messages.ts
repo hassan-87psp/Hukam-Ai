@@ -114,7 +114,7 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
     case 'whatsapp.check':
       return L('WhatsApp check kar raha hoon.', 'واٹس ایپ چیک کر رہا ہوں۔', 'Checking WhatsApp.');
     case 'whatsapp.unread_senders':
-      return L('WhatsApp ki visible unread chats ke names parhne ke liye approval chahiye.', 'نظر آنے والی ان ریڈ چیٹس کے نام پڑھنے کے لیے اجازت چاہیے۔', 'Approval is required to read visible unread sender names.');
+      return L('WhatsApp ki unread list check karne ki request tayyar hai.', 'واٹس ایپ کی ان ریڈ فہرست چیک کرنے کی درخواست تیار ہے۔', 'Request to check the visible unread WhatsApp list is ready.');
     case 'whatsapp.read_visible':
       return L('Aapki approval ke baad WhatsApp ki khuli chat laptop par offline parhunga. Message text cloud par nahi bhejunga.', 'آپ کی منظوری کے بعد کھلی چیٹ لیپ ٹاپ پر آف لائن پڑھوں گا۔', 'With approval, I will read aloud the visible WhatsApp chat on your laptop only; no message contents are transferred.');
     case 'whatsapp.compose':

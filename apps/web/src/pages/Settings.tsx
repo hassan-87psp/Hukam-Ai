@@ -32,7 +32,7 @@ type AiDiagnostic = {
   noLaptopActions:boolean;accuracyVerified:false;
 };
 
-const OPTIONAL_APPROVAL: ActionName[] = ['file.open', 'app.open', 'web.open', 'folder.open', 'youtube.play', 'whatsapp.open', 'whatsapp.check'];
+const OPTIONAL_APPROVAL: ActionName[] = ['file.open', 'app.open', 'web.open', 'folder.open', 'youtube.play', 'whatsapp.open', 'whatsapp.check', 'whatsapp.unread_senders'];
 
 export default function Settings() {
   const { user, setUser, settings, saveSettings, devices, toast } = useStore();
@@ -138,7 +138,7 @@ export default function Settings() {
                 <Toggle key={a} checked disabled onChange={() => {}} label={<>{ACTION_LABEL[a]} <Badge tone="muted" className="ml-1">always</Badge></>} description="Can’t be turned off." />
               ))}
               {OPTIONAL_APPROVAL.map((a) => (
-                <Toggle key={a} checked={settings.approvalRequired[a] ?? !!ACTIONS[a].defaultApprove} onChange={(v) => saveSettings({ approvalRequired: { ...settings.approvalRequired, [a]: v } })} label={ACTION_LABEL[a]} />
+                <Toggle key={a} checked={settings.approvalRequired[a] ?? !!ACTIONS[a].defaultApprove} onChange={(v) => saveSettings({ approvalRequired: { ...settings.approvalRequired, [a]: v } })} label={ACTION_LABEL[a]} description={a==='whatsapp.unread_senders'?'Turn off only to authorize recurring manually requested unread-list reads. Sender names may appear in your private HUKM command history. Sending, attachments and message-body reads still require approval.':undefined} />
               ))}
             </div>
             <p className="mt-2 text-xs text-ink2">Deleting/modifying files, installing programs, shutdown and payments are not possible through HUKM V1 at all.</p>

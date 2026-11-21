@@ -268,8 +268,8 @@ export function parseCommand(input: string): ParseResult {
   // Sender names need a separate, explicitly approved laptop read.
   // Do not mistake "kis ka message" for the simpler numeric unread check.
   if (/\b(whatsapp|messages?|msgs?|chats?)\b/.test(t) &&
-      /\b(kis kis|kis ka|kiska|kis ke|kon|kaun|who|sender|senders|naam|name)\b/.test(t) &&
-      /\b(msg|msgs|message|messages|chat|chats|unread|naye|nayi|aaya|aya)\b/.test(t))
+      /\b(kis kis|kis ka|kiska|kis ke|kinke|kin ke|kon|kaun|who|sender|senders|naam|name)\b/.test(t) &&
+      /\b(msg|msgs|message|messages|messaged|chat|chats|unread|naye|nayi|aaya|aya)\b/.test(t))
     return cmd('whatsapp.unread_senders', {}, 'whatsapp-unread-senders');
 
   // Explicitly reading the selected chat into the authenticated HUKM
@@ -286,6 +286,13 @@ export function parseCommand(input: string): ParseResult {
       /\b(read|parho|parh|parhke|parhkar|padho|pad|sunao|sunana)\b/.test(t) &&
       /\b(messages?|msgs?|chats?)\b/.test(t))
     return cmd('whatsapp.read_visible', {}, 'whatsapp-read-visible');
+
+  // Explicit inbox read requests, not names or message bodies, use the
+  // approved unread-list flow. Other count-only legacy inputs remain valid.
+  if (/\bwhatsapp\b/.test(t) && !/\b(?:whatsapp web|web whatsapp|selected|current|khuli|kitne|kitni|how many|count|total)\b/.test(t) &&
+      /\b(?:unread|new|naye|nayi)\b/.test(t) &&
+      /\b(?:check|batao|dikhao|show|list|tell)\b/.test(t))
+    return cmd('whatsapp.unread_senders', {}, 'whatsapp-inbox-read');
 
   // "<name> ke naye messages batao" — reads unread-chat counts only.
   if (/\b(unread|naye|nayi|new) (messages|message|chats)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-unread');

@@ -182,7 +182,7 @@ describe('system', () => {
 
 describe('whatsapp', () => {
   it('check', () => expect(c('WhatsApp check karo.').action).toBe('whatsapp.check'));
-  it('unread', () => expect(c('WhatsApp par unread messages batao.').action).toBe('whatsapp.check'));
+  it('unread', () => expect(c('WhatsApp par unread messages batao.').action).toBe('whatsapp.unread_senders'));
   it('contact unread → check', () => expect(c('Ali ke naye messages batao.').action).toBe('whatsapp.check'));
   for (const t of ['WhatsApp kholo', 'WhatsApp khol do.', 'Open WhatsApp', 'whatsapp']) {
     it("defaults to Personal WhatsApp Desktop: " + t, () =>
@@ -298,4 +298,15 @@ describe('explicit single-monitor OCR',()=>{
     expect(requiresApproval('screen.capture',{'screen.capture':false})).toBe(true);
     expect(ackMessage('screen.capture',{monitor:2,textOnly:true}).en).toContain('No screenshot upload');
   });
+});
+
+describe('owner read-only WhatsApp preference (explicit opt-in)',()=>{
+  it('defaults to per-scan approval but supports saved read-only permission',()=>{
+    expect(requiresApproval('whatsapp.unread_senders')).toBe(true);
+    expect(requiresApproval('whatsapp.unread_senders',{'whatsapp.unread_senders':false})).toBe(false);
+    expect(requiresApproval('whatsapp.compose',{'whatsapp.compose':false})).toBe(true);
+  });
+  for (const phrase of ['Kinke messages unread hain?', 'Who has messaged me on WhatsApp?',
+    'WhatsApp par new messages batao','Check my unread WhatsApp messages'])
+    it(phrase,()=>expect(c(phrase).action).toBe('whatsapp.unread_senders'));
 });
