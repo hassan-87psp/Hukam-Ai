@@ -1,5 +1,5 @@
-import { ArrowRight, CheckCircle2, Clock3, FolderOpen, Globe, History, Layers, Maximize2, MessageCircle, MessageSquareReply, Mic, Monitor, MonitorSmartphone, Laptop, Square, Youtube, Zap } from 'lucide-react';
-import { lazy, Suspense, useMemo, useState } from 'react';
+import { ArrowRight, CheckCircle2, Clock3, FolderOpen, FolderKanban, Globe, History, Layers, Maximize2, MessageCircle, MessageSquareReply, Mic, Monitor, MonitorSmartphone, Laptop, Square, Youtube, Zap } from 'lucide-react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { LaptopArt, PhoneArt } from '../components/Illustrations';
 import QuickPrompt from '../components/QuickPrompt';
@@ -11,6 +11,7 @@ import { useMediaQuery, useReducedMotion, useVoiceInput } from '../hooks/useVoic
 import { PageFrame } from '../layouts/AppShell';
 import { clock, duration, STATUS_LABEL, timeAgo } from '../lib/format';
 import { useStore, type BrainState } from '../services/store';
+import { get } from '../services/api';
 
 const BrainOrb = lazy(() => import('../features/brain/BrainOrb'));
 
@@ -279,6 +280,55 @@ function MobileQuick() {
   );
 }
 
+/** Owner-scoped shortcuts for persistent project memory and tasks.
+ * The server owns the data; empty while loading is not confused with no projects.
+ */
+function ProjectWorkspaces(){
+  const [projects,setProjects]=useState<{id:string;name:string;description:string;updatedAt:string}[]>([]);
+  const [status,setStatus]=useState<'loading'|'ready'|'error'>('loading');
+  useEffect(()=>{
+    let live=true;
+    void get<{id:string;name:string;description:string;updatedAt:string}[]>('/api/projects')
+      .then(rows=>{if(live){setProjects(rows);setStatus('ready');}})
+      .catch(()=>{if(live)setStatus('error');});
+    return ()=>{live=false;};
+  },[]);
+  return <div className="glass mt-5 rounded-3xl p-4 sm:p-5" aria-label="Your HUKM project workspaces">
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <div className="flex items-center gap-3">
+        <span className="grid h-10 w-10 place-items-center rounded-2xl bg-blue/15 text-ice">
+          <FolderKanban size={20}/>
+        </span>
+        <div>
+          <h2 className="font-display text-base font-bold">Your Projects</h2>
+          <p className="text-xs text-ink2">Separate memory, instructions and reviewed laptop tasks</p>
+        </div>
+      </div>
+      <Link to="/projects" className="btn-ghost px-3 py-2 text-xs">
+        Manage Projects <ArrowRight size={15}/>
+      </Link>
+    </div>
+    {status==='loading'&&<p className="text-sm text-ink2">Loading your workspaces…</p>}
+    {status==='error'&&<p className="text-sm text-warn">Workspaces unavailable right now. Open Projects to retry.</p>}
+    {status==='ready'&&projects.length===0&&<div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-field/40 p-3">
+      <p className="text-sm text-ink2">No projects yet. Create one to keep each workflow separate.</p>
+      <Link to="/projects" className="btn-primary px-3 py-2 text-xs">Create Project</Link>
+    </div>}
+    {status==='ready'&&projects.length>0&&<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {projects.slice(0,3).map(p=><Link key={p.id} to={'/chat?projectId='+encodeURIComponent(p.id)}
+        className="group min-w-0 rounded-2xl bg-field/50 p-4 ring-1 ring-line/15 transition hover:bg-blue/10 hover:ring-ice/40">
+        <div className="flex items-center justify-between gap-2">
+          <FolderKanban size={18} className="shrink-0 text-ice"/>
+          <ArrowRight size={15} className="shrink-0 text-ink2 transition group-hover:translate-x-1"/>
+        </div>
+        <p className="mt-2 truncate text-sm font-semibold">{p.name}</p>
+        <p className="mt-1 line-clamp-2 min-h-[2rem] text-xs text-ink2">{p.description||'Open your dedicated project chat and task workspace'}</p>
+        <p className="mt-2 text-[11px] text-ink2">Updated {timeAgo(p.updatedAt)}</p>
+      </Link>)}
+    </div>}
+  </div>;
+}
+
 export default function Dashboard() {
   const { brain, user } = useStore();
   const desktop = useMediaQuery('(min-width: 1024px)');
@@ -299,6 +349,7 @@ export default function Dashboard() {
           <div className="mt-4 w-full"><CommandComposer compact placeholder="Type a command…" /></div>
         </div>
         <div className="mt-5"><MobileQuick /></div>
+        <ProjectWorkspaces />
         <div className="mt-4 space-y-4">
           <CommandStatusCard />
           <RecentCommands limit={4} />
@@ -325,6 +376,7 @@ export default function Dashboard() {
         </section>
         <aside className="pt-2"><Timeline /></aside>
       </div>
+      <ProjectWorkspaces />
       <div className="mt-6 grid grid-cols-3 gap-5">
         <ConnectedLaptop />
         <ThisSession />

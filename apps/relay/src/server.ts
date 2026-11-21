@@ -15,7 +15,7 @@ import { analyzeScreenshot } from './vision';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
-export const VERSION = '1.6.5';
+export const VERSION = '1.6.6';
 const COOKIE = 'hukm_session';
 const MAX_BODY = 64 * 1024;
 
@@ -264,6 +264,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   add('POST', '/api/projects/:id/notes', true, (c) => projects.saveNote(c.user!.id, c.params.id, null, c.body ?? {}));
   add('PATCH', '/api/projects/:id/notes/:noteId', true, (c) => projects.saveNote(c.user!.id, c.params.id, c.params.noteId, c.body ?? {}));
   add('DELETE', '/api/projects/:id/notes/:noteId', true, (c) => projects.removeNote(c.user!.id, c.params.id, c.params.noteId));
+  add('GET', '/api/projects/:id/tasks', true, (c) => operator.listProjectRuns(c.user!.id,c.params.id));
   add('GET', '/api/projects/:id/messages', true, (c) => projects.messages(c.user!.id, c.params.id));
   add('DELETE', '/api/projects/:id/messages', true, (c) => projects.clearMessages(c.user!.id, c.params.id));
   add('POST', '/api/projects/:id/chat', true, async (c) => {

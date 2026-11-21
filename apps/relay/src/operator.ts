@@ -214,6 +214,20 @@ export class Operator {
     if(!row)throw new HttpError(404,'RUN_NOT_FOUND','Task run not found');
     return runRow(row);
   }
+  /** Project-scoped task history; ownership is checked before any rows are returned.
+   * No cross-project commands, private message bodies or action arguments exposed.
+   */
+  listProjectRuns(userId:string,projectId:string){
+    this.projects.get(userId,projectId);
+    return all(this.db,`SELECT r.*,p.summary AS plan_summary
+      FROM operator_runs r JOIN operator_plans p ON p.id=r.plan_id
+      WHERE r.user_id=? AND p.user_id=? AND p.project_id=?
+      ORDER BY r.created_at DESC,r.rowid DESC LIMIT 60`,
+      userId,userId,projectId).map(row=>({
+        ...runRow(row),
+        summary:String(row.plan_summary).slice(0,250),
+      }));
+  }
   private dialogueKey(projectId:unknown):string {
     return typeof projectId==='string' && projectId.trim() ? projectId.trim() : 'general';
   }
