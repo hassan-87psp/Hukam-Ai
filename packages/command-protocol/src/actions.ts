@@ -348,6 +348,19 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({contact,message});
     },
   },
+  'whatsapp.send_reviewed': {
+    name:'whatsapp.send_reviewed',capability:'whatsapp',
+    label:'Send reviewed WhatsApp message (final approval)',
+    timeoutMs:30000,alwaysApprove:true,
+    validate(a){
+      const contact=str(a.contact,'contact',80);
+      if(isErr(contact))return contact;
+      const message=a.message;
+      if(typeof message!=='string'||!message.trim()||message.length>1000||
+         /[\u0000-\u0008\u000b-\u001f]/.test(message))return fail('invalid WhatsApp message');
+      return ok({contact,message});
+    },
+  },
   'whatsapp.attach_preview': {
     name:'whatsapp.attach_preview', capability:'whatsapp', label:'Prepare WhatsApp attachment preview',
     timeoutMs:30000, alwaysApprove:true,
