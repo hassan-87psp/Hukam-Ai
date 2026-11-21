@@ -15,6 +15,7 @@ import { geminiConfigured } from './gemini';
 import type { Projects } from './projects';
 import { addMs, newId, nowIso } from './util';
 import { agentToolInstruction, isAgentTool } from './agent-tools';
+import { MemoryRecords } from './memory-records';
 import { freshTask, boundedFollowup, numberWritingPlan, specialistHint, isExplicitSend, isPrivateFollowup } from './brain-context';
 
 type Step = {action:ActionName;args:Record<string,unknown>};
@@ -304,9 +305,10 @@ export class Operator {
        (!project?.chatgptProjectUrl || !project.chatgptProjectUrl.startsWith('https://chatgpt.com/')))
       throw new HttpError(422,'PROJECT_URL_REQUIRED','This HUKM Project needs an exact ChatGPT Project URL before using ChatGPT.');
     const notes=project?this.projects.notes(userId,project.id).slice(0,8):[];
-    const context=project?
+    const memoryContext=new MemoryRecords(this.db).context(userId,project?.id??null,1500);
+    const context=[memoryContext, ...(project?
       [project.name,project.description,project.instructions,project.chromeProfile?'Preferred Chrome profile label: '+project.chromeProfile:'',
-        ...notes.map(n=>n.title+': '+n.content.slice(0,300))].join('\n').slice(0,4500):'';
+        ...notes.map(n=>n.title+': '+n.content.slice(0,300))]:[])].filter(Boolean).join('\n').slice(0,4500);
     let result:Proposal;
     // A single clearly parsed action works without Gemini. Complex/unknown
     // commands need model classification; no automatic fallback to web search.
@@ -392,7 +394,7 @@ export class Operator {
           validateStep({action:'whatsapp.read_selected',args:{contact:namedFollowup}}),
         ]};
     } else if(isFollowup && isPrivateFollowup(previousRequest)){
-      return {kind:'clarify',topic:'operator-followup',question:String(last.question)};
+      return {kind:'clarify',topic:'operator-followup',question:String(last?.question??'Please clarify the requested action.')};
     } else if(localNumberPlan){
       result=validatePlanShape(localNumberPlan);
     } else if(selectedWhatsAppContact){

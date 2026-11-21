@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { BookOpen, Check, ExternalLink, FolderKanban, Laptop, ListTodo, MessageSquare, Pencil, Plus, RefreshCw, Save, Search, Send, Trash2, X } from 'lucide-react';
 import { get, post, patch, del } from '../services/api';
 import { useStore } from '../services/store';
+import MemoryPanel from '../components/MemoryPanel';
 
 type Project = {
   id:string; name:string; description:string; instructions:string;
@@ -308,6 +309,7 @@ export default function Projects(){
           <button className="btn-primary" onClick={()=>void save()} disabled={saving||!edit.name.trim()}><Check size={16}/> Save instructions</button>
         </div>}
         {tab==='memory'&&<div>
+          <MemoryPanel key={project.id} projectId={project.id}/>
           <p className="mb-3 text-xs text-ink2">Saved reference notes are reused as context for future Project conversations. Delete any note at any time.</p>
           <form onSubmit={e=>void saveNote(e)} className="mb-4 space-y-3 rounded-xl bg-field/40 p-3">
             <input className="field w-full" placeholder="Memory title, e.g. Brand palette" aria-label="Memory title" maxLength={120} value={noteTitle} onChange={e=>setNoteTitle(e.target.value)}/>
@@ -336,5 +338,6 @@ export default function Projects(){
         </div>}
       </main>}
     </div>
+    <div className="mt-4 glass rounded-2xl p-4"><MemoryPanel key="general" projectId={null}/></div>
   </div>;
 }
