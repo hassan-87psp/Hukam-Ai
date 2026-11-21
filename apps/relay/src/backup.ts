@@ -3,7 +3,8 @@
  * Snapshots live in a separate private bucket in Milvoy Supabase Storage.
  * Does not modify Milvoy application tables.
  */
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import type { DB } from './db';
 import { log } from './util';
@@ -17,7 +18,11 @@ function settings(): { url: string; token: string } | null {
   const token = (process.env.HUKM_BACKUP_TOKEN || '').trim();
   if (!url && !token) return null;
   if (!url || !token) throw new Error('Both HUKM_BACKUP_URL and HUKM_BACKUP_TOKEN are required');
-  if (!url.startsWith('https://')) throw new Error('HUKM_BACKUP_URL must be HTTPS');
+  let parsed: URL;
+  try { parsed = new URL(url); }
+  catch { throw new Error('Invalid HUKM_BACKUP_URL'); }
+  if (parsed.protocol !== 'https:' || !parsed.hostname || parsed.username || parsed.password || parsed.hash)
+    throw new Error('HUKM_BACKUP_URL must be HTTPS without embedded credentials or fragments');
   return { url, token };
 }
 
@@ -27,6 +32,7 @@ export async function restoreCloudSnapshot(dataDir: string): Promise<boolean> {
   // Fail closed: a transient cloud error must not reset user login or pairing.
   const response = await fetch(auth.url, {
     method: 'GET',
+    redirect: 'error',
     headers: { 'x-hukm-backup-token': auth.token, 'cache-control': 'no-store' },
     signal: AbortSignal.timeout(TIMEOUT),
   });
@@ -39,9 +45,21 @@ export async function restoreCloudSnapshot(dataDir: string): Promise<boolean> {
   if (bytes.length < 100 || bytes.length > MAX_BYTES || !bytes.subarray(0,16).equals(HEADER))
     throw new Error('Invalid cloud SQLite backup; refusing to start');
   mkdirSync(dataDir, { recursive: true });
-  const temp = join(dataDir, 'hukm-restore.tmp');
-  writeFileSync(temp, bytes, { mode: 0o600 });
-  renameSync(temp, join(dataDir, 'hukm.db'));
+  const scratch = mkdtempSync(join(dataDir, 'restore-check-'));
+  const temp = join(scratch, 'snapshot.db');
+  try {
+    writeFileSync(temp, bytes, { mode: 0o600 });
+    // Validate a separate temporary file before touching the current database.
+    const { DatabaseSync } = createRequire(import.meta.url)('node:sqlite') as typeof import('node:sqlite');
+    const candidate = new DatabaseSync(temp, { readOnly: true });
+    try {
+      const checks = candidate.prepare('PRAGMA integrity_check').all();
+      const schema = candidate.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get();
+      if (checks.length !== 1 || checks[0].integrity_check !== 'ok' || !schema)
+        throw new Error('Cloud SQLite snapshot integrity or schema check failed');
+    } finally { candidate.close(); }
+    renameSync(temp, join(dataDir, 'hukm.db'));
+  } finally { rmSync(scratch, { recursive: true, force: true }); }
   log('info', 'HUKM database restored from private Milvoy storage', { bytes: bytes.length });
   return true;
 }
@@ -83,6 +101,7 @@ export function startCloudBackup(db: DB, dataDir: string) {
     pending = (async () => {
       const response = await fetch(auth.url, {
         method: 'PUT',
+        redirect: 'error',
         headers: {
           'x-hukm-backup-token': auth.token,
           'content-type': 'application/octet-stream',

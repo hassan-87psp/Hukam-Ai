@@ -67,7 +67,12 @@ def do_pair(server: str, code: str) -> int:
     except PairingError as e:
         print(f"✖ Pairing failed: {e}")
         return 1
-    credentials.save_device(server, r["deviceId"], r["deviceToken"], r.get("name", ""))
+    try:
+        credentials.save_device(server, r["deviceId"], r["deviceToken"], r.get("name", ""))
+    except (RuntimeError, OSError):
+        print("Pairing could not be stored securely. Existing local credentials were not replaced. "
+              "Remove the newly created device in the web app before trying again.")
+        return 1
     cfg = Config.load()
     cfg.server_url = server
     cfg.save()

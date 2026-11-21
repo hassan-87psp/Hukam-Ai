@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { openDb, type DB } from '../src/db';
@@ -130,6 +130,35 @@ describe('real SQLite snapshot round trip (isolated, mocked transport)', () => {
         vi.unstubAllEnvs();
         rmSync(dir, { recursive: true, force: true });
       }
+    }
+  });
+});
+
+describe('restore validation before touching local data', () => {
+  it('rejects a corrupt SQLite-looking snapshot and preserves existing local data', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hukm-invalid-restore-'));
+    const migrations = join(dir, 'migrations');
+    mkdirSync(migrations);
+    const db = openDb(dir, migrations);
+    db.exec("CREATE TABLE sample (value TEXT NOT NULL)");
+    db.exec("INSERT INTO sample VALUES ('original')");
+    db.close();
+    const original = readFileSync(join(dir, 'hukm.db'));
+    const invalid = Buffer.alloc(4096);
+    original.subarray(0, 16).copy(invalid);
+    vi.stubEnv('HUKM_BACKUP_URL', 'https://backup.example.test/snapshot');
+    vi.stubEnv('HUKM_BACKUP_TOKEN', 'test-only');
+    const fetcher = vi.fn(async () => new Response(invalid, { status: 200 }));
+    vi.stubGlobal('fetch', fetcher);
+    try {
+      await expect(restoreCloudSnapshot(dir)).rejects.toThrow();
+      expect(readFileSync(join(dir, 'hukm.db'))).toEqual(original);
+      expect(fetcher).toHaveBeenCalledWith('https://backup.example.test/snapshot',
+        expect.objectContaining({ redirect: 'error' }));
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
