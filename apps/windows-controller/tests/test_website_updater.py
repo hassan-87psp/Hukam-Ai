@@ -94,3 +94,95 @@ def test_checksum_format_must_include_exact_filename(monkeypatch):
     assert updater._expected_digest("https://github.com/official",name)==digest
     with pytest.raises(updater.UpdateError,match="checksum"):
         updater._expected_digest("https://github.com/official","evil.exe")
+
+
+def test_windows_owner_confirmation_is_topmost_foreground_and_defaults_to_no(monkeypatch):
+    import ctypes
+    class FakeMessageBox:
+        calls=[]
+        def __call__(self, parent, message, title, flags):
+            self.calls.append((str(message),str(title),flags))
+            return 7  # IDNO
+    fake=FakeMessageBox()
+    monkeypatch.setattr(ctypes.windll.user32,"MessageBoxW",fake)
+    assert updater._local_confirm("1.8.4") is False
+    _,title,flags=fake.calls[-1]
+    assert "Owner-approved update" in title
+    assert flags & 0x10000  # MB_SETFOREGROUND
+    assert flags & 0x40000  # MB_TOPMOST
+    assert flags & 0x100    # MB_DEFBUTTON2 (No)
+    assert flags & 0x4      # MB_YESNO
+
+
+def test_owner_cancel_does_not_spawn_installer(monkeypatch,tmp_path):
+    from controller.system import launcher
+    monkeypatch.setattr(launcher,"SIMULATE",False)
+    monkeypatch.setattr(updater,"IS_WINDOWS",True)
+    monkeypatch.setattr(updater,"data_dir",lambda:tmp_path)
+    monkeypatch.setattr(updater,"_latest_assets",lambda:(
+        "1.8.4","https://github.com/hassan-87psp/Hukam-Ai/releases/download/v1.8.4/HUKM-Setup-v1.8.4.exe",
+        "https://github.com/hassan-87psp/Hukam-Ai/releases/download/v1.8.4/HUKM-Setup-v1.8.4.exe.sha256",
+        23000000))
+    monkeypatch.setattr(updater,"_expected_digest",lambda *_args:"a"*64)
+    target=tmp_path/"Updates"/"HUKM-Setup-v1.8.4.exe"
+    def stage(url,installer,digest,size):
+        installer.parent.mkdir(parents=True,exist_ok=True)
+        installer.write_bytes(b"test")
+    monkeypatch.setattr(updater,"_stage",stage)
+    monkeypatch.setattr(updater,"_local_confirm",lambda ver:False)
+    monkeypatch.setattr(updater.subprocess,"Popen",
+                        lambda *_args,**_kwargs: (_ for _ in ()).throw(AssertionError("Installer must not launch")))
+    result=updater.update_from_website()
+    assert result["installerLaunched"] is False
+    assert result["verified"] is False
+
+
+def test_installer_launch_reports_unverified_until_reconnected(monkeypatch,tmp_path):
+    from controller.system import launcher
+    monkeypatch.setattr(launcher,"SIMULATE",False)
+    monkeypatch.setattr(updater,"IS_WINDOWS",True)
+    monkeypatch.setattr(updater,"data_dir",lambda:tmp_path)
+    monkeypatch.setattr(updater,"_latest_assets",lambda:(
+        "1.8.4","https://github.com/hassan-87psp/Hukam-Ai/releases/download/v1.8.4/HUKM-Setup-v1.8.4.exe",
+        "https://github.com/hassan-87psp/Hukam-Ai/releases/download/v1.8.4/HUKM-Setup-v1.8.4.exe.sha256",
+        23000000))
+    monkeypatch.setattr(updater,"_expected_digest",lambda *_args:"a"*64)
+    monkeypatch.setattr(updater,"_stage",lambda _url,installer,_digest,_size:
+                        (installer.parent.mkdir(parents=True,exist_ok=True),installer.write_bytes(b"test")))
+    monkeypatch.setattr(updater,"_local_confirm",lambda version:True)
+    launched=[]
+    monkeypatch.setattr(updater.subprocess,"Popen",lambda cmd,**kwargs:launched.append(cmd))
+    result=updater.update_from_website()
+    assert launched and launched[0][0].endswith("HUKM-Setup-v1.8.4.exe")
+    assert result["installerLaunched"] is True
+    assert result["verified"] is False
+
+
+def test_installer_launch_gracefully_stops_previous_exe_after_result(sandbox,monkeypatch):
+    import asyncio
+    from controller.actions.executor import Outcome
+    from controller.communication.client import ControllerClient
+
+    client=ControllerClient(Config(),"fake-token")
+    sent=[]
+    async def send(message):
+        sent.append(message)
+        return True
+    monkeypatch.setattr(client,"send",send)
+    monkeypatch.setattr(client.executor,"run",
+                        lambda action,args,cancel:Outcome(True,{
+                            "installerLaunched":True,"verified":False,
+                            "latestVersion":"1.8.4"}))
+    stopped=[]
+    monkeypatch.setattr(client,"stop",lambda:stopped.append(True))
+    async def action():
+        await client.on_command({
+            "id":"test-update-windows-release",
+            "action":"controller.update","args":{},"timeoutMs":180000})
+    try:
+        asyncio.run(action())
+        assert stopped == [True]
+        assert any(m.get("type")=="result" and m["result"]["installerLaunched"] is True
+                   for m in sent), "Report the launch BEFORE the old EXE exits"
+    finally:
+        client.pool.shutdown(wait=True)
