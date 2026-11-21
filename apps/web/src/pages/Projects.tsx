@@ -27,6 +27,7 @@ export default function Projects(){
   const [tasks,setTasks]=useState<Task[]>([]);
   const [taskFilter,setTaskFilter]=useState<'all'|'active'|'finished'>('all');
   const [noteSearch,setNoteSearch]=useState('');
+  const [projectSearch,setProjectSearch]=useState('');
   const [editingNoteId,setEditingNoteId]=useState<string|null>(null);
   const selectedRef=useRef<string|null>(null);
   const [messages,setMessages]=useState<Message[]>([]);
@@ -53,7 +54,7 @@ export default function Projects(){
     // Drop the old project's visible data immediately; slow API responses
     // must never display memory, chat or tasks in another project.
     setMessages([]);setNotes([]);setTasks([]);
-    setEditingNoteId(null);setNoteSearch('');setDraft('');
+    setEditingNoteId(null);setNoteSearch('');setNoteTitle('');setNoteContent('');setDraft('');
     setEdit({name:project.name,description:project.description,instructions:project.instructions,
       chromeProfile:project.chromeProfile,chatgptProjectUrl:project.chatgptProjectUrl,
       assetFolder:project.assetFolder,preferredDeviceId:project.preferredDeviceId});
@@ -176,9 +177,15 @@ export default function Projects(){
     <div className="grid gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
       <aside className="glass rounded-2xl p-3">
         <p className="mb-3 px-2 text-xs font-semibold uppercase tracking-wider text-ink2">Your Projects · {items.length}</p>
+        <div className="mb-3 flex items-center gap-2 rounded-xl bg-field/50 px-3 ring-1 ring-line/10">
+          <Search size={15} className="shrink-0 text-ink2"/>
+          <input className="w-full bg-transparent py-2.5 text-sm outline-none" type="search"
+            value={projectSearch} onChange={e=>setProjectSearch(e.target.value)}
+            placeholder="Find a project…" aria-label="Search project workspaces"/>
+        </div>
         {items.length===0&&<p className="px-2 py-5 text-sm text-ink2">Create your first project to save instructions and AI conversations.</p>}
         <div className="space-y-1">
-          {items.map(p=><button key={p.id} type="button" onClick={()=>setSelected(p.id)}
+          {items.filter(p=>(p.name+' '+p.description).toLowerCase().includes(projectSearch.toLowerCase().trim())).map(p=><button key={p.id} type="button" onClick={()=>setSelected(p.id)}
             className={`flex w-full items-center gap-3 rounded-xl p-3 text-left transition ${selected===p.id?'bg-blue/20 text-ink ring-1 ring-ice/40':'hover:bg-field/60'}`}>
             <FolderKanban className="h-5 w-5 shrink-0 text-ice"/>
             <span className="min-w-0"><span className="block truncate text-sm font-semibold">{p.name}</span><span className="block truncate text-xs text-ink2">{p.description||'No description'}</span></span>
