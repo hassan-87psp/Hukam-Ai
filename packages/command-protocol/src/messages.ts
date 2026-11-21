@@ -158,6 +158,8 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Scroll input deliver hua. Actual page movement verify nahi hui.', 'اسکرول بھیج دیا، نتیجے کی تصدیق نہیں ہوئی۔', 'Scroll input delivered; on-screen movement not independently verified.');
     case 'calendar.event_draft':
       return L('Calendar event draft open hua. Event abhi save nahi hua.', 'کیلنڈر ڈرافٹ کھلا ہے مگر محفوظ نہیں ہوا۔', 'Calendar draft opened. Event not yet saved.');
+    case 'calendar.save_reviewed':
+      return L('Calendar Save click attempt hua; event ID verify nahi. Calendar check karein, auto-retry nahi.', 'کیلنڈر محفوظ کرنے کی کوشش ہوئی، تصدیق نہیں ہوئی۔', 'Calendar Save attempted; event ID not verified. Check before retrying.');
     case 'chatgpt.prompt_draft':
       return L('ChatGPT mein prompt draft hua. Abhi send nahi hua.', 'پرامپٹ لکھا گیا، بھیجا نہیں گیا۔', 'ChatGPT prompt drafted but not submitted.');
     case 'chatgpt.submit_prompt':
