@@ -284,7 +284,9 @@ export class Operator {
       } else {
         // Keep the pending question until we successfully create a new question/plan.
         // A model error or quota timeout MUST NOT discard the user's unfinished task.
-        const fresh=/^(?:whatsapp|chrome|notepad|youtube|calendar|google|outlook|browser|open|khol|new task)\b.*\b(?:kholo|open|start|check|karo|band|close|quit)$/i.test(answer);
+        const freshParsed=parseCommand(answer);
+        const fresh=(freshParsed.kind==='command' && freshParsed.action==='app.close') ||
+          /^(?:whatsapp|chrome|notepad|youtube|calendar|google|outlook|browser|open|khol|new task)\b.*\b(?:kholo|open|start|check|karo|band|close|quit)$/i.test(answer);
         if(!fresh) {
           isFollowup=true;
           request=(String(last.request).slice(0,1300)+
