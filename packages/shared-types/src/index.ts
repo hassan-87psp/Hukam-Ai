@@ -55,6 +55,7 @@ export type ActionName =
   | 'diagnostics.probe'
   | 'ui.inspect'
   | 'ui.activate'
+  | 'ui.scroll'
   | 'calendar.event_draft'
   | 'chatgpt.prompt_draft'
   | 'chatgpt.submit_prompt'
