@@ -164,6 +164,23 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
 
   add('GET', '/api/health', false, () => ({ ok: true, version: VERSION, time: nowIso() }));
   add('GET', '/api/system', true, () => ({ version: VERSION, providers: PROVIDER_STATUS, parser: 'deterministic+reviewed Gemini planner', projects: 'persistent', operator: 'supervised' }));
+  // The relay answering HTTP does not mean the Windows laptop or Gemini is
+  // connected. Give the authenticated owner separate, honest readiness data.
+  add('GET', '/api/runtime/status', true, (c) => {
+    const devices = relay.listDevices(c.user!.id);
+    const activeRuns = operator.listRuns(c.user!.id)
+      .filter(r => ['queued', 'running', 'awaiting_approval'].includes(r.status)).length;
+    return {
+      relay: { reachable: true, version: VERSION },
+      gemini: { configured: geminiConfigured(), reachable: null },
+      controller: {
+        paired: devices.length,
+        connected: devices.filter(d => d.online).length,
+        paused: devices.filter(d => d.paused).length,
+      },
+      tasks: { awaitingApproval: relay.listApprovals(c.user!.id).length, activeRuns },
+    };
+  });
   // Keys never leave the server. The model is chat-only; it cannot execute actions.
   // History comes from owner-scoped server storage, NOT untrusted browser-supplied turns.
   add('GET', '/api/ai/status', true, () => ({ configured: geminiConfigured(), provider: 'gemini' }));
@@ -594,9 +611,21 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     get setupCode() { return setupCode; },
     async close() {
       relay.stop();
-      wssDevice.close();
-      wssClient.close();
-      await new Promise<void>((r) => server.close(() => r()));
+      // Device 'close' handlers write the final last_seen/disconnect audit
+      // to SQLite. Wait for those handlers before closing the database.
+      const forceClose = setTimeout(() => {
+        for (const ws of [...wssDevice.clients, ...wssClient.clients]) ws.terminate();
+      }, 2000);
+      forceClose.unref?.();
+      try {
+        await Promise.all([
+          new Promise<void>((resolve) => wssDevice.close(() => resolve())),
+          new Promise<void>((resolve) => wssClient.close(() => resolve())),
+        ]);
+      } finally {
+        clearTimeout(forceClose);
+      }
+      await new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections?.();
       await backup.close();
       db.close();
