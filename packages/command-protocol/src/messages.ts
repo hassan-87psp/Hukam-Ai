@@ -142,6 +142,8 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Window samne aa gayi.', 'ونڈو سامنے آ گئی۔', 'Window brought to the front.');
     case 'screen.capture':
       return L('Screenshot aa gaya.', 'اسکرین شاٹ آ گیا۔', 'Screenshot received.');
+    case 'diagnostics.probe':
+      return L('Laptop diagnostics result aa gaya.', 'لیپ ٹاپ جانچ کے نتائج آگئے۔', 'Laptop diagnostic result is ready.');
     case 'ui.inspect':
       return L('Visible control labels mile hain. Message contents read nahi hue.', 'نظر آنے والے کنٹرولز پڑھ لیے۔', 'Visible interactive controls inspected; no message bodies read.');
     case 'ui.activate':
