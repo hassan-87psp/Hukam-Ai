@@ -153,7 +153,9 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'For "WhatsApp ki selected chat parh ke batao": use whatsapp.read_selected with {}.',
     'For "screen par kya buttons hain": use ui.inspect with {}. ui.activate needs exact label.',
     'Do not activate Send, Delete, Pay, Submit or other consequential buttons using ui.activate.',
-    'For "Google Calendar kholo": web.open https://calendar.google.com/calendar/u/0/r.',
+    'For "Gmail inbox kholo": email.inbox_open with provider google and the exact saved Chrome profile. Ask if profile unknown.',
+    'For "Outlook inbox kholo": email.inbox_open with provider outlook and the exact saved Chrome profile. Do not guess accounts.',
+'For "Google Calendar kholo": web.open https://calendar.google.com/calendar/u/0/r.',
     'For "Outlook Calendar kholo": web.open https://outlook.office.com/calendar/.',
     'For saved ChatGPT project opening, use browser.profile_open only with exact saved Default/Profile N and the configured chatgpt.com URL. Do not guess profile names.',
     'Never pretend the result has already happened. The relay separately validates and approves each action.',
@@ -296,7 +298,7 @@ export class Operator {
     // bypass the model's missing-contact question.
     const intent=routeIntent(request,parsed);
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
-    const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/.test(url);
+    const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|mail\.google\.com|outlook\.office\.com)\/)/.test(url);
     const nativeWhatsAppWorkflow = !isFollowup ? desktopWhatsAppWorkflow(answer) : null;
     if(nativeWhatsAppWorkflow){
       // Keep the user's request intact: open the personal desktop app first,
