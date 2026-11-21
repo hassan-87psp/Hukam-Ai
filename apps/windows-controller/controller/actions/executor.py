@@ -396,6 +396,17 @@ class Executor:
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 
+    def do_whatsapp_send_attachment_reviewed(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Attachment Send cancelled before execution")
+        path = v.check_openable(Path(a["path"]), self.root_paths())
+        if not path.is_file():
+            raise ActionError("NOT_ALLOWED", "Attachment no longer exists in allowed folders")
+        try:
+            return wa_desktop.send_attachment_reviewed(a["contact"], str(path), cancel)
+        except wa_desktop.DesktopWhatsAppError as exc:
+            raise ActionError("WHATSAPP_SEND_NOT_SAFE", str(exc)) from exc
+
     def do_whatsapp_compose(self, a, _c):
         return {"contact": a["contact"], **wa.compose(a["phone"], a["message"], self.cfg.whatsapp_mode, self.cfg.browser)}
 
