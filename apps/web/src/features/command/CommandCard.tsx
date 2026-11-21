@@ -187,6 +187,12 @@ export function CommandResult({ c }: { c: Command }) {
         </div>
       );
     case 'screen.capture':
+      if(c.args.textOnly===true)return <div className="space-y-2">
+        <p className="text-xs text-warn">Monitor {String(r.monitor??c.args.monitor)} · Local OCR estimate{r.simulated?' (simulation)':''}. May contain errors or omit text. Never use it as proof of a successful action.</p>
+        <p className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-xl bg-field/50 p-3 text-sm">{typeof r.text==='string'&&r.text?r.text:'No readable text detected. This does not prove the screen is empty.'}</p>
+        {r.truncated&&<p className="text-xs text-warn">Text limited to 6,000 characters.</p>}
+        <p className="text-xs text-ink2">Saved in private command history; not automatically shared with Gemini.</p>
+      </div>;
       return c.screenshotId ? (
         <>
           <button onClick={() => setZoom(true)} className="block overflow-hidden rounded-xl ring-1 ring-line/15">
@@ -389,7 +395,7 @@ function ApprovalBox({ c }: { c: Command }) {
         </>)}
         {c.action === 'ui.inspect' && (<><dt className="text-ink2">Privacy</dt><dd>Foreground interactive button labels only; no text fields or hidden apps.</dd></>)}
         {c.action === 'ui.activate' && (<><dt className="text-ink2">Exact visible label</dt><dd>{String(a.label)}</dd></>)}
-        {c.action === 'screen.capture' && (<><dt className="text-ink2">Effect</dt><dd className="text-ink2">One screenshot of the main screen is sent to your account and auto-deleted per retention settings.</dd></>)}
+        {c.action === 'screen.capture' && (<><dt className="text-ink2">Monitor</dt><dd>{String(a.monitor??1)}</dd><dt className="text-ink2">Effect</dt><dd className="text-ink2">{a.textOnly===true?'Visible text will be recognized locally and sent to your HUKM account command history. No screenshot is uploaded. Sensitive on-screen text may be included; hide passwords and private information before approving.':'One screenshot of the selected monitor is sent to your account and auto-deleted per retention settings.'}</dd></>)}
         {c.action === 'whatsapp.unread_senders' && (<>
           <dt className="text-ink2">Data</dt><dd>Only sender names in the visible Unread chat list, not message bodies</dd>
           <dt className="text-ink2">Privacy</dt><dd>Visible names will be transmitted to your authenticated HUKM web account and saved in command history.</dd>

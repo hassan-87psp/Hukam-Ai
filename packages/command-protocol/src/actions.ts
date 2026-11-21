@@ -517,13 +517,14 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     },
   },
   'screen.capture': {
-    name: 'screen.capture', capability: 'screen', label: 'Capture screenshot', timeoutMs: 20000, defaultApprove: true, alwaysApprove: true,
+    name: 'screen.capture', capability: 'screen', label: 'Capture screen or read visible text', timeoutMs: 40000, defaultApprove: true, alwaysApprove: true,
     validate(a) {
       if (!Object.keys(a).length) return ok({});
-      if (Object.keys(a).length !== 1 || !Number.isInteger(a.monitor) ||
-          (a.monitor as number) < 1 || (a.monitor as number) > 16)
-        return fail('Select one physical monitor numbered 1–16');
-      return ok({monitor:a.monitor});
+      if (Object.keys(a).some(k=>!['monitor','textOnly'].includes(k)) || !Number.isInteger(a.monitor) ||
+          (a.monitor as number) < 1 || (a.monitor as number) > 16 ||
+          ('textOnly' in a && a.textOnly!==true))
+        return fail('Select one physical monitor numbered 1–16; optional textOnly must be true');
+      return ok({monitor:a.monitor,...(a.textOnly===true?{textOnly:true}:{})});
     },
   },
   'browser.control': {

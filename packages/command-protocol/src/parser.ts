@@ -328,6 +328,14 @@ export function parseCommand(input: string): ParseResult {
     return cmd('youtube.search', { query }, 'youtube-search');
   }
 
+  // Exact owner text-reading intent; no background scans or inferred OCR clicks.
+  const readScreen = t.match(/^(?:please\s+)?(?:monitor|screen)(?:\s+(\d{1,2}))?\s+(?:ka\s+)?(?:text|ocr)\s+(?:parho|padho|read|dikhao|karo)$/);
+  if(readScreen){
+    const monitor=Number(readScreen[1]??1);
+    if(monitor<1||monitor>16)return {kind:'clarify',topic:'unknown',normalized:t};
+    return cmd('screen.capture',{monitor,textOnly:true},'screen-local-ocr');
+  }
+
   // screen
   if (/\b(screen|screenshot|monitor)\b/.test(t) && (SHOW.test(t) || /\b(capture|lo|le|take|grab|bhejo|send)\b/.test(t) || /^screenshot$/.test(t))) {
     // Invalid or ambiguous multi-display requests must not capture another display.

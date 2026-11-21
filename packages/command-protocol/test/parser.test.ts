@@ -287,3 +287,15 @@ describe('explicit browser identity and navigation',()=>{
     expect(c('Profile 2 mein Gmail kholo')).toMatchObject({action:'browser.profile_open',args:{profile:'Profile 2',url:'https://mail.google.com/'}});
   });
 });
+
+describe('explicit single-monitor OCR',()=>{
+  it('keeps text-only intent distinct from screenshot and always approved',()=>{
+    expect(c('Monitor 2 ka text parho')).toMatchObject({action:'screen.capture',args:{monitor:2,textOnly:true}});
+    expect(validateCommand('screen.capture',{monitor:2,textOnly:true})).toMatchObject({ok:true,args:{monitor:2,textOnly:true}});
+    expect(validateCommand('screen.capture',{monitor:2,textOnly:false}).ok).toBe(false);
+    expect(validateCommand('screen.capture',{textOnly:true}).ok).toBe(false);
+    expect(validateCommand('screen.capture',{monitor:17,textOnly:true}).ok).toBe(false);
+    expect(requiresApproval('screen.capture',{'screen.capture':false})).toBe(true);
+    expect(ackMessage('screen.capture',{monitor:2,textOnly:true}).en).toContain('No screenshot upload');
+  });
+});

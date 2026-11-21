@@ -464,7 +464,16 @@ export class Relay {
         }
         let result = msg.result && typeof msg.result === 'object' ? { ...msg.result } : {};
         let screenshotId: string | null = null;
-        if (msg.ok && msg.screenshot?.dataBase64) {
+        const textOnly = c.action === 'screen.capture' && parseJson<Record<string,unknown>>(c.args,{}).textOnly===true;
+        if (textOnly) {
+          const monitor=parseJson<Record<string,unknown>>(c.args,{}).monitor;
+          if(msg.ok && (result.ocrRead!==true || typeof result.text!=='string' ||
+              result.text.length>6000 || result.monitor!==monitor || !!msg.screenshot)){
+            this.finish(c.id,'failed',null,{code:'SCREEN_OCR_UNVERIFIABLE',message:'Text-only result did not match the reviewed monitor or data mode'});
+            return;
+          }
+        }
+        if (msg.ok && !textOnly && msg.screenshot?.dataBase64) {
           screenshotId = this.storeScreenshot(userId, deviceId, c.id, msg.screenshot);
           result = { ...result, screenshotId };
         }
@@ -765,7 +774,7 @@ export class Relay {
       // a request with altered target semantics to an older controller.
       const version=String(dev.controller_version??'').match(/^(\d+)\.(\d+)\.(\d+)$/);
       const supported=!!version&&(Number(version[1])>1||(Number(version[1])===1&&Number(version[2])>=9));
-      if(!supported&&((r.action==='screen.capture'&&Number(args.monitor??1)>1)||
+      if(!supported&&((r.action==='screen.capture'&&(Number(args.monitor??1)>1||args.textOnly===true))||
         (r.action==='chatgpt.download_visible'&&args.assetFolder!==undefined))){
         this.finish(r.id,'cancelled',null,{code:'CONTROLLER_UPDATE_REQUIRED',message:'Update to HUKM v1.9.0 or later before using this target-specific action'});
         continue;

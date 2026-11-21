@@ -140,9 +140,13 @@ def validate(action: str, args: dict) -> dict:
         if not a:
             return {}
         monitor = a.get("monitor")
-        if set(a) != {"monitor"} or type(monitor) is not int or not 1 <= monitor <= 16:
-            raise ValidationError("Select one physical monitor numbered 1–16")
-        return {"monitor": monitor}
+        if (set(a) - {"monitor", "textOnly"} or type(monitor) is not int or not 1 <= monitor <= 16
+                or ("textOnly" in a and a["textOnly"] is not True)):
+            raise ValidationError("Select one physical monitor numbered 1–16; optional textOnly must be true")
+        out = {"monitor": monitor}
+        if a.get("textOnly") is True:
+            out["textOnly"] = True
+        return out
     if action == "controller.update":
         if a:
             raise ValidationError("HUKM updater accepts no URL, executable path or arguments")

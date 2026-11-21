@@ -10,7 +10,7 @@ MAX_PIXELS = 40_000_000
 MAX_JPEG_BYTES = 2_000_000
 
 
-def capture(max_width: int = 1280, quality: int = 60, *, monitor: int = 1, cancel=None) -> dict:
+def _capture_image(*, monitor: int = 1, cancel=None):
     import mss
     from PIL import Image
 
@@ -42,6 +42,17 @@ def capture(max_width: int = 1280, quality: int = 60, *, monitor: int = 1, cance
             shot = sct.grab(mon)
             img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
     check_cancel()
+    return img, mon, count
+
+
+def capture(max_width: int = 1280, quality: int = 60, *, monitor: int = 1, cancel=None) -> dict:
+    from PIL import Image
+
+    def check_cancel():
+        if cancel is not None and cancel.is_set():
+            raise RuntimeError("Screen capture cancelled")
+
+    img, mon, count = _capture_image(monitor=monitor, cancel=cancel)
     img.thumbnail((max_width, 1280), Image.Resampling.LANCZOS)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality, optimize=True)

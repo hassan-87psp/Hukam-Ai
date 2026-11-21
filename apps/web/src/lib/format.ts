@@ -39,6 +39,8 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
   const r = result && typeof result === 'object' && !Array.isArray(result)
     ? result as Record<string, unknown> : {};
   switch (action) {
+    case 'screen.capture':
+      return r.ocrRead===true;
     case 'controller.update':
       return !(r.verified === true && r.updateAvailable === false);
     case 'app.close':

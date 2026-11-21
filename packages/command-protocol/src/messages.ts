@@ -60,7 +60,9 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
     case 'window.focus':
       return L('Window samne la raha hoon.', 'ونڈو سامنے لا رہا ہوں۔', 'Bringing the window to the front.');
     case 'screen.capture':
-      return L('Screenshot le raha hoon.', 'اسکرین شاٹ لے رہا ہوں۔', 'Capturing a screenshot.');
+      return args.textOnly===true
+        ? L('Selected monitor ka visible text read karne aur account history mein bhejne ke liye approval chahiye.', 'نظر آنے والا متن پڑھنے اور اکاؤنٹ میں بھیجنے کی اجازت چاہیے۔', 'Approval required: read visible text on the selected monitor and return it to your account history. No screenshot upload.')
+        : L('Screenshot le raha hoon.', 'اسکرین شاٹ لے رہا ہوں۔', 'Capturing a screenshot.');
     case 'diagnostics.probe':
       return L('Laptop ka safe diagnostics check kar raha hoon.', 'لیپ ٹاپ چیک ہو رہا ہے۔', 'Checking computer capabilities without private data.');
     case 'ui.inspect':
@@ -179,7 +181,9 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
     case 'window.focus':
       return L('Window samne aa gayi.', 'ونڈو سامنے آ گئی۔', 'Window brought to the front.');
     case 'screen.capture':
-      return L('Screenshot aa gaya.', 'اسکرین شاٹ آ گیا۔', 'Screenshot received.');
+      return args.textOnly===true
+        ? L('Local OCR result aa gaya; text mein recognition errors ho sakte hain.', 'مقامی متن پڑھنے کا نتیجہ آ گیا۔', 'Local OCR result received; recognition may contain errors.')
+        : L('Screenshot aa gaya.', 'اسکرین شاٹ آ گیا۔', 'Screenshot received.');
     case 'diagnostics.probe':
       return L('Laptop diagnostics result aa gaya.', 'لیپ ٹاپ جانچ کے نتائج آگئے۔', 'Laptop diagnostic result is ready.');
     case 'ui.inspect':

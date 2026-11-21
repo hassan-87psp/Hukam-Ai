@@ -424,6 +424,12 @@ class Executor:
     def do_screen_capture(self, a, cancel):
         if not self.cfg.screen_capture:
             raise ActionError("NOT_ALLOWED", "screen capture is disabled in this laptop's controller config")
+        if a.get("textOnly") is True:
+            from ..screen import local_ocr
+            try:
+                return local_ocr.read_monitor(a["monitor"], cancel=cancel)
+            except local_ocr.ScreenOCRError as exc:
+                raise ActionError("SCREEN_OCR_UNAVAILABLE", str(exc)) from exc
         shot = screen.capture(monitor=a.get("monitor", 1), cancel=cancel)
         return {**{k: shot[k] for k in ("width", "height", "bytes", "monitor", "monitorCount", "sourceBounds", "simulated")},
                 "_screenshot": shot}
