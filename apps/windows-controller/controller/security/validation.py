@@ -163,7 +163,7 @@ def validate(action: str, args: dict) -> dict:
         if re.match(r"^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\b|\s)", label, re.I):
             raise ValidationError("sensitive button requires dedicated workflow")
         return {"label": label}
-    if action == "calendar.event_draft":
+    if action in ("calendar.event_draft", "calendar.save_reviewed"):
         provider = a.get("provider")
         if provider not in ("google", "outlook"):
             raise ValidationError("unsupported Calendar provider")
