@@ -380,6 +380,15 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({contact,path});
     },
   },
+  'whatsapp.send_attachment_reviewed': {
+    name:'whatsapp.send_attachment_reviewed', capability:'whatsapp',
+    label:'Send reviewed WhatsApp file (final approval)',
+    timeoutMs:35000, alwaysApprove:true,
+    validate(a){
+      const v=ACTIONS['whatsapp.attach_preview'].validate(a);
+      return v.ok ? ok(v.args) : v;
+    },
+  },
   'screen.capture': {
     name: 'screen.capture', capability: 'screen', label: 'Capture screenshot', timeoutMs: 20000, defaultApprove: true,
     validate: () => ok({}),
