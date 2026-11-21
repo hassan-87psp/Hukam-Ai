@@ -56,9 +56,7 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
   it('website update is approved, fixed-source and never accepts arbitrary command arguments',()=>{
     expect(requiresApproval('controller.update')).toBe(true);
     expect(validateCommand('controller.update',{}).ok).toBe(true);
-    expect(validateCommand('controller.update',{url:'https://evil.example/bad.exe'}).ok).toBe(true);
-    // Validation canonicalizes to {}, so caller-provided URLs never cross the relay.
-    expect(validateCommand('controller.update',{url:'https://evil.example/bad.exe'})).toMatchObject({args:{}});
+    expect(validateCommand('controller.update',{url:'https://evil.example/bad.exe'}).ok).toBe(false);
   });
   it('default Personal WhatsApp, no accidental browser/profile selection',()=>{
     const a=parseCommand('WhatsApp kholo');
