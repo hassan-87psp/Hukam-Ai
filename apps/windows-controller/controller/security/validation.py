@@ -26,7 +26,7 @@ ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
     "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "calendar.event_draft", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
-    "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.attach_preview",
+    "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
 
