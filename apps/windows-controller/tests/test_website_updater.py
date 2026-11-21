@@ -87,7 +87,7 @@ def test_release_metadata_accepts_only_exact_repository_urls(monkeypatch):
 
 def test_checksum_format_must_include_exact_filename(monkeypatch):
     data=b"test"
-    name="HUKM-Setup-v1.8.2.exe"
+    name="HUKM-Setup-v1.8.3.exe"
     digest=hashlib.sha256(data).hexdigest()
     monkeypatch.setattr(updater, "_read_bounded",
                         lambda url,limit:(digest+"  "+name).encode())
