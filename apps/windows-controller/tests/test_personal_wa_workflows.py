@@ -25,6 +25,13 @@ def run(action, args):
     return ex().run(action, args, threading.Event())
 
 
+def test_diagnostics_does_not_collect_private_data():
+    result = run("diagnostics.probe", {})
+    assert result.ok
+    assert result.result["privateDataCollected"] is False
+    assert result.result["uiautomationInstalled"] is True
+
+
 def test_inspect_controls_never_reads_text_fields():
     controls = [
         ("ButtonControl", "Search"),
