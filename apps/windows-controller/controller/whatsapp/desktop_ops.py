@@ -23,6 +23,8 @@ from .reader import visible_texts
 from . import locator
 
 PROCESSES = {"whatsapp.exe", "whatsappdesktop.exe", "msedgewebview2.exe", "applicationframehost.exe"}
+# Volatile, process-local authorization chain. No chat bodies or file data stored.
+_pending_attachment: dict | None = None
 
 
 class DesktopWhatsAppError(Exception):
@@ -154,6 +156,20 @@ def draft_reply(expected_contact: str, message: str) -> dict:
         raise DesktopWhatsAppError("WhatsApp composer input failed on this Desktop version") from exc
 
 
+def _file_fingerprint(path: str) -> tuple[int, str]:
+    """Limit approved attachment to 25MB and pin exact file bytes against swap."""
+    from pathlib import Path
+    import hashlib
+    p = Path(path)
+    if not p.is_file() or p.stat().st_size <= 0 or p.stat().st_size > 25 * 1024 * 1024:
+        raise DesktopWhatsAppError("Attachment file must be 1 byte to 25 MB")
+    sha = hashlib.sha256()
+    with p.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            sha.update(chunk)
+    return p.stat().st_size, sha.hexdigest()
+
+
 def attach_preview(expected_contact: str, path: str) -> dict:
     if launcher.SIMULATE:
         launcher._record("whatsapp.attach_preview", "file (redacted)")
@@ -197,6 +213,12 @@ def attach_preview(expected_contact: str, path: str) -> dict:
         from ..browser.operator import _send_unicode, _press_key
         _send_unicode(path)
         _press_key("enter")
+        # Require the exact same local bytes for any subsequent reviewed Send.
+        size, digest = _file_fingerprint(path)
+        global _pending_attachment
+        _pending_attachment = {"contact": expected_contact, "path": path,
+            "hwnd": active.hwnd, "sha256": digest, "size": size,
+            "createdAt": time.monotonic()}
         # This only requests attachment preview; user must verify recipient
         # and file before pressing Send.
         return {"attachmentRequested": True, "sent": False, "verified": False,
@@ -289,3 +311,67 @@ def send_reviewed(expected_contact: str, expected_message: str, cancel=None) -> 
             "sentUiConfirmed": False, "deliveryVerified": False,
             "verified": False, "contact": expected_contact,
             "note": "WhatsApp Send button was clicked. The app did not expose proof of delivery. Check the chat on the laptop; NEVER retry automatically."}
+
+
+def send_attachment_reviewed(expected_contact: str, path: str, cancel=None) -> dict:
+    """Separate final approval for the *same* file selected into a WhatsApp preview.
+
+    Fail closed on wrong recipient, changed file contents, stale preview,
+    changed native window, missing visible filename or ambiguous Send button.
+    No automatic retries, ever.
+    """
+    if launcher.SIMULATE:
+        launcher._record("whatsapp.send_attachment_reviewed", "attachment (redacted)")
+        return {"sendAttempted": True, "deliveryVerified": False,
+                "verified": False, "simulated": True,
+                "note": "SIMULATED attachment Send; no WhatsApp delivery occurred."}
+    global _pending_attachment
+    pending = _pending_attachment
+    if not pending or pending["contact"] != expected_contact or pending["path"] != path:
+        raise DesktopWhatsAppError(
+            "No matching HUKM attachment preview in this session; choose the file again first"
+        )
+    if time.monotonic() - pending["createdAt"] > 120.0:
+        _pending_attachment = None
+        raise DesktopWhatsAppError("Attachment preview expired; start a new approved preview")
+    active, root, rect = _active_root()
+    if active.hwnd != pending["hwnd"]:
+        raise DesktopWhatsAppError("WhatsApp Desktop window changed; attachment Send blocked")
+    size, digest = _file_fingerprint(path)
+    if size != pending["size"] or digest != pending["sha256"]:
+        raise DesktopWhatsAppError("Attachment contents changed after preview; Send blocked")
+    left, top, width, height = rect
+    filename = path.rsplit("\\", 1)[-1]
+    preview_labels = [
+        name for _, name, role, x, y, _right, _bottom in _controls(root)
+        if name.casefold() == filename.casefold()
+        and x >= left + width * 0.25
+        and top + height * 0.10 <= y <= top + height * 0.85
+        and role in ("TextControl", "ButtonControl", "EditControl")
+    ]
+    if not preview_labels:
+        raise DesktopWhatsAppError(
+            "The exact selected filename is not visible in the WhatsApp attachment preview; Send blocked"
+        )
+    sends = [
+        c for c, name, kind, x, y, _r, _b in _controls(root)
+        if kind == "ButtonControl" and name.casefold() in ("send", "send message")
+        and x >= left + width * 0.65 and y >= top + height * 0.66
+    ]
+    if len(sends) != 1:
+        raise DesktopWhatsAppError("A unique Send button is not visible in the attachment preview")
+    if cancel is not None and cancel.is_set():
+        raise DesktopWhatsAppError("Attachment Send cancelled before clicking")
+    if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
+        raise DesktopWhatsAppError("WhatsApp Desktop lost foreground before Send")
+    # Erase authorization before click, even if UIA errors, to prevent repeats.
+    _pending_attachment = None
+    try:
+        sends[0].Click(simulateMove=False)
+    except Exception:
+        return {"sendAttempted": "unknown", "deliveryVerified": False, "verified": False,
+                "fileName": filename, "contact": expected_contact,
+                "note": "Attachment Send click outcome is unknown. File may already be sent; check WhatsApp and NEVER retry automatically."}
+    return {"sendAttempted": True, "deliveryVerified": False, "verified": False,
+            "fileName": filename, "contact": expected_contact,
+            "note": "Attachment Send clicked in reviewed WhatsApp preview. Delivery is NOT verified. Check the chat before any further action."}
