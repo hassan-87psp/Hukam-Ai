@@ -144,7 +144,7 @@ def _capture_left(hwnd: int):
 
 
 def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
-    """Require a visual Unread *between* the All and Favourites chips."""
+    """Locate a uniquely supported chip; fail closed on conflicting anchors."""
     def text(w: Word) -> str:
         return re.sub(r"\s+", " ", w.text.strip()).casefold()
 
@@ -157,16 +157,38 @@ def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
     all_chips = [w for w in header if text(w) == "all"]
     favorites = [w for w in header
                  if text(w) in ("favourites", "favorites")]
-    if len(unread) != 1 or len(all_chips) != 1 or len(favorites) != 1:
+    if len(unread) != 1 or len(all_chips) != 1 or len(favorites) > 1:
         return None
     candidate = unread[0]
     left = all_chips[0]
-    right = favorites[0]
-    if (not (left.cx + 22 < candidate.cx < right.cx - 22) or
-            max(abs(left.cy - candidate.cy),
-                abs(right.cy - candidate.cy)) > 23):
+    if not (28 <= candidate.width <= 150 and
+            22 < candidate.cx - left.cx <= 160 and
+            0 <= candidate.x - (left.x + left.width) <= 95 and
+            abs(left.cy - candidate.cy) <= 18):
         return None
-    if candidate.width < 28 or candidate.width > 150:
+
+    if favorites:
+        right = favorites[0]
+        if not (candidate.cx + 22 < right.cx and
+                abs(right.cy - candidate.cy) <= 23):
+            return None
+        return candidate
+
+    # Favourites may be clipped or omitted by OCR. Require a distinct Chats
+    # heading above the adjacent All/Unread pair as an independent anchor.
+    # This is deliberately narrower than accepting an isolated Unread word.
+    headings = [w for w in words if text(w) == "chats"
+                and 30 <= w.cy <= candidate.cy - 40
+                and 40 <= candidate.cy - w.cy <= 180
+                and 35 <= w.x <= left.x + 25
+                and 10 <= w.height <= 45]
+    if len(headings) != 1:
+        return None
+    # A recognized Groups chip must not contradict the inferred ordering.
+    groups = [w for w in header if text(w) == "groups"]
+    if groups and (len(groups) != 1 or
+                   groups[0].cx <= candidate.cx + 22 or
+                   abs(groups[0].cy - candidate.cy) > 23):
         return None
     return candidate
 
@@ -265,7 +287,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     if chip is None:
         raise VisualUnreadUnavailable(
             "Windows UIA and local visual OCR could not uniquely identify "
-            "the All / Unread / Favourites row. No mouse click was attempted."
+            "a unique Unread chip with independent header anchors. No mouse click was attempted."
         )
 
     x, y = left + round(chip.cx), top + round(chip.cy)
