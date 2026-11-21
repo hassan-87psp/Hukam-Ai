@@ -15,16 +15,41 @@ from ..system import windows
 
 NATIVE_PROCESSES = frozenset({
     "whatsapp.exe", "whatsappdesktop.exe", "whatsappbeta.exe",
+    "whatsapp.root.exe",  # WhatsApp's 2026 WebView2/WinUI package host
+
 })
 HOST_PROCESSES = frozenset({"applicationframehost.exe", "msedgewebview2.exe"})
 ALL_PROCESSES = NATIVE_PROCESSES | HOST_PROCESSES
+
+
+def _has_whatsapp_parent(pid: int) -> bool:
+    """For WebView2 top-level windows, identify the genuine WhatsApp parent.
+    
+    A generic msedgewebview2.exe can belong to dozens of unrelated apps.
+    We must never classify one as WhatsApp just from its executable name.
+    """
+    if pid <= 0:
+        return False
+    try:
+        import psutil
+        proc = psutil.Process(pid)
+        return any(parent.name().casefold() in NATIVE_PROCESSES
+                   for parent in proc.parents()[:7])
+    except (ImportError, OSError, RuntimeError):
+        return False
+    except Exception:
+        # AccessDenied / NoSuchProcess differ by psutil version; fail closed.
+        return False
+        return False
 
 
 def matches_desktop_window(w: windows.WindowInfo) -> bool:
     process = w.process.casefold()
     if process in NATIVE_PROCESSES:
         return True
-    if process in HOST_PROCESSES and "whatsapp" in w.title.casefold():
+    if process in HOST_PROCESSES and (
+        "whatsapp" in w.title.casefold() or _has_whatsapp_parent(w.pid)
+    ):
         return True
     return False
 
