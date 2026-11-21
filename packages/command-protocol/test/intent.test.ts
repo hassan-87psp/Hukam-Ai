@@ -13,6 +13,8 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
     ['Note pad jo abhi open kiya us me 1 se 9 tak likho', 'plan'],
     ['WhatsApp par Ali ko reply likho ke kal 3 baje milte hain', 'plan'],
     ['WhatsApp ke messages parho', 'plan'],
+    ['Ali ke WhatsApp message parho', 'plan'],
+    ['WhatsApp par Ali ka message batao', 'plan'],
     ['Google Calendar mein kal 3 PM meeting add kardo', 'plan'],
     ['ChatGPT Project mein gold banner banao aur download karo', 'plan'],
     ['Screen par buttons dekho', 'plan'],

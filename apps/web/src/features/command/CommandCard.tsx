@@ -31,7 +31,7 @@ export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'device.status': Laptop, 'apps.list': AppWindow, 'window.active': Monitor, 'window.focus': Monitor, 'screen.capture': Monitor,
   'diagnostics.probe': Monitor, 'ui.inspect': Monitor, 'ui.activate': Monitor, 'ui.scroll': Monitor, 'calendar.event_draft': Globe, 'calendar.save_reviewed': Globe,
   'chatgpt.prompt_draft': Pencil, 'chatgpt.submit_prompt': Pencil, 'chatgpt.download_visible': FileText,
-  'whatsapp.read_selected': MessageCircle, 'whatsapp.draft_reply': MessageCircle, 'whatsapp.send_reviewed': MessageCircle, 'whatsapp.attach_preview': FileText, 'whatsapp.send_attachment_reviewed': FileText,
+  'whatsapp.select_chat': MessageCircle, 'whatsapp.read_selected': MessageCircle, 'whatsapp.draft_reply': MessageCircle, 'whatsapp.send_reviewed': MessageCircle, 'whatsapp.attach_preview': FileText, 'whatsapp.send_attachment_reviewed': FileText,
   'browser.control': Monitor, 'browser.profile_open': Globe, 'notepad.type': Pencil, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.unread_senders': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
 };
 

@@ -26,7 +26,7 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'web.open','web.search','youtube.search','youtube.play',
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
-  'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed',
+  'whatsapp.unread_senders', 'whatsapp.select_chat', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed',
   'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft', 'calendar.save_reviewed',
   'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
@@ -72,6 +72,22 @@ export function validatePlanShape(v:unknown):{summary:string;steps:Step[]} {
     'whatsapp.send_reviewed', 'whatsapp.send_attachment_reviewed',
     'calendar.save_reviewed',
   ]);
+  // Contact-specific reads must remain pinned to the same approved recipient.
+  // The user can change WhatsApp chats between steps; the Windows reader
+  // re-verifies the exact chat header immediately before exposing messages.
+  const selections=steps.filter(s=>s.action==='whatsapp.select_chat');
+  if(selections.length>1)
+    throw new HttpError(422,'UNSAFE_PLAN','Select only one exact WhatsApp recipient per plan');
+  if(selections.length===1){
+    const selectedContact=selections[0].args.contact;
+    const selectedAt=steps.findIndex(s=>s.action==='whatsapp.select_chat');
+    for(let i=0;i<steps.length;i++){
+      if(steps[i].action==='whatsapp.read_selected' &&
+        (i<=selectedAt || steps[i].args.contact!==selectedContact))
+        throw new HttpError(422,'UNSAFE_PLAN',
+          'Reading a named WhatsApp contact requires selecting and verifying that SAME contact first');
+    }
+  }
   const finalActions = steps.filter(s=>irreversible.has(s.action));
   if(finalActions.length>1 ||
       (finalActions.length===1 && !irreversible.has(steps[steps.length-1].action)))
@@ -102,14 +118,16 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
     'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, calendar.event_draft, calendar.save_reviewed,',
     'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
-    'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.send_reviewed, whatsapp.attach_preview, whatsapp.send_attachment_reviewed.',
+    'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.select_chat, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.send_reviewed, whatsapp.attach_preview, whatsapp.send_attachment_reviewed.',
     'Never use arbitrary shell, file deletion, payments, password/OTP reading or UNREVIEWED WhatsApp Send. Do not pretend a draft was sent.',
     'calendar.event_draft opens a prefilled Google/Outlook editor only, not a saved event or invitations. Return an honest draft summary.',
     'calendar.save_reviewed can be used only after the owner explicitly asks to SAVE the exact reviewed Calendar event in the correct Chrome profile.',
     'It requires separate final approval; the action tries visible Save but never claims API event ID, attendance invites or successful creation without provider verification.',
     'For creating a meeting, use calendar.event_draft only with explicit provider, title, startUtc, endUtc, timeZone and saved Chrome profile.',
     'If time, date, calendar provider, or selected recipient is unknown, ask one question and set steps:[]. Never guess.',
-    'WhatsApp is PERSONAL DESKTOP only. whatsapp.read_selected reads visible chat after separate owner approval, do not send contents to Gemini.',
+    'WhatsApp is PERSONAL DESKTOP only. To read a NAMED contact, first whatsapp.select_chat with exact contact, then whatsapp.read_selected with the SAME contact; each requires owner approval.',
+    'If the contact is unknown, ask for a name. whatsapp.select_chat uses only visible sidebar matches or a verified in-app search, never external WhatsApp Web.',
+    'whatsapp.read_selected reads only the visible selected chat after separate owner approval; do not send the returned text to Gemini.',
     'whatsapp.draft_reply needs exact selected contact and reply text, types only; never sends.',
     'whatsapp.send_reviewed is allowed only after an explicit user instruction to send a precise message to the exact selected contact.',
     'It requires separate final approval. Never auto-retry an uncertain WhatsApp send.',

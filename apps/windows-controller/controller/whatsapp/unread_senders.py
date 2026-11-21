@@ -18,7 +18,7 @@ from ..config import IS_WINDOWS
 from ..system import launcher, windows
 from . import locator
 
-_UNREAD = re.compile(r"^unread(?:\s+(?:chats|messages))?(?:\s+\d{1,3})?$", re.I)
+_UNREAD = re.compile(r"^unread(?:\s+(?:chats|messages))?(?:\s*[:(•\-]?\s*\d{1,3}\)?)?$", re.I)
 _SKIP = {"unread", "all", "favorites", "favourites", "groups", "search",
          "new chat", "chats", "whatsapp", "archived", "settings", "status",
          "calls", "communities", "message", "voice call"}
@@ -117,7 +117,8 @@ def read_unread_senders() -> dict:
                 break
             if not _is_visible(ctrl):
                 continue
-            if str(getattr(ctrl, "ControlTypeName", "")) not in ("ListItemControl", "DataItemControl"):
+            if str(getattr(ctrl, "ControlTypeName", "")) not in (
+                    "ListItemControl", "DataItemControl", "GroupControl", "ButtonControl"):
                 continue
             x, y, rx, by = _bounding(ctrl)
             if not (left + 20 <= x < left + width * 0.47 and
@@ -155,7 +156,7 @@ def read_unread_senders() -> dict:
             "supported": True, "senders": unique[:12],
             "visibleOnly": True, "messagesRead": False, "filterSelected": True,
             "source": "WhatsApp Desktop Unread filter (Windows accessibility, best effort)",
-            "note": "Only currently visible unread chat titles were listed; message contents were not read.",
+            "note": "Visible chat titles were read after clicking Unread. Results are best effort; confirm the filter selection in WhatsApp Desktop. Message bodies were not read.",
         }
     except UnreadSendersUnavailable:
         raise

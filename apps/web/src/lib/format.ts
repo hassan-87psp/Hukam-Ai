@@ -107,6 +107,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'chatgpt.prompt_draft': 'ChatGPT prompt draft',
   'chatgpt.submit_prompt': 'Submit ChatGPT prompt',
   'chatgpt.download_visible': 'Download visible ChatGPT file',
+  'whatsapp.select_chat': 'Select exact WhatsApp chat',
   'whatsapp.read_selected': 'Read selected WhatsApp chat',
   'whatsapp.draft_reply': 'Draft WhatsApp reply',
   'whatsapp.send_reviewed': 'Send reviewed WhatsApp message',
@@ -148,6 +149,8 @@ export function describeArgs(action: ActionName, args: Record<string, unknown>):
     case 'chatgpt.prompt_draft': return 'prompt (' + String(a.prompt ?? '').length + ' characters)';
     case 'chatgpt.submit_prompt': return 'reviewed prompt (' + String(a.prompt ?? '').length + ' characters)';
     case 'chatgpt.download_visible': return 'current ChatGPT Project';
+    case 'whatsapp.select_chat': return 'exact contact: ' + String(a.contact ?? '');
+    case 'whatsapp.read_selected': return a.contact ? 'verify contact: ' + String(a.contact) : 'currently selected chat';
     case 'whatsapp.draft_reply': return 'to ' + String(a.contact ?? '');
     case 'whatsapp.attach_preview': return 'file for ' + String(a.contact ?? '');
     case 'browser.control': return a.kind === 'click' ? `click (${a.x}, ${a.y})` : a.kind === 'scroll' ? `scroll ${a.steps}` : a.kind === 'key' ? `press ${a.key}` : 'type into browser';

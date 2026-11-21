@@ -18,10 +18,13 @@ from . import locator
 TITLE_RE = re.compile(r"^\s*\((\d{1,3})\)\s*WhatsApp\b", re.I)
 DESKTOP_PROCESSES = set(locator.ALL_PROCESSES)
 UNREAD_LABEL_RE = re.compile(
-    r"^(?:unread(?:\s+(?:chats|messages))?\s*[:,(\-\s]*)(\d{1,3})\)?$",
+    r"^unread(?:\s+(?:chats|messages))?\s*(?:[:(\-•]?\s*)(\d{1,3})\)?$",
     re.I,
 )
-UNREAD_REVERSE_RE = re.compile(r"^(\d{1,3})\s+unread(?:\s+chats)?$", re.I)
+UNREAD_REVERSE_RE = re.compile(
+    r"^\(?([0-9]{1,3})\)?\s+unread(?:\s+(?:chats|messages))?$",
+    re.I,
+)
 
 
 def open_whatsapp(mode: str, browser_pref: str) -> dict:
@@ -75,7 +78,8 @@ def count_from_accessibility_items(items: list[tuple[str, float, float]]) -> int
     WhatsApp sidebar's top filter area. Names are not logged or returned.
     """
     for raw, _x, _y in items:
-        label = " ".join(raw.split()).strip()
+        # Unicode bullet is used for some accessible badge descriptions.
+        label = " ".join(raw.split()).strip().replace("·", "•")
         match = UNREAD_LABEL_RE.fullmatch(label) or UNREAD_REVERSE_RE.fullmatch(label)
         if match:
             return int(match.group(1))
@@ -168,8 +172,10 @@ def check(mode: str, browser_pref: str) -> dict:
             }
         return {"unreadChats": None, "source": "unavailable", "messagesRead": False,
                 "windowDetected": True, "foreground": focused is not None,
-                "note": "WhatsApp Desktop was detected but did not expose a readable Unread badge or numeric title. "
-                        "Its count is UNKNOWN, not zero. Open the Unread filter in the Windows app."}
+                "note": "WhatsApp Desktop is open, but the unread count is UNKNOWN (not zero): Windows accessibility did not expose it. "
+                        "A taskbar notification badge is NOT proof of unread chats. "
+                        "Please open the Unread filter and ask 'WhatsApp par kis kis ka unread msg aya' "
+                        "(approved visible sender scan), or check the count inside WhatsApp."}
     running = locator.running_native_processes()
     return {"unreadChats": None, "messagesRead": False,
             "opened": launch_result.get("opened") if launch_result else None,

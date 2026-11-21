@@ -26,7 +26,7 @@ ACTIONS = {
     "app.open", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
     "diagnostics.probe", "ui.inspect", "ui.activate", "ui.scroll", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
-    "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
+    "whatsapp.select_chat", "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
 
@@ -36,7 +36,7 @@ CAPABILITY_OF = {
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
     "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.scroll": "input",
     "calendar.event_draft": "browser", "calendar.save_reviewed": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
-    "chatgpt.download_visible": "browser", "whatsapp.read_selected": "whatsapp",
+    "chatgpt.download_visible": "browser", "whatsapp.select_chat": "whatsapp", "whatsapp.read_selected": "whatsapp",
     "whatsapp.draft_reply": "whatsapp", "whatsapp.send_reviewed": "whatsapp", "whatsapp.attach_preview": "whatsapp", "whatsapp.send_attachment_reviewed": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
     "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp", "whatsapp.unread_senders": "whatsapp",
 }
@@ -202,6 +202,10 @@ def validate(action: str, args: dict) -> dict:
                 raise ValidationError("invalid ChatGPT prompt")
             out["prompt"] = prompt
         return out
+    if action in ("whatsapp.select_chat", "whatsapp.read_selected"):
+        if action == "whatsapp.read_selected" and a.get("contact") is None:
+            return {}
+        return {"contact": _str(a.get("contact"), "contact", 80)}
     if action in ("whatsapp.draft_reply", "whatsapp.send_reviewed"):
         contact = _str(a.get("contact"), "contact", 80)
         message = a.get("message")

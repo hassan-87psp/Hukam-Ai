@@ -234,6 +234,14 @@ export function parseCommand(input: string): ParseResult {
       /\b(msg|msgs|message|messages|chat|chats|unread|naye|nayi|aaya|aya)\b/.test(t))
     return cmd('whatsapp.unread_senders', {}, 'whatsapp-unread-senders');
 
+  // Explicitly reading the selected chat into the authenticated HUKM
+  // conversation is a separate, owner-approved action. Never do this from
+  // an unspecified inbox or Chrome WhatsApp Web tab.
+  if (/\bwhatsapp\b/.test(t) &&
+      /\b(selected|current|khuli|open chat)\b/.test(t) &&
+      /\b(read|parho|parh|parhke|padho|batao|dikhao)\b/.test(t))
+    return cmd('whatsapp.read_selected', {}, 'whatsapp-read-selected');
+
   // Read only the CURRENT VISIBLE WhatsApp Desktop chat. The laptop speaks
   // offline, with no message text sent to the relay. Always requires approval.
   if (/\b(whatsapp|messages?|chats?)\b/.test(t) &&

@@ -101,12 +101,140 @@ def _composer(root, rect):
     return matches[0]
 
 
-def read_selected() -> dict:
+def _visible_contact_matches(root, rect, expected: str):
+    """Find an exact title in visible LEFT chat rows, never a contact directory.
+
+    Header names (right pane) and previews cannot be selected by mistake.
+    A duplicate exact match is ambiguous and must fail closed.
+    """
+    left, top, width, height = rect
+    exact = expected.strip().casefold()
+    return [
+        c for c, name, kind, x, y, right, bottom in _controls(root, max_nodes=1500)
+        if name.casefold() == exact and kind in ("TextControl", "ButtonControl")
+        and left + 6 <= x <= left + width * 0.48
+        and right <= left + width * 0.56
+        and top + height * 0.15 <= y <= top + height * 0.91
+        and bottom <= top + height * 0.94
+    ]
+
+
+def _sidebar_search(root, rect):
+    """Return one empty, visible WhatsApp in-app search field, if exposed."""
+    left, top, width, height = rect
+    choices = []
+    for c, name, kind, x, y, right, _bottom in _controls(root, max_nodes=1150):
+        if kind != "EditControl" or not (left + 4 <= x <= left + width * 0.48):
+            continue
+        if not (top + 10 <= y <= top + min(225, height * 0.35)):
+            continue
+        label = name.casefold()
+        if label in ("search", "search chats", "search or start new chat",
+                     "search or start a new chat", "search chats or messages",
+                     "search or start chat") or label.startswith("search chats"):
+            choices.append(c)
+    return choices[0] if len(choices) == 1 else None
+
+
+def select_chat(expected_contact: str, cancel=None) -> dict:
+    """Find and select the one *exact* chat in the native WhatsApp UI.
+
+    This is an approved local UI action. It does not send anything, read
+    message contents, scrape contacts, or switch to WhatsApp Web.
+    """
+    if launcher.SIMULATE:
+        launcher._record("whatsapp.select_chat", "contact (redacted)")
+        return {"chatSelected": True, "recipientVerified": True,
+                "messagesRead": False, "sent": False,
+                "verified": True, "simulated": True}
+    if not isinstance(expected_contact, str) or not expected_contact.strip():
+        raise DesktopWhatsAppError("An exact WhatsApp contact name is required")
+    try:
+        import uiautomation as auto
+        active = windows.active_window()
+        if not active or not locator.matches_desktop_window(active):
+            if locator.focus_whatsapp() is None:
+                raise DesktopWhatsAppError(
+                    "Personal WhatsApp Desktop is not foreground; open the installed app")
+        active, root, rect = _active_root()
+        matches = _visible_contact_matches(root, rect, expected_contact)
+        searched = False
+        if not matches:
+            editor = _sidebar_search(root, rect)
+            if editor is None:
+                raise DesktopWhatsAppError(
+                    "Contact is not visible and WhatsApp's in-app Search is not accessible. "
+                    "Search for the contact manually in Desktop, then try again")
+            try:
+                current = str(editor.GetValuePattern().Value or "")
+            except Exception as exc:
+                raise DesktopWhatsAppError(
+                    "WhatsApp search field contents are not safely accessible") from exc
+            if current.strip():
+                raise DesktopWhatsAppError(
+                    "WhatsApp Search already contains text. Clear it before searching another contact")
+            if cancel is not None and cancel.is_set():
+                raise DesktopWhatsAppError("Chat selection cancelled before search")
+            editor.SetFocus()
+            if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
+                raise DesktopWhatsAppError("WhatsApp lost foreground before search")
+            from ..browser.operator import _send_unicode
+            _send_unicode(expected_contact)
+            searched = True
+            end = time.monotonic() + 3.0
+            while time.monotonic() < end:
+                if cancel is not None and cancel.is_set():
+                    raise DesktopWhatsAppError("Chat selection cancelled")
+                time.sleep(0.25)
+                if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
+                    raise DesktopWhatsAppError("WhatsApp lost foreground during search")
+                root = auto.ControlFromHandle(active.hwnd)
+                matches = _visible_contact_matches(root, rect, expected_contact)
+                if matches:
+                    break
+        if len(matches) != 1:
+            raise DesktopWhatsAppError(
+                "WhatsApp did not expose exactly one matching chat title; no chat was selected. "
+                "Check the visible results in Personal WhatsApp Desktop")
+        if cancel is not None and cancel.is_set():
+            raise DesktopWhatsAppError("Chat selection cancelled before clicking")
+        if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
+            raise DesktopWhatsAppError("WhatsApp lost foreground; no chat selected")
+        matches[0].Click()
+        # UIA may return from Click before React/WebView updates its chat header.
+        for _ in range(8):
+            if cancel is not None and cancel.is_set():
+                raise DesktopWhatsAppError("Chat selection cancelled")
+            if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
+                raise DesktopWhatsAppError("WhatsApp lost foreground after chat selection")
+            time.sleep(0.20)
+            root = auto.ControlFromHandle(active.hwnd)
+            try:
+                _check_selected_contact(root, rect, expected_contact)
+                return {"chatSelected": True, "recipientVerified": True,
+                        "selectedContact": expected_contact, "verified": True,
+                        "messagesRead": False, "sent": False,
+                        "searchUsed": searched,
+                        "note": "Exact WhatsApp Desktop chat header matched. No message was read or sent."}
+            except DesktopWhatsAppError:
+                continue
+        raise DesktopWhatsAppError(
+            "Clicked a chat result but could not verify its exact contact header. "
+            "Do not read or send until the contact is confirmed")
+    except DesktopWhatsAppError:
+        raise
+    except Exception as exc:
+        raise DesktopWhatsAppError("WhatsApp native chat selection is unavailable on this app version") from exc
+
+
+def read_selected(expected_contact: str | None = None) -> dict:
     if launcher.SIMULATE:
         return {"visibleMessages": ["Test message only"], "messagesRead": True,
                 "visibleOnly": True, "transferredToAccount": True, "simulated": True}
     try:
-        _active, root, _rect = _active_root()
+        _active, root, rect = _active_root()
+        if expected_contact:
+            _check_selected_contact(root, rect, expected_contact)
         messages = visible_texts(root, max_items=8)
     except DesktopWhatsAppError:
         raise

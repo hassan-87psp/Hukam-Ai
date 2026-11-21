@@ -23,6 +23,12 @@ export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorR
   }
   if(!t || GREETING.test(t))return 'chat';
   if(WORKFLOWS.test(t))return 'plan';
+  // A named WhatsApp chat requires verified selection BEFORE reading.
+  // Generic "message" parsing must not downgrade this to unread-count check.
+  if(/\b(?:whatsapp|wa|msgs?|messages?|chats?)\b/i.test(t) &&
+      /\b(?:read|parho|parh|padho|batao|dikhao|sunao)\b/i.test(t) &&
+      /\b(?:ka|ki|ke|from|of)\b/i.test(t) &&
+      !/\b(?:kitne|count|number|unread count)\b/i.test(t))return 'plan';
   // If this is an explicit, unambiguous single supported command, use the
   // vetted deterministic parser rather than paying for a model call.
   if(parsed.kind==='command' && !COMPOUND.test(t))return 'command';

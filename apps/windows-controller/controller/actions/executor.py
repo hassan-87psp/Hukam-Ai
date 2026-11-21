@@ -359,11 +359,19 @@ class Executor:
         except wa_senders.UnreadSendersUnavailable as e:
             raise ActionError("UNVERIFIABLE", str(e)) from e
 
-    def do_whatsapp_read_selected(self, _a, cancel):
+    def do_whatsapp_select_chat(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "WhatsApp chat selection cancelled")
+        try:
+            return wa_desktop.select_chat(a["contact"], cancel)
+        except wa_desktop.DesktopWhatsAppError as exc:
+            raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
+
+    def do_whatsapp_read_selected(self, a, cancel):
         if cancel.is_set():
             raise ActionError("CANCELLED", "Reading cancelled")
         try:
-            return wa_desktop.read_selected()
+            return wa_desktop.read_selected(a.get("contact"))
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_UI_UNAVAILABLE", str(exc)) from exc
 

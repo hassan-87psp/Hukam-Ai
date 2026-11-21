@@ -53,8 +53,10 @@ def visible_texts(root, *, max_nodes: int = 900, max_items: int = 15) -> list[st
         raise ReadError("WhatsApp window needs to be visible and maximized")
 
     min_x = left + width * 0.41
-    min_y = top + height * 0.12
-    max_y = top + height * 0.90
+    # Exclude the contact header and composer so they are not mistaken for
+    # chat messages when WhatsApp exposes them as generic Text controls.
+    min_y = top + height * 0.20
+    max_y = top + height * 0.85
     found: list[str] = []
     seen: set[str] = set()
 
