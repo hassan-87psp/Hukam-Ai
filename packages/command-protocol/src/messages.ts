@@ -53,6 +53,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('Window samne la raha hoon.', 'ونڈو سامنے لا رہا ہوں۔', 'Bringing the window to the front.');
     case 'screen.capture':
       return L('Screenshot le raha hoon.', 'اسکرین شاٹ لے رہا ہوں۔', 'Capturing a screenshot.');
+    case 'diagnostics.probe':
+      return L('Laptop ka safe diagnostics check kar raha hoon.', 'لیپ ٹاپ چیک ہو رہا ہے۔', 'Checking computer capabilities without private data.');
     case 'ui.inspect':
       return L('Visible controls check karne ke liye approval chahiye.', 'اسکرین کنٹرولز دیکھنے کی اجازت چاہیے۔', 'Approval required to inspect the foreground controls.');
     case 'ui.activate':
