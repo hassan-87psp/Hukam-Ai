@@ -39,6 +39,14 @@ describe('approved Personal WhatsApp + screen + Calendar + ChatGPT workflow cont
       {action:'whatsapp.select_chat',args:{contact:'Ali'}},
       {action:'whatsapp.read_selected',args:{contact:'Ali'}}
     ]}).steps).toHaveLength(2);
+    expect(()=>validatePlanShape({steps:[
+      {action:'whatsapp.select_chat',args:{contact:'Ali'}},
+      {action:'whatsapp.read_selected',args:{contact:'Ahmed'}}
+    ]})).toThrow();
+    expect(()=>validatePlanShape({steps:[
+      {action:'whatsapp.read_selected',args:{contact:'Ali'}},
+      {action:'whatsapp.select_chat',args:{contact:'Ali'}}
+    ]})).toThrow();
   });
   it('Personal WhatsApp send requires separate explicit owner approval and exact args',()=>{
     expect(validatePlanShape({steps:[{action:'whatsapp.draft_reply',args:{contact:'Ali',message:'Kal milte hain'}}]}).steps).toHaveLength(1);
