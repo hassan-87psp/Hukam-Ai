@@ -7,7 +7,7 @@ import { PROVIDER_STATUS } from '../../../packages/command-protocol/src/index';
 import { loadConfig, type RelayConfig } from './config';
 import { restoreCloudSnapshot, startCloudBackup } from './backup';
 import { femaleUrduAudio, reportFemaleVoiceError } from './female-tts';
-import { chatWithGemini, geminiConfigured, GeminiError } from './gemini';
+import { chatWithGemini, cleanGeminiInput, geminiConfigured, GeminiError } from './gemini';
 import { HttpError, Relay } from './core';
 import { Projects } from './projects';
 import { Operator } from './operator';
@@ -190,6 +190,14 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     return {ok:true};
   });
   add('POST', '/api/ai/chat', true, async (c) => {
+    // Backward-compatible input validation: old clients may still include
+    // history, but ONLY owner-scoped database history is trusted by Gemini.
+    let message:string;
+    try { message=cleanGeminiInput(c.body?.message,c.body?.history).message; }
+    catch(e) {
+      if(e instanceof GeminiError)throw new HttpError(e.status,e.code,e.message);
+      throw e;
+    }
     if (!aiLimit.take('gemini:' + c.user!.id) || !aiDailyLimit.take('gemini:' + c.user!.id))
       throw new HttpError(429, 'AI_RATE_LIMIT', 'AI chat limit reached. Please try again later.');
     const userId=c.user!.id;
@@ -201,9 +209,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
       [project.name,project.description,project.instructions,
         ...notes.map(n=>n.title+': '+n.content.slice(0,350))].join('\n').slice(0,6500):undefined;
     try {
-      const ai=await chatWithGemini(c.body?.message,history,
+      const ai=await chatWithGemini(message,history,
         {projectContext,responseLang:['roman','ur','en'].includes(c.body?.responseLang) ? c.body.responseLang : 'roman'});
-      const message=String(c.body.message).trim();
       if(project){
         projects.appendMessage(userId,project.id,'user',message);
         projects.appendMessage(userId,project.id,'assistant',ai.reply);
