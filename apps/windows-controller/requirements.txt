@@ -1,3 +1,4 @@
+-c constraints-windows-py312.txt
 websockets>=13,<18
 psutil>=5.9
 mss>=9.0

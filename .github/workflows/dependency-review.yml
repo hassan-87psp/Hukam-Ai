@@ -42,27 +42,18 @@ jobs:
         run: |
           set -euo pipefail
           cp package-lock.json "$RUNNER_TEMP/hukm-original-lock.json"
-          # Explicitly reviewed build/test tool upgrades; no force or legacy peer bypass.
-          export PLUGIN_REACT_VERSION="$(npm view @vitejs/plugin-react@latest version)"
+          # Vite 7 supports the existing React plugin and avoids a bundler migration.
+          # All chosen versions are tested in this isolated candidate.
           node <<'NODE'
           const fs = require('fs');
-          const plugin = process.env.PLUGIN_REACT_VERSION;
-          if (!/^\d+\.\d+\.\d+$/.test(plugin)) throw Error('Unexpected plugin-react version');
           const update = (path, versions) => {
             const p = JSON.parse(fs.readFileSync(path, 'utf8'));
             Object.assign(p.devDependencies, versions);
             fs.writeFileSync(path, JSON.stringify(p,null,2)+'\n');
           };
-          update('package.json', {vitest:'5.1.1',vite:'8.3.8'});
-          update('apps/web/package.json', {vite:'8.3.8','@vitejs/plugin-react':plugin});
+          update('package.json', {vitest:'5.1.1',vite:'7.3.8'});
+          update('apps/web/package.json', {vite:'7.3.8','@vitejs/plugin-react':'4.7.0'});
           update('apps/relay/package.json', {esbuild:'0.28.2'});
-          // Vite 8/Rolldown no longer accepts object-form manualChunks.
-          // Keep native lazy imports and default splitting.
-          const path = 'apps/web/vite.config.ts';
-          const old = fs.readFileSync(path,'utf8');
-          const next = old.replace(/    rollupOptions: \{\r?\n      output: \{ manualChunks: \{ react: \['react', 'react-dom', 'react-router-dom'\] \} \},\r?\n    \},\r?\n/, '');
-          if (next === old && old.includes('manualChunks')) throw Error('Vite config requires manual migration');
-          fs.writeFileSync(path,next);
           NODE
           npm install --package-lock-only --ignore-scripts
           npm audit fix --package-lock-only --ignore-scripts || true
