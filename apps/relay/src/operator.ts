@@ -269,6 +269,18 @@ export class Operator {
       this.savePending(userId,key,request,result.question);
       return {kind:'clarify',topic:'operator-followup',question:result.question};
     }
+    // High-impact effects must be supported by the *user's request*, not
+    // merely a model suggestion or untrusted project instructions.
+    for(const step of result.steps){
+      if(step.action==='whatsapp.send_reviewed' &&
+         !/(?:\bsend\b|\bsent\b|\bbhej\w*\b|\breply\s*(?:kar\s*do|kardo|kro|karo)\b)/i.test(request))
+        throw new HttpError(422,'WA_SEND_NOT_REQUESTED',
+          'HUKM cannot send a WhatsApp message unless the owner explicitly asks to send/reply.');
+      if(step.action==='calendar.save_reviewed' &&
+         !/(?:\bsave\b|\bschedule\b|\bcreate\b|\badd\b|\bbook\b|\bbana\w*\b|\bconfirm\b)/i.test(request))
+        throw new HttpError(422,'CALENDAR_SAVE_NOT_REQUESTED',
+          'HUKM cannot save a Calendar event without an explicit creation or Save request.');
+    }
     // Project routing is enforced by the relay, not just written into the AI prompt.
     for(const step of result.steps){
       if((step.action==='calendar.event_draft' || step.action==='calendar.save_reviewed') && step.args.profile!==project?.chromeProfile)
