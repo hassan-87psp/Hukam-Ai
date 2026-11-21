@@ -59,6 +59,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('Visible controls check karne ke liye approval chahiye.', 'اسکرین کنٹرولز دیکھنے کی اجازت چاہیے۔', 'Approval required to inspect the foreground controls.');
     case 'ui.activate':
       return L('Visible button par click karne ke liye approval chahiye.', 'بٹن کلک کرنے کی اجازت چاہیے۔', 'Approval required to activate the exact visible control.');
+    case 'ui.activate_observed':
+      return L('Inspected window ke exact safe button ko click karne ke liye alag approval chahiye.', 'دیکھے گئے محفوظ بٹن پر کلک کی الگ اجازت چاہیے۔', 'Separate approval required to click this exact inspected control on the same window.');
     case 'ui.scroll':
       return L('Active app ko scroll karne se pehle approval chahiye.', 'فعال ایپ اسکرول کرنے کے لیے اجازت چاہیے۔', 'Approval required to scroll the foreground application.');
     case 'desktop.control':
@@ -164,6 +166,8 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Visible control labels mile hain. Message contents read nahi hue.', 'نظر آنے والے کنٹرولز پڑھ لیے۔', 'Visible interactive controls inspected; no message bodies read.');
     case 'ui.activate':
       return L('Control activate hua, final result verify nahi hua.', 'کنٹرول دب گیا، نتیجہ تصدیق شدہ نہیں۔', 'Control activated; final result not verified.');
+    case 'ui.activate_observed':
+      return L('Inspected button click attempt hua, final app result verify nahi hua.', 'منتخب بٹن پر کلک ہوا، آخری نتیجے کی تصدیق نہیں۔', 'The inspected button click was attempted; final app result is still unverified.');
     case 'ui.scroll':
       return L('Scroll input deliver hua. Actual page movement verify nahi hui.', 'اسکرول بھیج دیا، نتیجے کی تصدیق نہیں ہوئی۔', 'Scroll input delivered; on-screen movement not independently verified.');
     case 'desktop.control':
