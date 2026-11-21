@@ -379,7 +379,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "WhatsApp Send cancelled before execution")
         try:
-            return wa_desktop.send_reviewed(a["contact"], a["message"])
+            return wa_desktop.send_reviewed(a["contact"], a["message"], cancel)
         except wa_desktop.DesktopWhatsAppError as exc:
             raise ActionError("WHATSAPP_SEND_NOT_SAFE", str(exc)) from exc
 
