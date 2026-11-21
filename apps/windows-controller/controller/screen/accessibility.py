@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import time
 import unicodedata
 
 from ..config import IS_WINDOWS
@@ -69,6 +70,27 @@ def window_snapshot(active, controls: list[tuple[str, str]]) -> str:
 
 class AccessibilityError(Exception):
     pass
+
+
+# A snapshot is usable once, only within 90 seconds of a fresh foreground
+# inspection on this controller process. Old approvals cannot replay clicks
+# after a future reconnect, another window inspection or a long pause.
+_OBSERVED: tuple[str, float] | None = None
+OBSERVATION_TTL_S = 90.0
+
+
+def _remember_observation(token: str) -> None:
+    global _OBSERVED
+    _OBSERVED = (token, time.monotonic())
+
+
+def _consume_observation(token: str) -> None:
+    global _OBSERVED
+    observed = _OBSERVED
+    _OBSERVED = None  # consume before attempting a click; no blind retry
+    if (observed is None or observed[0] != token or
+            time.monotonic() - observed[1] > OBSERVATION_TTL_S):
+        raise AccessibilityError("The inspection expired or was already used; inspect again")
 
 
 def clean_label(label: object) -> str:
@@ -133,9 +155,11 @@ def inspect() -> dict:
     if launcher.SIMULATE:
         active = windows.WindowInfo(100, "Test Chrome", "chrome.exe", 1000)
         labels = [("ButtonControl", "Search"), ("ButtonControl", "🗑 Delete account")]
+        token = window_snapshot(active, labels)
+        _remember_observation(token)
         return {
             "window": active.title, "process": active.process,
-            "snapshot": window_snapshot(active, labels),
+            "snapshot": token,
             "controls": [{**x, "canActivate": safe_control_label(x["label"])}
                          for x in inspect_controls(labels)],
             "visibleOnly": True, "contentRead": False, "verified": True,
@@ -150,9 +174,11 @@ def inspect() -> dict:
         if win32gui.GetForegroundWindow() != active.hwnd:
             raise AccessibilityError("Foreground window changed during inspection")
         allowed = active.process.casefold() in CLICK_PROCESSES
+        token = window_snapshot(active, labels)
+        _remember_observation(token)
         return {
             "window": active.title[:100], "process": active.process,
-            "snapshot": window_snapshot(active, labels),
+            "snapshot": token,
             "controls": [{**x, "canActivate": allowed and safe_control_label(x["label"])}
                          for x in inspect_controls(labels)],
             "visibleOnly": True, "contentRead": False, "verified": True,
@@ -179,6 +205,7 @@ def activate_observed(label: str, role: str, snapshot: str) -> dict:
         labels = [("ButtonControl", "Search"), ("ButtonControl", "🗑 Delete account")]
         if snapshot != window_snapshot(active, labels) or (role, label) not in labels:
             raise AccessibilityError("The observed window or button has changed; inspect again")
+        _consume_observation(snapshot)
         launcher._record("ui.activate_observed", "label (redacted)")
         return {"inputDelivered": True, "verified": False, "simulated": True}
     active = _active()
@@ -202,6 +229,7 @@ def activate_observed(label: str, role: str, snapshot: str) -> dict:
             raise AccessibilityError("Foreground window changed; no click performed")
         if matches[0].IsOffscreen:
             raise AccessibilityError("Target control is no longer visible")
+        _consume_observation(snapshot)
         matches[0].Click(simulateMove=False)
         return {
             "inputDelivered": True, "verified": False,
