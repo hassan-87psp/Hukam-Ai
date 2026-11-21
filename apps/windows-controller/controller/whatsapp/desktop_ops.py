@@ -236,6 +236,15 @@ def read_selected(expected_contact: str | None = None) -> dict:
         if expected_contact:
             _check_selected_contact(root, rect, expected_contact)
         messages = visible_texts(root, max_items=8)
+        # WhatsApp chats can switch while UIA walks the visible tree. Verify
+        # the SAME native app/window and, for named reads, the exact contact
+        # again AFTER collecting text, before returning private content.
+        after, fresh_root, fresh_rect = _active_root()
+        if after.hwnd != _active.hwnd:
+            raise DesktopWhatsAppError(
+                "WhatsApp window changed while reading. Private message text discarded")
+        if expected_contact:
+            _check_selected_contact(fresh_root, fresh_rect, expected_contact)
     except DesktopWhatsAppError:
         raise
     except Exception as exc:
