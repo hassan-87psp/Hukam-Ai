@@ -50,17 +50,50 @@ def test_unread_button_between_verified_all_and_favourites():
     assert label is not None and "unread" in label.text.lower()
 
 
-def test_no_click_without_all_or_favourites_anchor():
-    all_words=words()
+def test_no_click_without_all_anchor_or_separate_heading():
+    base = words()
     assert vu.locate_unread(
-        [w for w in all_words if w.text!="All"],520,920) is None
-    assert vu.locate_unread(
-        [w for w in all_words if w.text!="Favourites"],520,920) is None
+        [w for w in base if w.text != "All"], 520, 920) is None
+    # If OCR missed Favourites, another independent Chats heading is required.
+    no_favs_and_no_heading = [w for w in base
+                              if w.text not in ("Favourites", "Chats")]
+    assert vu.locate_unread(no_favs_and_no_heading, 520, 920) is None
     assert vu.locate_unread([
-        vu.Word("Unread",170,490,70,21),
-        vu.Word("All",108,491,25,21),
-        vu.Word("Favourites",250,490,80,21),
-    ],520,920) is None
+        vu.Word("Unread", 170, 490, 70, 21),
+        vu.Word("All", 108, 491, 25, 21),
+        vu.Word("Favourites", 250, 490, 80, 21),
+    ], 520, 920) is None
+
+
+def test_missing_favourites_ocr_still_uses_two_independent_anchors():
+    # Actual 2026 desktop: Windows OCR may miss the right-hand chip.
+    partial = [w for w in words() if w.text != "Favourites"]
+    label = vu.locate_unread(partial, 520, 920)
+    assert label is not None and label.text == "Unread 8"
+
+
+def test_misaligned_all_unread_rejected_even_with_chats_heading():
+    partial = [w for w in words() if w.text != "Favourites"]
+    shifted = [
+        vu.Word(w.text, w.x, w.y + 65, w.width, w.height)
+        if w.text == "Unread 8" else w for w in partial
+    ]
+    assert vu.locate_unread(shifted, 520, 920) is None
+
+
+def test_scaled_chip_row_can_be_recognized_on_high_dpi():
+    # OCR coordinates may be larger on 125%/150% Windows scaling.
+    enlarged = [vu.Word(w.text, w.x*1.55, w.y*1.55,
+                        w.width*1.55, w.height*1.55)
+                for w in words() if w.text != "Favourites"]
+    assert vu.locate_unread(enlarged, 520, 920) is not None
+
+
+def test_privacy_safe_header_evidence_includes_only_boolean_ui_labels():
+    evidence = vu._header_labels(words(), 520, 920)
+    assert evidence == {"all": True, "unread": True,
+                        "favourites": True, "chats": True}
+    assert all(type(value) is bool for value in evidence.values())
 
 
 def test_no_click_if_two_unread_candidates_or_wrong_order():
