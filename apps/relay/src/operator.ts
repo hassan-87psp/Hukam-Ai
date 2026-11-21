@@ -22,7 +22,7 @@ type Plan = {id:string; summary:string; request:string; projectId:string|null; s
 type TaskRun = {id:string; planId:string|null; deviceId:string|null; status:string; currentStep:number; totalSteps:number; commandIds:string[]; error:string|null; createdAt:string; updatedAt:string};
 
 const SAFE_AGENT_ACTIONS = new Set<ActionName>([
-  'app.open','folder.open','folder.list','file.search','file.open','file.reveal',
+  'app.open','app.close','folder.open','folder.list','file.search','file.open','file.reveal',
   'web.open','web.search','youtube.search','youtube.play',
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
@@ -324,7 +324,11 @@ export class Operator {
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|mail\.google\.com|outlook\.office\.com)\/)/.test(url);
     const nativeWhatsAppWorkflow = !isFollowup ? desktopWhatsAppWorkflow(answer) : null;
-    if(nativeWhatsAppWorkflow){
+    if(!isFollowup && parsed.kind==='command' && parsed.action==='app.close'){
+      // A model must never reverse "band kro" into "app.open".
+      result = {summary:'Close the selected verified Notepad window (never discard unsaved changes)',
+        steps:[validateStep({action:'app.close',args:{app:'notepad'}})]};
+    } else if(nativeWhatsAppWorkflow){
       // Keep the user's request intact: open the personal desktop app first,
       // then check either verified numeric unread count or visible unread sender
       // names (the latter needs a separate owner approval). Never use Web.
