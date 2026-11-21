@@ -209,6 +209,17 @@ class ControllerClient:
                 })
             log.info("%s %s %s", "✔" if out.ok else "✖", action, (out.error or {}).get("message", ""))
             await self.finish(cid, out)
+            if action == "controller.update" and out.ok and out.result.get("installerLaunched") is True:
+                # Replacing the running one-file Windows executable while it
+                # is locked by this same process caused owners to approve
+                # website updates but remain on the old Controller version.
+                # First send the exact installer-launched (NOT installed)
+                # result to the relay. Then release the EXE before the local
+                # installer reaches its file-copy step. Existing pairing is
+                # stored separately in AppData and is not revoked.
+                log.info("HUKM update stage=exiting_old_controller_after_result")
+                await asyncio.sleep(1.25)
+                self.stop()
         finally:
             self.cancels.pop(cid, None)
 

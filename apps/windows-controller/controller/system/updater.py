@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -26,6 +27,8 @@ from pathlib import Path
 from .. import VERSION
 from ..config import IS_WINDOWS, data_dir
 from . import launcher
+
+log = logging.getLogger("hukm.updater")
 
 RELEASES_API = "https://api.github.com/repos/hassan-87psp/Hukam-Ai/releases/latest"
 ALLOWED_HOSTS = {"api.github.com", "github.com",
@@ -57,13 +60,15 @@ def _read_bounded(url: str, limit: int) -> bytes:
     headers = {"User-Agent": "HUKM-Windows-Updater/" + VERSION,
                "Accept": "application/vnd.github+json"}
     try:
+        log.info("HUKM updater verifying official GitHub metadata (no user data uploaded)")
         with opener.open(urllib.request.Request(url, headers=headers), timeout=20) as response:
             data = response.read(limit + 1)
         if len(data) > limit:
             raise UpdateError("Release response exceeded safety limit")
         return data
     except (OSError, ValueError) as exc:
-        raise UpdateError("Unable to verify the official HUKM release over HTTPS") from exc
+        raise UpdateError("GitHub release request failed: " + type(exc).__name__ +
+                          ". Check laptop internet, firewall and GitHub access.") from exc
 
 
 def _version(value: str) -> tuple[int, int, int]:
@@ -160,13 +165,18 @@ def _stage(url: str, target: Path, expected_digest: str, expected_size: int) -> 
 def _local_confirm(version: str) -> bool:
     import ctypes
     # MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 | MB_TOPMOST
-    flags = 0x00000004 | 0x00000030 | 0x00000100 | 0x00040000
+    # MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2 |
+    # MB_SETFOREGROUND | MB_TOPMOST. Bring this confirmation to the owner's
+    # visible desktop rather than leaving an unnoticed modal behind Chrome.
+    flags = 0x00000004 | 0x00000030 | 0x00000100 | 0x00010000 | 0x00040000
     message = (
         "Official HUKM update v" + version + " was downloaded and SHA-256 verified.\n\n"
         "This build is not yet code-signed. GitHub repository ownership is "
         "the release trust source.\n\n"
-        "Start the normal Windows installer now? You may need to close HUKM and "
-        "approve Windows prompts. Existing pairing will be preserved.\n\n"
+        "Start the normal Windows installer now? HUKM will disconnect the "
+        "old Controller AFTER reporting the installer launch so that Windows "
+        "can replace its executable. Then complete the setup and start HUKM "
+        "again. Existing pairing will be preserved.\n\n"
         "Choose No to cancel. Nothing will be installed without local approval."
     )
     return ctypes.windll.user32.MessageBoxW(None, message,
@@ -179,11 +189,14 @@ def update_from_website() -> dict:
         return {"updateAvailable": False, "simulated": True, "verified": False}
     if not IS_WINDOWS:
         raise UpdateError("Updates require the installed Windows Controller")
+    log.info("HUKM update stage=checking_release current_version=%s", VERSION)
     version, exe_url, checksum_url, size = _latest_assets()
+    log.info("HUKM update stage=release_checked latest_version=%s", version)
     if not exe_url:
         return {"updateAvailable": False, "currentVersion": VERSION,
                 "latestVersion": version, "verified": True}
     installer = data_dir() / "Updates" / ("HUKM-Setup-v" + version + ".exe")
+    log.info("HUKM update stage=checking_checksum")
     expected = _expected_digest(checksum_url, installer.name)
     if installer.exists():
         digest = hashlib.sha256()
@@ -193,8 +206,12 @@ def update_from_website() -> dict:
         if installer.stat().st_size != size or digest.hexdigest() != expected:
             installer.unlink()
     if not installer.exists():
+        log.info("HUKM update stage=downloading_installer size_bytes=%d", size)
         _stage(exe_url, installer, expected, size)
+    log.info("HUKM update stage=verified_checksum latest_version=%s", version)
+    log.info("HUKM update stage=awaiting_local_windows_confirmation")
     if not _local_confirm(version):
+        log.info("HUKM update stage=cancelled_on_windows")
         return {"updateAvailable": True, "latestVersion": version,
                 "installerLaunched": False, "verified": False,
                 "note": "Update cancelled on the Windows laptop. No installer ran."}
@@ -202,7 +219,10 @@ def update_from_website() -> dict:
         # Never use SHELL, PowerShell, arbitrary URLs, or silent install flags.
         # Normal Inno Setup UI performs the local install. A new controller
         # version is NOT verified until its next authenticated device hello.
+        # Separate signed-OS process. No shell, user-supplied arguments or
+        # auto-install switches. Setup prompts the local Windows owner.
         subprocess.Popen([str(installer)], close_fds=True)
+        log.info("HUKM update stage=installer_launched latest_version=%s", version)
     except OSError as exc:
         raise UpdateError("Windows could not start the verified HUKM installer") from exc
     return {"updateAvailable": True, "latestVersion": version,
