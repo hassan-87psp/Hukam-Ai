@@ -23,7 +23,7 @@ import {
   type UserSettings,
 } from '../../../../packages/shared-types/src/index';
 import { api, ApiError, del, get, patch, post, put, uid } from './api';
-import { whatsappResultUnverified } from '../lib/format';
+import { actionResultUnverified } from '../lib/format';
 import { Realtime, type RealtimeState } from './realtime';
 import { listVoices, pickVoice, speak, stopSpeaking, textForVoice } from './voice';
 
@@ -244,17 +244,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!FINAL_STATUSES.includes(c.status)) return;
       announced.current.add(c.id);
       const lang = settingsRef.current.responseLang;
-      if (c.status === 'completed' && whatsappResultUnverified(c.action,c.result)) {
-        const isSend=c.action === 'whatsapp.send_reviewed';
-        agent(isSend ? {
-          roman:'WhatsApp Send attempt hua, magar delivery confirm nahi hui. Chat manually check karein. Automatic retry mat karein.',
+      if (c.status === 'completed' && actionResultUnverified(c.action,c.result)) {
+        const isSend=c.action==='whatsapp.send_reviewed' || c.action==='whatsapp.send_attachment_reviewed';
+        const m:Localized = isSend ? {
+          roman:'WhatsApp Send ki koshish hui, magar delivery verify nahi hui. Chat manually check karein. Automatic retry mat karein.',
           ur:'واٹس ایپ پیغام بھیجنے کی کوشش ہوئی، لیکن ڈیلیوری کی تصدیق نہیں۔ دوبارہ خودکار کوشش نہ کریں۔',
-          en:'WhatsApp Send was attempted but delivery is unverified. Check the chat manually; never auto-retry.',
+          en:'WhatsApp Send may have happened, but delivery is unverified. Check the chat; never retry automatically.',
+        } : c.action==='calendar.save_reviewed' ? {
+          roman:'Calendar Save ki koshish hui, lekin event ya invites confirm nahi. Calendar khud check karein; dobara Save mat karein.',
+          ur:'کیلنڈر محفوظ کرنے کی کوشش ہوئی، لیکن ایونٹ اور دعوت ناموں کی تصدیق نہیں۔',
+          en:'Calendar Save may have happened, but the event and invitations are not verified. Check Calendar before any retry.',
+        } : c.action==='chatgpt.submit_prompt' ? {
+          roman:'ChatGPT prompt submit attempt hua, magar response abhi verify nahi hua. Project tab check karein.',
+          ur:'چیٹ جی پی ٹی پرامپٹ بھیجنے کی کوشش ہوئی، جواب کی تصدیق نہیں ہوئی۔',
+          en:'ChatGPT prompt was submitted or attempted; the generated response is not yet verified.',
+        } : c.action==='chatgpt.download_visible' ? {
+          roman:'ChatGPT ka downloaded file verify nahi hua. Chrome Downloads check karein.',
+          ur:'چیٹ جی پی ٹی فائل ڈاؤن لوڈ کی تصدیق نہیں ہوئی۔',
+          en:'A completed ChatGPT output file could not be verified. Check Chrome Downloads.',
         } : {
-          roman:'WhatsApp unread count ya names verify nahi ho sake. Ye zero nahi hai. Devices mein Controller version check karein aur HUKM diagnostics chalayein.',
+          roman:'WhatsApp unread count ya names verify nahi ho sake. Ye zero nahi hai. Devices mein Controller version check karein.',
           ur:'واٹس ایپ کے ان ریڈ میسجز کی تصدیق نہیں ہوئی۔ یہ صفر نہیں ہیں۔',
-          en:'WhatsApp unread count or senders could not be verified. This does not mean zero unread. Check the Controller version and run HUKM diagnostics.',
-        },'warn');
+          en:'WhatsApp unread count or senders could not be verified. Unknown does not mean zero.',
+        };
+        agent(m,'warn');
         setFlash({state:'error',until:Date.now()+2200});
       } else if (c.status === 'completed') {
         const m = successMessage(c.action, c.args, c.result);
