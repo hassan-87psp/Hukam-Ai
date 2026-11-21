@@ -85,8 +85,10 @@ class Config:
         ][:30]
         if cfg.browser not in ("default", "chrome", "edge"):
             cfg.browser = "default"
-        if cfg.whatsapp_mode not in ("desktop", "web"):
-            cfg.whatsapp_mode = "desktop"
+        # The user's Personal WhatsApp Desktop is the permanent default.
+        # Legacy saved "web" settings cannot silently reroute laptop commands.
+        # Explicit user requests for WhatsApp Web still work as web.open.
+        cfg.whatsapp_mode = "desktop"
         cfg.screen_capture = cfg.screen_capture is True
         if not cfg.screen_capture and "screen" in cfg.capabilities:
             cfg.capabilities.remove("screen")
