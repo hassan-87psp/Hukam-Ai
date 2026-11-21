@@ -138,6 +138,20 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     // This is a proposed task only; the execution still requires explicit owner approval.
   });
 
+  it('routes exact named WhatsApp Desktop message reads without Gemini',async()=>{
+    const before=plannerRequests.length;
+    const result=await api('POST','/api/operator/plan',{
+      text:'Ali ke WhatsApp messages parho'
+    });
+    expect(result.status).toBe(200);
+    expect(result.data.steps).toEqual([
+      {action:'whatsapp.select_chat',args:{contact:'Ali'}},
+      {action:'whatsapp.read_selected',args:{contact:'Ali'}},
+    ]);
+    expect(plannerRequests.length).toBe(before);
+    // Real Windows remains approval-gated and contact-header verified.
+  });
+
   it('restores deterministic and AI follow-up slots after a real Relay database restart',async()=>{
     const basic=await api('POST','/api/commands',{text:'folder kholo'});
     expect(basic.data.kind).toBe('clarify');
