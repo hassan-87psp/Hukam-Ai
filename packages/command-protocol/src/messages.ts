@@ -59,6 +59,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('Visible controls check karne ke liye approval chahiye.', 'اسکرین کنٹرولز دیکھنے کی اجازت چاہیے۔', 'Approval required to inspect the foreground controls.');
     case 'ui.activate':
       return L('Visible button par click karne ke liye approval chahiye.', 'بٹن کلک کرنے کی اجازت چاہیے۔', 'Approval required to activate the exact visible control.');
+    case 'ui.scroll':
+      return L('Active app ko scroll karne se pehle approval chahiye.', 'فعال ایپ اسکرول کرنے کے لیے اجازت چاہیے۔', 'Approval required to scroll the foreground application.');
     case 'calendar.event_draft':
       return L('Calendar event ka draft browser mein kholne ke liye approval chahiye.', 'کیلنڈر ایونٹ ڈرافٹ کی اجازت چاہیے۔', 'Approval required to open the Calendar event draft.');
     case 'chatgpt.prompt_draft':
@@ -148,6 +150,8 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('Visible control labels mile hain. Message contents read nahi hue.', 'نظر آنے والے کنٹرولز پڑھ لیے۔', 'Visible interactive controls inspected; no message bodies read.');
     case 'ui.activate':
       return L('Control activate hua, final result verify nahi hua.', 'کنٹرول دب گیا، نتیجہ تصدیق شدہ نہیں۔', 'Control activated; final result not verified.');
+    case 'ui.scroll':
+      return L('Scroll input deliver hua. Actual page movement verify nahi hui.', 'اسکرول بھیج دیا، نتیجے کی تصدیق نہیں ہوئی۔', 'Scroll input delivered; on-screen movement not independently verified.');
     case 'calendar.event_draft':
       return L('Calendar event draft open hua. Event abhi save nahi hua.', 'کیلنڈر ڈرافٹ کھلا ہے مگر محفوظ نہیں ہوا۔', 'Calendar draft opened. Event not yet saved.');
     case 'chatgpt.prompt_draft':
