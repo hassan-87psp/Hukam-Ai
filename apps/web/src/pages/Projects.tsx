@@ -188,7 +188,7 @@ export default function Projects(){
       </div>:
       <main className="glass min-w-0 rounded-2xl p-4 sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div><h2 className="font-display text-xl font-bold">{project.name}</h2><p className="text-xs text-ink2">Project-specific AI context and saved history</p></div>
+          <div><h2 className="font-display text-xl font-bold">{project.name}</h2><p className="text-xs text-ink2">Isolated chat · {notes.length} memory notes · {tasks.length} recent tasks</p></div>
           <div className="flex gap-2">
             <Link to={'/chat?projectId='+encodeURIComponent(project.id)} className="btn-primary px-3 py-2 text-xs">
               <MessageSquare size={15}/> Run HUKM Task
@@ -206,13 +206,18 @@ export default function Projects(){
           </div>
         </div>
         <div className="mb-4 flex flex-wrap gap-2 border-b border-line/20 pb-3" role="tablist">
-          {(['chat','instructions','memory'] as const).map(t=><button key={t} role="tab" aria-selected={tab===t}
+          {(['chat','tasks','instructions','memory'] as const).map(t=><button key={t} role="tab" aria-selected={tab===t}
             onClick={()=>setTab(t)} className={`rounded-xl px-3 py-2 text-sm capitalize transition ${tab===t?'bg-blue text-white':'bg-field/60 text-ink2 hover:text-ink'}`}>
-              {t==='chat'?<MessageSquare className="mr-1 inline h-4 w-4"/>:t==='memory'?<BookOpen className="mr-1 inline h-4 w-4"/>:<Save className="mr-1 inline h-4 w-4"/>}{t}
+              {t==='chat'?<MessageSquare className="mr-1 inline h-4 w-4"/>:t==='tasks'?<ListTodo className="mr-1 inline h-4 w-4"/>:t==='memory'?<BookOpen className="mr-1 inline h-4 w-4"/>:<Save className="mr-1 inline h-4 w-4"/>}{t}
           </button>)}
         </div>
         {tab==='chat'&&<div>
-          <p className="mb-3 text-xs text-ink2">Gemini receives this project's saved instructions and notes as context. No laptop action is executed by this chat; use Run HUKM Task for supervised actions.</p>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-xs text-ink2">Isolated Gemini conversation. To operate the laptop, use Run HUKM Task.</p>
+            {messages.length>0&&<button type="button" className="btn-ghost px-3 py-1.5 text-xs" onClick={()=>void clearMessages()} disabled={saving}>
+              <Trash2 size={13}/> Clear chat
+            </button>}
+          </div>
           <div className="scroll-thin mb-3 flex max-h-[55vh] min-h-[270px] flex-col gap-3 overflow-y-auto rounded-xl bg-field/30 p-3">
             {messages.length===0&&<p className="py-14 text-center text-sm text-ink2">Start a conversation in this Project. Messages will be saved here.</p>}
             {messages.map(m=><div key={m.id} className={`max-w-[88%] whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm ${m.role==='user'?'self-end bg-blue text-white':'self-start bg-field ring-1 ring-line/15'}`}>{m.content}</div>)}
@@ -222,6 +227,51 @@ export default function Projects(){
             <input className="field min-w-0 flex-1" value={draft} onChange={e=>setDraft(e.target.value)} maxLength={1800} placeholder="Ask within this Project…" aria-label="Project message"/>
             <button type="submit" className="btn-primary" disabled={busy||!draft.trim()}><Send size={17}/> Send</button>
           </form>
+        </div>}
+        {tab==='tasks'&&<div className="space-y-4">
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-2xl bg-field/60 px-3 py-4 text-center ring-1 ring-line/10">
+              <div className="text-xl font-bold">{tasks.length}</div><div className="text-xs text-ink2">Recent tasks</div>
+            </div>
+            <div className="rounded-2xl bg-field/60 px-3 py-4 text-center ring-1 ring-line/10">
+              <div className="text-xl font-bold text-ice">{activeTasks}</div><div className="text-xs text-ink2">Active</div>
+            </div>
+            <div className="rounded-2xl bg-field/60 px-3 py-4 text-center ring-1 ring-line/10">
+              <div className="text-xl font-bold text-ok">{tasks.filter(t=>t.status==='completed').length}</div><div className="text-xs text-ink2">Verified complete</div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
+              {(['all','active','finished'] as const).map(value=><button key={value} type="button"
+                aria-pressed={taskFilter===value} onClick={()=>setTaskFilter(value)}
+                className={`rounded-xl px-3 py-2 text-xs capitalize transition ${taskFilter===value?'bg-blue text-white':'bg-field/60 text-ink2 hover:text-ink'}`}>
+                {value}
+              </button>)}
+            </div>
+            <button className="btn-ghost px-3 py-2 text-xs" type="button" onClick={()=>void get<Task[]>('/api/projects/'+project.id+'/tasks')
+              .then(rows=>{if(selectedRef.current===project.id)setTasks(rows);})
+              .catch(e=>{if(selectedRef.current===project.id)setError(errMsg(e));})}>
+              <RefreshCw size={14}/> Refresh
+            </button>
+          </div>
+          <div className="space-y-2">
+            {filteredTasks.length===0&&<div className="rounded-2xl bg-field/30 p-6 text-center text-sm text-ink2">No {taskFilter==='all'?'task runs':taskFilter} in this project yet. Use Run HUKM Task above to create a reviewed task plan.</div>}
+            {filteredTasks.map(task=><div key={task.id} className="rounded-2xl bg-field/40 p-4 ring-1 ring-line/15">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-sm font-semibold">{task.summary||'Project task'}</p>
+                  <p className="mt-1 text-xs text-ink2">{new Date(task.createdAt).toLocaleString()} · Step {task.currentStep}/{task.totalSteps}</p>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-medium ${task.status==='completed'?'bg-ok/10 text-ok':task.status==='failed'?'bg-bad/10 text-bad':task.status==='unverified'?'bg-warn/10 text-warn':'bg-blue/15 text-ice'}`}>{task.status.replace(/_/g,' ')}</span>
+              </div>
+              {task.error&&<p className="mt-2 break-words text-xs text-warn">{task.error}</p>}
+              {['queued','running','awaiting_approval'].includes(task.status)&&<button type="button"
+                className="btn-ghost mt-3 px-3 py-1.5 text-xs text-bad" onClick={()=>void cancelTask(task.id)}>
+                <X size={13}/> Stop task
+              </button>}
+            </div>)}
+          </div>
+          <p className="text-xs text-ink2">Tasks are scoped to this project and owner. “Unverified” means input may have occurred, but the final laptop/app outcome was not independently confirmed.</p>
         </div>}
         {tab==='instructions'&&<div className="space-y-4">
           <label className="block text-sm">Project name<input className="field mt-1 w-full" value={edit.name} maxLength={80} onChange={e=>setEdit(v=>({...v,name:e.target.value}))}/></label>
@@ -234,6 +284,14 @@ export default function Projects(){
             <label className="block text-sm">Asset folder label<input className="field mt-1 w-full" value={edit.assetFolder} maxLength={350}
               onChange={e=>setEdit(v=>({...v,assetFolder:e.target.value}))} placeholder="Designs / PipSePaisa"/></label>
           </div>
+          <label className="block text-sm">Preferred Windows laptop
+            <select className="field mt-1 w-full" value={edit.preferredDeviceId??''}
+              onChange={e=>setEdit(v=>({...v,preferredDeviceId:e.target.value||null}))}>
+              <option value="">Use available paired laptop (ask if needed)</option>
+              {devices.map(d=><option key={d.id} value={d.id}>{d.name}{d.online&&!d.paused?' — online':d.paused?' — paused':' — offline'}</option>)}
+            </select>
+            <span className="mt-1 flex items-center gap-1 text-xs text-ink2"><Laptop size={13}/> Only paired devices are accepted by HUKM. Device permissions still apply.</span>
+          </label>
           <label className="block text-sm">ChatGPT Project URL<input className="field mt-1 w-full" value={edit.chatgptProjectUrl} maxLength={500}
             onChange={e=>setEdit(v=>({...v,chatgptProjectUrl:e.target.value}))} placeholder="https://chatgpt.com/..."/></label>
           <p className="text-xs text-warn">Use the actual Chrome profile directory (Default or Profile 1–99), not the display name. Profile must exist on this Windows PC. Folder path is a saved preference, not yet authorized file access. Never save passwords or API keys here.</p>
@@ -244,12 +302,24 @@ export default function Projects(){
           <form onSubmit={e=>void saveNote(e)} className="mb-4 space-y-3 rounded-xl bg-field/40 p-3">
             <input className="field w-full" placeholder="Memory title, e.g. Brand palette" aria-label="Memory title" maxLength={120} value={noteTitle} onChange={e=>setNoteTitle(e.target.value)}/>
             <textarea className="field min-h-[100px] w-full" placeholder="Project reference or instruction…" aria-label="Memory content" maxLength={3500} value={noteContent} onChange={e=>setNoteContent(e.target.value)}/>
-            <button className="btn-primary" type="submit" disabled={!noteTitle.trim()||saving}><Plus size={16}/> Save memory</button>
+            <div className="flex flex-wrap gap-2">
+              <button className="btn-primary" type="submit" disabled={!noteTitle.trim()||saving}><Plus size={16}/> {editingNoteId?'Update memory':'Save memory'}</button>
+              {editingNoteId&&<button className="btn-ghost" type="button" onClick={()=>{setEditingNoteId(null);setNoteTitle('');setNoteContent('');}}><X size={15}/> Cancel editing</button>}
+            </div>
           </form>
+          <div className="mb-3 flex items-center gap-2 rounded-xl bg-field/40 px-3 ring-1 ring-line/10">
+            <Search size={15} className="text-ink2"/><input className="w-full bg-transparent py-3 text-sm outline-none" type="search"
+              value={noteSearch} onChange={e=>setNoteSearch(e.target.value)} placeholder="Search saved memory…"
+              aria-label="Search project memory"/>
+          </div>
           <div className="space-y-2">{notes.length===0&&<p className="py-4 text-sm text-ink2">No saved notes yet.</p>}
-            {notes.map(n=><div key={n.id} className="rounded-xl bg-field/30 p-3 ring-1 ring-line/10">
+            {notes.length>0&&filteredNotes.length===0&&<p className="py-4 text-sm text-ink2">No notes match this search.</p>}
+            {filteredNotes.map(n=><div key={n.id} className="rounded-xl bg-field/30 p-3 ring-1 ring-line/10">
               <div className="flex items-center justify-between gap-2"><strong className="text-sm">{n.title}</strong>
-                <button className="text-bad" title="Delete note" onClick={()=>void deleteNote(n.id)}><Trash2 size={15}/></button></div>
+                <div className="flex items-center gap-2">
+                  <button className="text-ice" title="Edit note" aria-label={'Edit '+n.title} onClick={()=>{setEditingNoteId(n.id);setNoteTitle(n.title);setNoteContent(n.content);}}><Pencil size={15}/></button>
+                  <button className="text-bad" title="Delete note" aria-label={'Delete '+n.title} onClick={()=>void deleteNote(n.id)}><Trash2 size={15}/></button>
+                </div></div>
               <p className="mt-2 whitespace-pre-wrap break-words text-sm text-ink2">{n.content}</p>
             </div>)}
           </div>
