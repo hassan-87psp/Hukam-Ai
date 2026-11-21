@@ -54,6 +54,7 @@ export type ActionName =
   | 'window.focus'
   | 'screen.capture'
   | 'diagnostics.probe'
+  | 'controller.update'
   | 'ui.inspect'
   | 'ui.activate'
   | 'ui.activate_observed'
