@@ -106,6 +106,14 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
       {action:'whatsapp.open',args:{mode:'desktop'}},
       {action:'whatsapp.unread_senders',args:{}}
     ]);
+    const shorthand=await api('POST','/api/operator/plan',{
+      text:'WhatsApp check karo'
+    });
+    expect(shorthand.status).toBe(200);
+    expect(shorthand.data.steps).toEqual([
+      {action:'whatsapp.open',args:{mode:'desktop'}},
+      {action:'whatsapp.unread_senders',args:{}}
+    ]);
     const count=await api('POST','/api/operator/plan',{
       text:'WhatsApp kholo aur check karo kitne unread msg hain'
     });
@@ -116,7 +124,7 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     ]);
     expect(plannerRequests.length).toBe(before);
     const health=await api('GET','/api/health');
-    expect(health.data.version).toBe('1.8.0');
+    expect(health.data.version).toBe('1.8.1');
   });
 
   it('creates a reviewed owner-only desktop input plan without asking Gemini to invent coordinates',async()=>{

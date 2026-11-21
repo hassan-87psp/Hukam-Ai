@@ -22,6 +22,11 @@ export function desktopWhatsAppWorkflow(text: string): DesktopWhatsAppWorkflow {
   if (!/\b(?:whats\s?app|wa)\b/.test(t)) return null;
   const explicitWeb = /\b(?:whatsapp\s+web|web\s+whatsapp)\b/.test(t);
   if (explicitWeb && !/\b(?:personal|desktop|installed|windows\s+app)\b/.test(t)) return null;
+  // "WhatsApp check karo" is shorthand for checking *who* has unread
+  // messages, not just trying to read an unreliable taskbar badge. This
+  // always opens/restores Personal Desktop first; Web remains explicit.
+  if (/^(?:please\s+)?(?:mera\s+|mere\s+)?whats\s?app\s+(?:desktop\s+)?(?:check|dekho|dekh|dakho)(?:\s+(?:karo|kar do|krdo|kro))?[.!?]*$/i.test(t))
+    return 'senders';
   const opening = /\b(?:open|kholo|khol|kholen|start|launch|chalao)\b/.test(t) ||
     /\bdesktop\s+(?:on|in)\s+(?:my\s+)?laptop\b/.test(t) ||
     (/\bdesktop\b/.test(t) && /\b(?:check|dekho|dekh|dakho)\b/.test(t));
