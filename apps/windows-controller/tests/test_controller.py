@@ -253,6 +253,11 @@ def test_whatsapp_unread_filter_badge_and_split_accessibility_controls():
     assert count_from_accessibility_items([("Unread", 94, 125), ("4", 158, 125)]) == 4
     assert count_from_accessibility_items([("Unread", 94, 125), ("5", 158, 200)]) is None
     assert count_from_accessibility_items([("Chats", 53, 90), ("Unread", 94, 125)]) is None
+    assert count_from_accessibility_items([("Unread chats (3)", 94, 125)]) == 3
+    assert count_from_accessibility_items([("Unread • 3", 94, 125)]) == 3
+    assert count_from_accessibility_items([("3 unread messages", 94, 125)]) == 3
+    assert count_from_accessibility_items([("123 latest notifications from contact", 94, 125)]) is None
+    assert count_from_accessibility_items([("Unread", 94, 125), ("3", 158, 205)]) is None
 
 
 def test_whatsapp_check_unknown_is_not_falsely_zero(monkeypatch):
