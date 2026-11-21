@@ -206,6 +206,10 @@ export class Operator {
   private clearPending(userId:string,key:string){
     run(this.db,'DELETE FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
   }
+  discardPending(userId:string,projectId:string|null){
+    if(projectId)this.projects.get(userId,projectId);
+    this.clearPending(userId,this.dialogueKey(projectId));
+  }
   private savePending(userId:string,key:string,request:string,question:string){
     const stamp=nowIso();
     run(this.db,`INSERT INTO operator_dialogues(user_id,project_key,request,question,topic,created_at,updated_at,expires_at)
