@@ -4,6 +4,7 @@ import type { WebSocket } from 'ws';
 import {
   ACTIONS,
   parseCommand,
+  routeIntent,
   beginDialogue,
   resolveDialogue,
   type DialogueState,
@@ -541,7 +542,10 @@ export class Relay {
       if (existing && existing.expiresAt <= now) this.clearPendingDialogue(userId);
       // A follow-up is permitted only for interactive users, not unattended
       // automations. Every fully specified command still passes validation.
-      if (source !== 'automation' && existing && existing.expiresAt > now) {
+      // Explicit unrelated questions/greetings do not consume a pending
+      // file/contact/folder answer; the assistant can respond and resume later.
+      const aside = routeIntent(text, parsed, true) === 'chat';
+      if (source !== 'automation' && existing && existing.expiresAt > now && !aside) {
         const contacts = this.getSettings(userId).whatsappContacts;
         const resolution = resolveDialogue(existing, text, contacts);
         if (resolution.handled) {
