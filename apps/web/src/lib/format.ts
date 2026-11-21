@@ -31,18 +31,35 @@ export function duration(ms: number | null | undefined): string {
 /** Historical pre-fix Controllers may have marked unread checks as Completed.
  * This UI guard prevents the green badge from lying about those old results.
  */
-export function whatsappResultUnverified(action: ActionName, result: unknown): boolean {
-  if(action !== 'whatsapp.check' && action !== 'whatsapp.unread_senders' && action !== 'whatsapp.send_reviewed' && action !== 'whatsapp.send_attachment_reviewed') return false;
+/** Distinguish an attempted UI action from a VERIFIED real-world result.
+ * Never show green Completed just because the Controller clicked Send/Save
+ * when delivery, event creation, or final file output is still unknown.
+ */
+export function actionResultUnverified(action: ActionName, result: unknown): boolean {
   const r = result && typeof result === 'object' && !Array.isArray(result)
     ? result as Record<string, unknown> : {};
-  if(action === 'whatsapp.send_reviewed' || action === 'whatsapp.send_attachment_reviewed')
-    return r.deliveryVerified !== true;
-  if(action === 'whatsapp.check')
-    return !(typeof r.unreadChats === 'number' && Number.isInteger(r.unreadChats) &&
-      r.unreadChats >= 0 && r.unreadChats <= 999 &&
-      (r.source === 'WhatsApp Desktop Unread filter' || r.source === 'window title'));
-  return !(Array.isArray(r.senders) && r.senders.length > 0 &&
-    r.senders.every((x:unknown)=>typeof x === 'string' && !!x.trim()));
+  switch (action) {
+    case 'whatsapp.send_reviewed':
+    case 'whatsapp.send_attachment_reviewed':
+      return r.deliveryVerified !== true;
+    case 'calendar.save_reviewed':
+      return r.eventCreatedVerified !== true;
+    case 'chatgpt.submit_prompt':
+      return r.responseVerified !== true;
+    case 'chatgpt.download_visible':
+      return !(r.downloadVerified === true && r.verified === true &&
+        typeof r.fileName === 'string' && !!r.fileName &&
+        typeof r.sizeBytes === 'number' && r.sizeBytes > 0);
+    case 'whatsapp.check':
+      return !(typeof r.unreadChats === 'number' && Number.isInteger(r.unreadChats) &&
+        r.unreadChats >= 0 && r.unreadChats <= 999 &&
+        (r.source === 'WhatsApp Desktop Unread filter' || r.source === 'window title'));
+    case 'whatsapp.unread_senders':
+      return !(Array.isArray(r.senders) && r.senders.length > 0 &&
+        r.senders.every((x:unknown)=>typeof x === 'string' && !!x.trim()));
+    default:
+      return false;
+  }
 }
 
 export const STATUS_LABEL: Record<CommandStatus, string> = {
