@@ -293,7 +293,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         agent(m, c.result?.ambiguous || c.result?.windowDetected === false || c.result?.mode === 'search' && c.action === 'youtube.play' ? 'warn' : 'ok');
         setFlash({ state: 'success', until: Date.now() + 2200 });
       } else if (c.status === 'failed') {
-        const m = failureMessage(c.error);
+        const m = failureMessage(c.error,c.action);
         agent(m, 'bad');
         toast({ title: 'Command failed', body: pick(m, lang === 'ur' ? 'en' : lang), tone: 'bad' });
         setFlash({ state: 'error', until: Date.now() + 2600 });
@@ -355,7 +355,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       switch (m.type) {
         case 'command.updated':
           upsertCommand(m.command);
-          announce(m.command);
+          // Announce the monotonic merged state, never a stale wire update.
+          announce(latest.current.get(m.command.id)??m.command);
           break;
         case 'device.updated':
           setDevices((ds) => {

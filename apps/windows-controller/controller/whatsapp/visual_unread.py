@@ -307,25 +307,41 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     before = _chip_background(image, chip)
     _ensure_not_cancelled(cancel)
     _safe_foreground(active_hwnd)
-    previous_cursor = win32api.GetCursorPos()
-    try:
-        win32api.SetCursorPos((x, y))
+    # Revalidate the exact capture geometry and foreground hit target
+    # before moving, throughout visible motion, and just before clicking.
+    from ..system.pointer_motion import move_visible, PointerInterrupted
+    def guard():
         _ensure_not_cancelled(cancel)
         _safe_foreground(active_hwnd)
-        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-    finally:
-        try:
-            win32api.SetCursorPos(previous_cursor)
-        except Exception:
-            pass
+        current = win32gui.GetWindowRect(active_hwnd)
+        w, h = current[2]-current[0], current[3]-current[1]
+        if current[:2] != (left, top) or (min(520,int(w*0.57)),min(920,h-12)) != image.size:
+            raise VisualUnreadUnavailable("WhatsApp moved or resized before click; no mouse click attempted.")
+        client = win32gui.GetClientRect(active_hwnd)
+        a,b=win32gui.ClientToScreen(active_hwnd,(client[0],client[1]))
+        c,d=win32gui.ClientToScreen(active_hwnd,(client[2],client[3]))
+        if not (a+20<x<c-20 and b+20<y<d-20):
+            raise VisualUnreadUnavailable("Unread target is outside the current WhatsApp client")
+        hit=win32gui.WindowFromPoint((x,y))
+        if not hit or win32gui.GetAncestor(hit,2)!=active_hwnd:
+            raise VisualUnreadUnavailable("Unread control is obscured by another window; no click attempted.")
+    try:
+        move_visible((x,y),guard)
+    except PointerInterrupted as exc:
+        raise VisualUnreadUnavailable(str(exc)) from exc
+    guard()
+    if tuple(win32api.GetCursorPos())!=(x,y):
+        raise VisualUnreadUnavailable("Pointer changed before click; no names reported.")
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+    # Leave the pointer at the actual clicked control, not its old position.
     log.info("WhatsApp unread visual stage=clicked elapsed=%.1fs",
              time.monotonic() - started)
     _ensure_not_cancelled(cancel)
     time.sleep(.4)
     _ensure_not_cancelled(cancel)
     after_image, new_left, new_top = _capture_left(active_hwnd)
-    if (left, top) != (new_left, new_top):
+    if (left, top) != (new_left, new_top) or after_image.size != image.size:
         raise VisualUnreadUnavailable(
             "WhatsApp window moved while scanning Unread; no names reported. Maximize WhatsApp on one monitor, select All, then retry without moving the window."
         )

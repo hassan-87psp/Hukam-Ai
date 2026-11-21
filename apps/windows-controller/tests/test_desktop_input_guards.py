@@ -111,3 +111,24 @@ def test_already_cancelled_input_does_not_touch_foreground(desktop, monkeypatch)
     monkeypatch.setattr(d, "_foreground", lambda: pytest.fail("Window touched after cancellation"))
     with pytest.raises(d.DesktopInputError, match="interrupted"):
         d.control({"kind": "scroll", "steps": 1}, cancel=state.cancel)
+
+def test_visible_mouse_movement_leaves_cursor_at_target(desktop):
+    state, api, con=desktop
+    visited=[]
+    def move(point):
+        visited.append(point)
+        state.point=point
+    api.SetCursorPos=move
+    d.control({"kind":"click","x":-250,"y":400})
+    assert len(visited)==24 and len(set(visited))>10
+    assert state.point==(-250,400)
+    assert state.events==[con.MOUSEEVENTF_LEFTDOWN,con.MOUSEEVENTF_LEFTUP]
+
+def test_owner_mouse_intervention_prevents_click(desktop):
+    state,api,_=desktop
+    def move(point):
+        state.point=(point[0]+10,point[1])
+    api.SetCursorPos=move
+    with pytest.raises(d.DesktopInputError,match="Mouse moved"):
+        d.control({"kind":"click","x":-250,"y":400})
+    assert not state.events

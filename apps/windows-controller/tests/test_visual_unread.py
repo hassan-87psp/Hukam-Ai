@@ -122,8 +122,15 @@ def test_unread_visual_scan_requires_verified_native_foreground(monkeypatch):
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd: None if hwnd==120 else (_ for _ in ()).throw(RuntimeError("wrong HWND")))
     monkeypatch.setattr(win32gui,"GetClientRect",lambda hwnd:(0,0,520,920))
     monkeypatch.setattr(win32gui,"ClientToScreen",lambda hwnd,pos:pos)
-    monkeypatch.setattr(win32api,"GetCursorPos",lambda:(0,0))
-    monkeypatch.setattr(win32api,"SetCursorPos",lambda point:mouse.append(("cursor",point)))
+    pointer=[(0,0)]
+    monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(0,0,1000,1000))
+    monkeypatch.setattr(win32gui,"WindowFromPoint",lambda point:120)
+    monkeypatch.setattr(win32gui,"GetAncestor",lambda hwnd,flag:120)
+    monkeypatch.setattr(win32api,"GetCursorPos",lambda:pointer[0])
+    def move(point):
+        pointer[0]=point
+        mouse.append(("cursor",point))
+    monkeypatch.setattr(win32api,"SetCursorPos",move)
     monkeypatch.setattr(win32api,"mouse_event",lambda kind,*args:mouse.append(("mouse",kind)))
     monkeypatch.setattr(vu.time,"sleep",lambda sec:None)
 
@@ -131,6 +138,8 @@ def test_unread_visual_scan_requires_verified_native_foreground(monkeypatch):
     assert result["senders"]==["Bhabi HQ Bina Forever","Saeed Umar"]
     assert result["filterSelectedVerified"] is True
     assert result["messagesRead"] is False
+    assert len([x for x in mouse if x[0]=="cursor"])==24
+    assert pointer[0]==(199,192)
     assert sum(1 for x in mouse if x==("mouse",win32con.MOUSEEVENTF_LEFTDOWN))==1
     assert sum(1 for x in mouse if x==("mouse",win32con.MOUSEEVENTF_LEFTUP))==1
 
@@ -199,8 +208,12 @@ def test_cancellation_after_click_does_not_return_names(monkeypatch):
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
     monkeypatch.setattr(win32gui,"GetClientRect",lambda hwnd:(0,0,520,920))
     monkeypatch.setattr(win32gui,"ClientToScreen",lambda hwnd,p:p)
-    monkeypatch.setattr(win32api,"GetCursorPos",lambda:(0,0))
-    monkeypatch.setattr(win32api,"SetCursorPos",lambda p:None)
+    pointer=[(0,0)]
+    monkeypatch.setattr(win32gui,"GetWindowRect",lambda hwnd:(0,0,1000,1000))
+    monkeypatch.setattr(win32gui,"WindowFromPoint",lambda point:120)
+    monkeypatch.setattr(win32gui,"GetAncestor",lambda hwnd,flag:120)
+    monkeypatch.setattr(win32api,"GetCursorPos",lambda:pointer[0])
+    monkeypatch.setattr(win32api,"SetCursorPos",lambda p:pointer.__setitem__(0,p))
     def clicked(kind,*args):
         if kind == win32con.MOUSEEVENTF_LEFTUP:
             cancelled.set()

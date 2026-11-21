@@ -100,6 +100,14 @@ def _check_typing_focus(hwnd, cancel) -> None:
     _check_cancel(cancel)
 
 
+def _move_visible(hwnd, target, expected_rect, cancel):
+    from .pointer_motion import move_visible, PointerInterrupted
+    try:
+        move_visible(target, lambda: _check_pointer(hwnd,target,expected_rect,cancel))
+    except PointerInterrupted as exc:
+        raise DesktopInputError(str(exc)) from exc
+
+
 def control(args: dict, cancel=None) -> dict:
     _check_cancel(cancel)
     kind = args["kind"]
@@ -126,7 +134,7 @@ def control(args: dict, cancel=None) -> dict:
         _check_pointer(active.hwnd, origin, rect, cancel)
         if destination:
             _check_pointer(active.hwnd, destination, rect, cancel)
-        win32api.SetCursorPos(origin)
+        _move_visible(active.hwnd,origin,rect,cancel)
         if kind == "click" or kind == "double_click":
             count = 2 if kind == "double_click" else 1
             for _ in range(count):
@@ -163,7 +171,7 @@ def control(args: dict, cancel=None) -> dict:
     elif kind == "scroll":
         center = ((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
         _check_pointer(active.hwnd, center, rect, cancel)
-        win32api.SetCursorPos(center)
+        _move_visible(active.hwnd,center,rect,cancel)
         _check_pointer(active.hwnd, center, rect, cancel)
         if win32api.GetCursorPos() != center:
             raise DesktopInputError("Mouse position changed before scrolling")

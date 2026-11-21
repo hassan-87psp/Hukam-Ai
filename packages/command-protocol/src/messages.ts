@@ -272,12 +272,21 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
   }
 }
 
-export function failureMessage(error: CommandError | null): Localized {
+export function failureMessage(error: CommandError | null, action?:ActionName): Localized {
   const msg = error?.message ?? 'unknown error';
   switch (error?.code) {
     case 'DEVICE_OFFLINE':
       return L('Laptop offline hai. Controller start karein.', 'لیپ ٹاپ آف لائن ہے۔ کنٹرولر چلائیں۔', 'The laptop is offline. Start the controller.');
     case 'UNVERIFIABLE':
+      if(action==='whatsapp.unread_senders'){
+        if(/moved|resized|foreground|obscured|pointer|mouse moved/i.test(msg))
+          return L('WhatsApp scan ruk gaya: window ya mouse position badli. Sender names verify nahi hue. Command card mein exact error hai.',
+            'واٹس ایپ اسکین رک گیا، ونڈو یا ماؤس کی جگہ بدلی۔ ناموں کی تصدیق نہیں ہوئی۔',
+            'WhatsApp sender scan stopped because the window or pointer changed. No names verified; see the exact command error.');
+        return L('WhatsApp sender names verify nahi hue. Ye zero unread ka result nahi hai. Exact error command card mein hai.',
+          'واٹس ایپ بھیجنے والوں کے ناموں کی تصدیق نہیں ہوئی۔',
+          'Unread sender names could not be verified. This does not mean zero unread chats. See the command error.');
+      }
       return /unread sender|sender names|chat-row|unread filter/i.test(msg)
         ? L('Sir, WhatsApp ki Unread list ke contact names Windows se verify nahi hue. HUKM diagnostics run karein; bina verified names ke koi chat assume nahi karunga.',
             'واٹس ایپ کی ان ریڈ چیٹس کے نام تصدیق نہیں ہو سکے۔ ڈائگناسٹکس چلائیں۔',
