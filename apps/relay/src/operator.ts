@@ -6,7 +6,7 @@
  * credential reading, or model-generated screen coordinates. No action may
  * be reported as verified solely because Windows accepted an input event.
  */
-import { ACTIONS, parseCommand, routeIntent, desktopWhatsAppWorkflow, validateCommand } from '../../../packages/command-protocol/src/index';
+import { ACTIONS, parseCommand, routeIntent, desktopWhatsAppWorkflow, namedWhatsAppRead, validateCommand } from '../../../packages/command-protocol/src/index';
 import type { ActionName, CommandStatus } from '../../../packages/shared-types/src/index';
 import { HttpError, Relay } from './core';
 import { all, one, run, type DB, type Row } from './db';
@@ -326,6 +326,7 @@ export class Operator {
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|mail\.google\.com|outlook\.office\.com)\/)/.test(url);
     const nativeWhatsAppWorkflow = !isFollowup ? desktopWhatsAppWorkflow(answer) : null;
+    const selectedWhatsAppContact = !isFollowup ? namedWhatsAppRead(answer) : null;
     if(!isFollowup && parsed.kind==='command' && parsed.action==='app.close'){
       // A model must never reverse "band kro" into "app.open".
       result = {summary:'Close the selected verified Notepad window (never discard unsaved changes)',
@@ -343,6 +344,14 @@ export class Operator {
         steps: [
           validateStep({action:'whatsapp.open',args:{mode:'desktop'}}),
           validateStep({action:inspectAction,args: nativeWhatsAppWorkflow==='count'?{mode:'desktop'}:{}}),
+        ],
+      };
+    } else if(selectedWhatsAppContact){
+      result={
+        summary:'Select and verify '+selectedWhatsAppContact+' in Personal WhatsApp Desktop, then read only the visible messages',
+        steps:[
+          validateStep({action:'whatsapp.select_chat',args:{contact:selectedWhatsAppContact}}),
+          validateStep({action:'whatsapp.read_selected',args:{contact:selectedWhatsAppContact}}),
         ],
       };
     } else if(projectLaunch && !isFollowup){
@@ -459,6 +468,7 @@ export class Operator {
     this.running.add(taskId);
     let unverified=false,ids:string[]=[];
     let visibleUnreadSendersReviewed=false;
+    let verifiedContactRead:string|null=null;
     try{
       for(let i=0;i<plan.steps.length;i++){
         if(this.getRun(userId,taskId).status==='cancelled')return;
@@ -482,11 +492,22 @@ export class Operator {
           Array.isArray(data.senders) && data.senders.length>0){
           visibleUnreadSendersReviewed=true;
         }
+        if(step.action==='whatsapp.read_selected' &&
+          data.messagesRead===true && typeof step.args.contact==='string'){
+          verifiedContactRead=String(step.args.contact);
+        }
         if(data.verified!==true)unverified=true;
       }
       this.update(taskId,unverified?'unverified':'completed',unverified?
         'Actions reported success, but their final on-screen outcome was not independently verified.':null,
         plan.steps.length,ids);
+      if(verifiedContactRead){
+        // Save only the verified recipient name in the pending workflow.
+        // No private message bodies or unseen chats are sent to Gemini.
+        this.savePending(userId,this.dialogueKey(plan.projectId),
+          'HUKM_VERIFIED_WHATSAPP_CONTACT:'+verifiedContactRead,
+          'Sir, '+verifiedContactRead+' ke liye kya reply draft karun? Exact message likh dein.');
+      }
       if(visibleUnreadSendersReviewed){
         // Follow-up is an owner-scoped *question* only. Never persist sender
         // names or private message text in the planner's Gemini prompt.
