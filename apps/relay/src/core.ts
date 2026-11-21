@@ -352,6 +352,8 @@ export class Relay {
     log('info', 'device connected', { deviceId: row.id });
 
     ws.on('message', (data) => {
+      // Ignore traffic from a superseded socket after re-pair/reconnect.
+      if (this.devices.get(row.id) !== conn) return;
       conn.lastMsg = Date.now();
       let msg: DeviceToServer;
       try {
@@ -365,7 +367,9 @@ export class Relay {
         log('error', 'device message failed', { err: String(e) });
       }
     });
-    ws.on('pong', () => (conn.lastMsg = Date.now()));
+    ws.on('pong', () => {
+      if (this.devices.get(row.id) === conn) conn.lastMsg = Date.now();
+    });
     ws.on('close', () => {
       if (this.devices.get(row.id) === conn) {
         this.devices.delete(row.id);
@@ -398,12 +402,20 @@ export class Relay {
       case 'heartbeat':
         if (msg.stats) runVolatile(this.db, 'UPDATE devices SET stats = ?, last_seen = ? WHERE id = ?', JSON.stringify(msg.stats).slice(0, 500), nowIso(), deviceId);
         break;
-      case 'ack':
-        run(this.db, "UPDATE commands SET delivered_at = COALESCE(delivered_at, ?) WHERE id = ? AND device_id = ?", nowIso(), msg.commandId, deviceId);
+      case 'ack': {
+        const c = one(this.db, 'SELECT status, dispatched_at, approved_at, requires_approval FROM commands WHERE id = ? AND device_id = ?', msg.commandId, deviceId);
+        // A buggy or stale controller must not mark an unapproved task as
+        // delivered: that would silently prevent its later dispatch.
+        if (c && (c.status === 'pending' || c.status === 'running') &&
+            c.dispatched_at && (!c.requires_approval || c.approved_at)) {
+          run(this.db, "UPDATE commands SET delivered_at = COALESCE(delivered_at, ?) WHERE id = ? AND device_id = ?", nowIso(), msg.commandId, deviceId);
+        }
         break;
+      }
       case 'started': {
         const c = one(this.db, 'SELECT * FROM commands WHERE id = ? AND device_id = ?', msg.commandId, deviceId);
-        if (c && c.status === 'pending') {
+        if (c && c.status === 'pending' && c.dispatched_at &&
+            (!c.requires_approval || c.approved_at)) {
           run(this.db, "UPDATE commands SET status = 'running', started_at = ?, delivered_at = COALESCE(delivered_at, ?) WHERE id = ?", nowIso(), nowIso(), c.id);
           this.pushCommand(c.id);
         }
@@ -416,6 +428,17 @@ export class Relay {
         if (!c) return;
         if (FINAL_STATUSES.includes(c.status)) {
           log('info', 'late result ignored', { commandId: c.id, status: c.status });
+          return;
+        }
+        // The paired controller may only report a result for a command the
+        // relay actually dispatched. In particular, it cannot bypass owner
+        // approval by sending a fabricated result while approval is pending.
+        if ((c.status !== 'pending' && c.status !== 'running') ||
+            !c.dispatched_at || (c.requires_approval && !c.approved_at)) {
+          log('warn', 'undispatched or unapproved controller result ignored',
+            { commandId: c.id, status: c.status });
+          this.audit(userId, 'system', 'command.result_rejected',
+            { commandId: c.id, status: c.status }, deviceId);
           return;
         }
         let result = msg.result && typeof msg.result === 'object' ? { ...msg.result } : {};
@@ -654,6 +677,14 @@ export class Relay {
     const c = one(this.db, 'SELECT * FROM commands WHERE id = ? AND user_id = ?', commandId, userId);
     if (!c) throw new HttpError(404, 'NOT_FOUND', 'command not found');
     if (c.status !== 'awaiting_approval') throw new HttpError(409, 'NOT_AWAITING', `command is ${c.status}`);
+    // Check the actual approval expiry at decision time, not only in the
+    // once-per-second sweeper. Expired approvals never become executable.
+    const approval = one(this.db, 'SELECT expires_at FROM command_approvals WHERE command_id = ? AND decided_at IS NULL', commandId);
+    if (!approval || Date.parse(approval.expires_at) <= Date.now()) {
+      this.finish(commandId, 'timed_out', null,
+        { code: 'APPROVAL_EXPIRED', message: 'Approval expired. Please request the action again.' });
+      throw new HttpError(409, 'APPROVAL_EXPIRED', 'Approval expired. Please request the action again.');
+    }
     const now = nowIso();
     run(this.db, "UPDATE command_approvals SET decided_at = ?, decision = ? WHERE command_id = ? AND decided_at IS NULL", now, approve ? 'approved' : 'rejected', commandId);
     this.audit(userId, 'user', approve ? 'command.approved' : 'command.rejected', { commandId, action: c.action }, c.device_id);
