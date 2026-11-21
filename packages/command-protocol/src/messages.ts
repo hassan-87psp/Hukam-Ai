@@ -77,6 +77,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('WhatsApp mein sirf reply draft karunga, send nahi.', 'واٹس ایپ ریپلائی ڈرافٹ ہوگا، بھیجا نہیں جائے گا۔', 'WhatsApp reply will be drafted, not sent.');
     case 'whatsapp.attach_preview':
       return L('WhatsApp file attachment ka preview tayyar karunga, send nahi.', 'فائل اٹیچمنٹ ڈرافٹ ہوگا، بھیجا نہیں جائے گا۔', 'WhatsApp attachment preview will be prepared, not sent.');
+    case 'whatsapp.send_attachment_reviewed':
+      return L('Exact WhatsApp contact aur file review karke final Send approval chahiye.', 'واٹس ایپ فائل بھیجنے کے لیے آخری اجازت چاہیے۔', 'Final approval required to send the exact reviewed WhatsApp attachment.');
     case 'whatsapp.send_reviewed':
       return L('Exact recipient aur message review karke Send ki final approval chahiye.', 'مکمل پیغام بھیجنے کے لیے آخری اجازت چاہیے۔', 'Final approval required to send the exact WhatsApp message to the selected recipient.');
     case 'browser.profile_open':
