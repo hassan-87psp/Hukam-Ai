@@ -399,7 +399,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // are validated and require explicit owner review before execution.
       const local = parseCommand(t);
       const route = routeIntent(t, local, pendingDialogueTopic === 'operator-followup');
-      const shouldPlan = route === 'plan';
+      const selectedProjectId = new URLSearchParams(window.location.search).get('projectId');
+      const projectBrowserLaunch = !!selectedProjectId && local.kind === 'command' &&
+        local.action === 'web.open' &&
+        /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|outlook\.office\.com)\/)/i.test(String(local.args.url ?? ''));
+      const shouldPlan = route === 'plan' || projectBrowserLaunch;
       const maybeAi = route === 'chat' && !pendingDialogueTopic;
       const history = chat
         .flatMap<{ role: 'user' | 'assistant'; text: string }>((m) => m.kind === 'user' && m.aiChat
