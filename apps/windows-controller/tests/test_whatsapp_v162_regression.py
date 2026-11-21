@@ -17,7 +17,7 @@ from controller.whatsapp import adapter, unread_senders
 def test_release_version_and_privacy_safe_diagnostics(monkeypatch):
     monkeypatch.setattr(launcher, "SIMULATE", True)
     d=diagnostics.probe(Config(whatsapp_mode="web"))
-    assert VERSION == "1.8.1"
+    assert VERSION == "1.8.2"
     assert d["controllerVersion"] == VERSION
     assert d["effectiveWhatsAppDefault"] == "desktop"
     assert d["automaticWhatsAppWebFallback"] is False

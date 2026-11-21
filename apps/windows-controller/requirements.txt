@@ -2,5 +2,11 @@ websockets>=13,<18
 psutil>=5.9
 mss>=9.0
 Pillow>=10.0
+# Small official PyWinRT namespace projections: on-device OCR of ONLY the
+# visible WhatsApp chat sidebar when UIAutomation exposes no Unread control.
+# Never sends screenshots to Gemini or third-party OCR servers.
+winrt-Windows.Media.Ocr[all]>=3; sys_platform == "win32"
+winrt-Windows.Graphics.Imaging[all]>=3; sys_platform == "win32"
+winrt-Windows.Storage.Streams[all]>=3; sys_platform == "win32"
 pywin32>=306; sys_platform == "win32"
 uiautomation>=2.0,<3; sys_platform == "win32"

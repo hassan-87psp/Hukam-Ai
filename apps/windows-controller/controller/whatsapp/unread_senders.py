@@ -16,7 +16,7 @@ import time
 
 from ..config import IS_WINDOWS
 from ..system import launcher, windows
-from . import locator, unread_filter
+from . import locator, unread_filter, visual_unread
 
 _UNREAD = re.compile(r"^unread(?:\s+(?:chats|messages))?(?:\s*[:(•\-]?\s*\d{1,3}\)?)?$", re.I)
 _SKIP = {"unread", "all", "favorites", "favourites", "groups", "search",
@@ -122,13 +122,13 @@ def read_unread_senders() -> dict:
         items = unread_filter.candidates(root, (left, top, right, bottom))
         candidate, reason = unread_filter.choose_unique(items)
         if candidate is None:
-            message = ("Multiple separate Unread controls were detected; I will not "
-                       "click a guessed position."
-                       if reason == "ambiguous" else
-                       "WhatsApp Desktop's Unread filter is not accessible through "
-                       "Windows UI Automation on this version. No blind mouse click "
-                       "was attempted.")
-            raise UnreadSendersUnavailable(message)
+            # Last resort: do not click guessed coordinates. OCR the *local*
+            # left pane, require All/Unread/Favourites spatial anchors, then
+            # click the visually located chip and cross-check sender titles.
+            try:
+                return visual_unread.visual_scan_unread(active.hwnd)
+            except visual_unread.VisualUnreadUnavailable as exc:
+                raise UnreadSendersUnavailable(str(exc)) from exc
 
         _assert_same_native_foreground(active.hwnd)
         # This is a REAL local Windows pointer click on a VERIFIED Unread

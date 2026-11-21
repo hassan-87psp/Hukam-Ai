@@ -1,7 +1,9 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
-## Current development release — v1.8.1 (21 Nov 2026)
+## Current development release — v1.8.2 (21 Nov 2026)
+
+**v1.8.2:** For WhatsApp versions that hide the Unread chip from Windows UI Automation, the approved Desktop sender check tries in-memory **on-device Windows OCR** of only the left chat pane. A real mouse click is permitted only when OCR uniquely locates an Unread label between All and Favourites; it verifies a fresh screen and pairs visible chat titles with timestamps. It does not upload screenshots, click hardcoded coordinates, or pretend unread names are verified if the filter state is uncertain. Real Windows OCR and WhatsApp account acceptance are pending.
 
 **v1.8.1:** Restores the actual minimized Personal WhatsApp Desktop main window, finds the Unread chip by accessible Name, AutomationId or HelpText, deduplicates nested UI controls, performs a local mouse click after explicit approval, and reads only visible chat sender names. "WhatsApp check karo" creates this multi-step workflow without needing Gemini. If WhatsApp exposes no trustworthy Unread control, HUKM reports an honest blocker instead of guessing mouse positions. The release requires automated tests and final real Windows acceptance.
 
