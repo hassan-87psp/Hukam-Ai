@@ -12,6 +12,7 @@ import { diagnoseGemini } from './ai-diagnostics';
 import { HttpError, Relay } from './core';
 import { Projects } from './projects';
 import { MemoryRecords } from './memory-records';
+import { Skills } from './skills';
 import { Operator } from './operator';
 import { analyzeScreenshot } from './vision';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
@@ -106,6 +107,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   const relay = new Relay(db, config);
   const projects = new Projects(db);
   const memory = new MemoryRecords(db);
+  const skills = new Skills(db);
   const operator = new Operator(db, relay, projects);
   relay.start();
 
@@ -267,6 +269,15 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
       if (e instanceof GeminiError) throw new HttpError(e.status, e.code, e.message);
       throw new HttpError(502, 'AI_UNAVAILABLE', 'Gemini is temporarily unavailable.');
     }
+  });
+
+  // Read-only catalog and explicit owner teaching. Preview creates a plan, never runs it.
+  add('GET','/api/skills',true,c=>skills.list(c.user!.id,c.url.searchParams.get('projectId')));
+  add('POST','/api/skills/teach',true,c=>skills.teach(c.user!.id,c.url.searchParams.get('projectId'),c.body));
+  add('DELETE','/api/skills/taught/:id',true,c=>skills.remove(c.user!.id,c.url.searchParams.get('projectId'),c.params.id));
+  add('POST','/api/skills/preview',true,c=>{
+    if(!cmdLimit.take('skill-preview:'+c.user!.id))throw new HttpError(429,'RATE_LIMIT','Skill preview limit reached');
+    return operator.previewSkill(c.user!.id,c.body?.projectId,c.body?.name);
   });
 
   // Explicit categorized memory. Owner and exact workspace checked on every operation.

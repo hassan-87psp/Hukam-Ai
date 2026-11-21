@@ -16,6 +16,7 @@ import type { Projects } from './projects';
 import { addMs, newId, nowIso } from './util';
 import { agentToolInstruction, isAgentTool } from './agent-tools';
 import { MemoryRecords } from './memory-records';
+import { Skills } from './skills';
 import { freshTask, boundedFollowup, numberWritingPlan, specialistHint, isExplicitSend, isPrivateFollowup } from './brain-context';
 
 type Step = {action:ActionName;args:Record<string,unknown>};
@@ -267,6 +268,8 @@ export class Operator {
       throw new HttpError(400,'BAD_COMMAND','Write a command from 2 to 1200 characters');
     const key=this.dialogueKey(projectId);
     const answer=text.trim();
+    const skill=answer.match(/^skill\s+(.+)$/i);
+    if(skill)return this.previewSkill(userId,projectId,skill[1]);
     if(/^(?:rehne do|rehnay do|cancel|choro|stop|never mind)$/i.test(answer)){
       this.clearPending(userId,key);
       return {kind:'cancelled',message:'Theek hai, task cancel kar diya. Koi laptop action nahi hua.'};
@@ -455,15 +458,25 @@ export class Operator {
          step.args.projectUrl!==project?.chatgptProjectUrl)
         throw new HttpError(422,'PROJECT_URL_MISMATCH','ChatGPT actions must match this HUKM Project URL.');
     }
-    // Bound backup growth on Render's small SQLite storage.
+    const plan=this.persistPlan(userId,project?.id??null,request,result);
+    this.clearPending(userId,key);
+    return plan;
+  }
+  previewSkill(userId:string,projectId:unknown,name:unknown):Plan{
+    const r=new Skills(this.db).resolve(userId,projectId,name);
+    const result=validatePlanShape({summary:r.title,steps:r.steps});
+    return this.persistPlan(userId,typeof projectId==='string'?projectId:null,'Skill: '+r.id,result);
+  }
+  private persistPlan(userId:string,projectId:string|null,request:string,result:{summary:string;steps:Step[]}):Plan{
+    // Bound plan history; never re-use a previous plan authorization.
     run(this.db,`DELETE FROM operator_plans WHERE user_id=? AND id NOT IN
       (SELECT id FROM operator_plans WHERE user_id=? ORDER BY created_at DESC LIMIT 500)`,userId,userId);
     const id=newId('plan_'),created=nowIso(),expires=addMs(10*60_000);
     run(this.db,'INSERT INTO operator_plans(id,user_id,project_id,request,summary,steps,created_at,expires_at) VALUES (?,?,?,?,?,?,?,?)',
-      id,userId,project?.id??null,request,result.summary,JSON.stringify(result.steps),created,expires);
-    this.clearPending(userId,key);
+      id,userId,projectId,request,result.summary,JSON.stringify(result.steps),created,expires);
     return this.getPlan(userId,id);
   }
+
   start(userId:string,id:string,deviceId:unknown):TaskRun{
     const plan=this.getPlan(userId,id);
     if(Date.parse(plan.expiresAt)<Date.now())throw new HttpError(409,'PLAN_EXPIRED','Plan expired; request a fresh plan');

@@ -15,6 +15,7 @@ export const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/chat', label: 'AI Chat', icon: MessagesSquare },
   { to: '/projects', label: 'Projects', icon: FolderKanban },
+  { to: '/skills', label: 'Skills & Teach', icon: Zap },
   { to: '/voice', label: 'Voice', icon: Mic },
   { to: '/devices', label: 'Devices', icon: Monitor },
   { to: '/automations', label: 'Automations', icon: Zap },

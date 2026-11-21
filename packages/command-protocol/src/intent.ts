@@ -73,6 +73,7 @@ const ASIDE_QUESTION = /^(?:what (?:is|are)|who (?:is|are)|why (?:is|are)|explai
 
 export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorReply = false): IntentRoute {
   const t=text.trim();
+  if(/^skill\s+\S/i.test(t))return 'plan';
   if(awaitingOperatorReply) {
     // A clear unrelated question/greeting does not erase an unfinished task.
     if(GREETING.test(t) || ASIDE_QUESTION.test(t))return 'chat';
