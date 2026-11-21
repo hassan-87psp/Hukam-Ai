@@ -266,6 +266,41 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({ label });
     },
   },
+  'desktop.control': {
+    name: 'desktop.control', capability: 'input', label: 'Approved foreground laptop mouse/keyboard',
+    timeoutMs: 25000, alwaysApprove: true,
+    validate(a) {
+      const kind = a.kind;
+      if (!['click', 'double_click', 'right_click', 'drag', 'scroll', 'type', 'key'].includes(String(kind ?? '')))
+        return fail('unsupported desktop input kind');
+      const coordinate = (v: unknown) => typeof v === 'number' && Number.isInteger(v) && v >= -32000 && v <= 32000;
+      if (['click', 'double_click', 'right_click', 'drag'].includes(String(kind))) {
+        if (!coordinate(a.x) || !coordinate(a.y))
+          return fail('mouse coordinates must be absolute integer pixels from -32000 to 32000');
+        if (kind === 'drag') {
+          if (!coordinate(a.toX) || !coordinate(a.toY))
+            return fail('drag destination coordinates must be absolute integer pixels');
+          return ok({kind, x:a.x, y:a.y, toX:a.toX, toY:a.toY});
+        }
+        return ok({kind, x:a.x, y:a.y});
+      }
+      if (kind === 'type') {
+        const text = str(a.text, 'text', 1000);
+        if (isErr(text)) return text;
+        return ok({kind, text});
+      }
+      if (kind === 'scroll') {
+        if (typeof a.steps !== 'number' || !Number.isInteger(a.steps) ||
+            a.steps === 0 || Math.abs(a.steps) > 5)
+          return fail('scroll steps must be a nonzero integer from -5 to 5');
+        return ok({kind, steps:a.steps});
+      }
+      const keys = ['enter','tab','shift+tab','escape','backspace','home','end',
+        'arrowdown','arrowup','arrowleft','arrowright','ctrl+a','ctrl+c','ctrl+v','ctrl+z','ctrl+s'];
+      if (!keys.includes(String(a.key ?? ''))) return fail('desktop keyboard shortcut not allowed');
+      return ok({kind,key:a.key});
+    },
+  },
   'calendar.event_draft': {
     name: 'calendar.event_draft', capability: 'browser', label: 'Prepare Calendar event draft',
     timeoutMs: 25000, alwaysApprove: true,
