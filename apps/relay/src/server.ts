@@ -170,7 +170,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     if (!aiLimit.take('gemini:' + c.user!.id) || !aiDailyLimit.take('gemini:' + c.user!.id))
       throw new HttpError(429, 'AI_RATE_LIMIT', 'AI chat limit reached. Please try again later.');
     try {
-      return await chatWithGemini(c.body?.message, c.body?.history);
+      return await chatWithGemini(c.body?.message, c.body?.history,
+        {responseLang:['roman','ur','en'].includes(c.body?.responseLang) ? c.body.responseLang : 'roman'});
     } catch (e) {
       if (e instanceof GeminiError) throw new HttpError(e.status, e.code, e.message);
       throw new HttpError(502, 'AI_UNAVAILABLE', 'Gemini is temporarily unavailable.');
