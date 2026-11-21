@@ -9,7 +9,7 @@ a = Analysis(
     ['../hukm_entry.py'],
     pathex=['..'],
     hiddenimports=['win32timezone', 'win32crypt', 'win32gui', 'win32process', 'win32con', 'win32api',
-                   'win32com.client'] + collect_submodules('uiautomation') + collect_submodules('natocr'),
+                   'win32com.client'] + collect_submodules('uiautomation') + collect_submodules('winrt'),
     excludes=['tkinter', 'unittest', 'pydoc', 'test', 'numpy', 'pytest'],
     noarchive=False,
 )
