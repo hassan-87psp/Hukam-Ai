@@ -71,6 +71,8 @@ export function ackMessage(action: ActionName, args: Record<string, unknown>): L
       return L('ChatGPT ko reviewed prompt bhejne ke liye approval chahiye.', 'چیٹ جی پی ٹی کو پرامپٹ بھیجنے کی اجازت چاہیے۔', 'Approval required to submit the reviewed ChatGPT prompt.');
     case 'chatgpt.download_visible':
       return L('ChatGPT ka visible result download karne ke liye approval chahiye.', 'نتیجہ ڈاؤن لوڈ کرنے کی اجازت چاہیے۔', 'Approval required to download the visible ChatGPT result.');
+    case 'whatsapp.select_chat':
+      return L('WhatsApp Desktop mein exact contact select karne ke liye approval chahiye.', 'واٹس ایپ میں درست چیٹ منتخب کرنے کی اجازت چاہیے۔', 'Approval required to select the exact WhatsApp Desktop chat.');
     case 'whatsapp.read_selected':
       return L('Selected WhatsApp chat ka text aapke HUKM account par transfer hoga. Approval chahiye.', 'منتخب چیٹ کا متن آپ کے اکاؤنٹ میں جائے گا۔', 'Approval required: visible WhatsApp text will be transferred to your HUKM account.');
     case 'whatsapp.draft_reply':
@@ -168,6 +170,8 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('ChatGPT ko prompt submit hua; result verify nahi hua.', 'پرامپٹ بھیجا، نتیجہ تصدیق شدہ نہیں۔', 'Prompt submitted; response not verified.');
     case 'chatgpt.download_visible':
       return L('ChatGPT se nayi file download verify hui.', 'چیٹ جی پی ٹی فائل ڈاؤن لوڈ تصدیق ہوئی۔', 'A new file was detected after ChatGPT download.');
+    case 'whatsapp.select_chat':
+      return L('WhatsApp par exact selected chat verify ho gayi. Koi message send nahi hua.', 'درست واٹس ایپ چیٹ منتخب ہو گئی، کوئی پیغام نہیں بھیجا۔', 'The exact WhatsApp chat was selected and verified. Nothing was sent.');
     case 'whatsapp.read_selected':
       return L('Visible WhatsApp chat ka text aapke HUKM account mein mila.', 'منتخب چیٹ کا متن آپ کے اکاؤنٹ میں آ گیا۔', 'Visible WhatsApp text was returned to your authenticated account.');
     case 'whatsapp.draft_reply':
