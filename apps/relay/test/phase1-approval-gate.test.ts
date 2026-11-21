@@ -92,8 +92,11 @@ describe('Phase 1: owner approvals cannot be bypassed by controller messages', (
     socket.send(JSON.stringify({
       type: 'result', commandId: id, ok: true, result: { verified: true },
     }));
-    await until(() => false, 1).catch(() => undefined);
-    const finished = await api('GET', '/api/commands/' + id);
+    let finished = await api('GET', '/api/commands/' + id);
+    for (let i = 0; i < 80 && finished.data.status !== 'completed'; i++) {
+      await new Promise(resolve => setTimeout(resolve, 25));
+      finished = await api('GET', '/api/commands/' + id);
+    }
     expect(finished.data.status).toBe('completed');
     expect(finished.data.approvedAt).not.toBe(null);
   });
