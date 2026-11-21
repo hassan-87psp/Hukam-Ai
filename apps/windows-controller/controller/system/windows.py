@@ -147,6 +147,46 @@ def focus_by_process(processes: list[str], title_contains: str | None = None) ->
     return None
 
 
+def close_notepad_window() -> dict:
+    """Ask exactly one verified Notepad top-level window to close.
+
+    WM_CLOSE lets Notepad ask the user whether to save unsaved changes.
+    This function never sends Don't Save, clicks a dialog or terminates the
+    process. A still-open window is *not* reported as closed.
+    """
+    if not IS_WINDOWS:
+        raise RuntimeError("Closing Notepad requires an interactive Windows desktop")
+
+    import win32con
+    import win32gui
+
+    candidates = [w for w in list_windows() if w.process.casefold() == "notepad.exe"]
+    if not candidates:
+        raise FileNotFoundError("No open Notepad window was found")
+    foreground = active_window()
+    selected = next((w for w in candidates
+                     if foreground is not None and foreground.hwnd == w.hwnd), None)
+    if selected is None:
+        if len(candidates) != 1:
+            raise RuntimeError("Multiple Notepad windows are open. Focus the one to close and try again")
+        selected = candidates[0]
+
+    if not win32gui.IsWindow(selected.hwnd):
+        raise RuntimeError("Notepad window disappeared before close could be requested")
+    win32gui.PostMessage(selected.hwnd, win32con.WM_CLOSE, 0, 0)
+    # Some Notepad versions have tabbed documents; WM_CLOSE may display a
+    # native Save dialog instead of destroying the top-level window.
+    deadline = time.monotonic() + 2.5
+    while time.monotonic() < deadline:
+        if not win32gui.IsWindow(selected.hwnd):
+            return {"app": "notepad", "windowClosed": True,
+                    "verified": True, "closedWindowTitle": selected.title}
+        time.sleep(0.1)
+    return {"app": "notepad", "windowClosed": False,
+            "verified": False, "needsUserDecision": True,
+            "note": "Notepad is still open. There may be an unsaved document or a Save/Cancel dialog; HUKM will not discard changes."}
+
+
 def snapshot() -> set[int]:
     return {w.hwnd for w in list_windows()}
 
