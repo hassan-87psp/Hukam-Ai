@@ -27,6 +27,26 @@ def words():
     ]
 
 
+def test_ocr_upscales_tiny_whatsapp_text_without_changing_screen_coordinates():
+    from PIL import Image
+    screenshot = Image.new("RGB", (520, 916), (20, 20, 20))
+    prepared, factor = vu._prepare_ocr_image(screenshot)
+    assert factor == 2.0
+    assert prepared.size == (1040, 1832)
+    # Word rectangles are divided by this exact factor after OCR;
+    # a recognized button at 2x must click the original pixel position.
+    assert (round(165.0 * factor) / factor) == 165.0
+    assert screenshot.size == (520, 916)  # no mutation, no upload
+
+
+def test_ocr_bitmap_max_dimension_is_bounded_for_large_windows():
+    from PIL import Image
+    screenshot = Image.new("RGB", (2000, 1200), (20, 20, 20))
+    prepared, factor = vu._prepare_ocr_image(screenshot)
+    assert max(prepared.size) <= 1900
+    assert factor <= 1.0
+
+
 def test_native_ocr_backend_reads_a_clean_synthetic_unread_label():
     # Real Windows OCR API capability smoke, not a signed-in WhatsApp test.
     import sys
