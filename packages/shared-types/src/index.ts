@@ -52,6 +52,7 @@ export type ActionName =
   | 'window.active'
   | 'window.focus'
   | 'screen.capture'
+  | 'diagnostics.probe'
   | 'ui.inspect'
   | 'ui.activate'
   | 'calendar.event_draft'
