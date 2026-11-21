@@ -86,7 +86,7 @@ def _assert_same_native_foreground(expected_hwnd: int) -> None:
             "WhatsApp Desktop lost focus while checking unread senders; no contact names returned")
 
 
-def read_unread_senders() -> dict:
+def read_unread_senders(cancel=None) -> dict:
     if launcher.SIMULATE:
         return {"supported": True, "senders": ["Test Contact"],
                 "visibleOnly": True, "messagesRead": False,
@@ -108,110 +108,16 @@ def read_unread_senders() -> dict:
             "HUKM could not restore and focus the installed Personal WhatsApp "
             "Desktop main window. No WhatsApp Web tab was opened.")
 
+    # WhatsApp on the owner's Windows 10 build exposes no reliable Unread
+    # control through UIAutomation. Traversing its huge UIA tree delayed the
+    # *visual* fallback until the relay's 30-second deadline had already
+    # passed. Instead, observe the actual left chat pane locally FIRST.
+    #
+    # The visual scanner only clicks a chip whose OCR text is bracketed by
+    # independently recognized All and Favourites labels. It never uses
+    # a fixed coordinate, inspects chat message bodies, or claims unread
+    # names unless the result can be supported by the visible layout.
     try:
-        import uiautomation as auto
-        root = auto.ControlFromHandle(active.hwnd)
-        left, top, right, bottom = _bounding(root)
-        width, height = right - left, bottom - top
-        if width < 360 or height < 350:
-            raise UnreadSendersUnavailable("Make WhatsApp Desktop visible and larger before checking senders")
-
-        # New WhatsApp versions expose the same Unread chip as a Button AND
-        # its child Text, or only as an AutomationId/HelpText. Selecting the
-        # single raw "Unread" label was rejecting a genuine filter as ambiguous.
-        items = unread_filter.candidates(root, (left, top, right, bottom))
-        candidate, reason = unread_filter.choose_unique(items)
-        if candidate is None:
-            # Last resort: do not click guessed coordinates. OCR the *local*
-            # left pane, require All/Unread/Favourites spatial anchors, then
-            # click the visually located chip and cross-check sender titles.
-            try:
-                return visual_unread.visual_scan_unread(active.hwnd)
-            except visual_unread.VisualUnreadUnavailable as exc:
-                raise UnreadSendersUnavailable(str(exc)) from exc
-
-        _assert_same_native_foreground(active.hwnd)
-        # This is a REAL local Windows pointer click on a VERIFIED Unread
-        # control in the visible native app, not an arbitrary remote mouse
-        # coordinate. The app is already restored/focused by locator.
-        try:
-            candidate.control.Click(simulateMove=True)
-        except TypeError:
-            # Compatibility with older UI Automation wrappers.
-            candidate.control.Click()
-        time.sleep(0.4)
-        _assert_same_native_foreground(active.hwnd)
-        # React/WebView can rebuild UIA controls after selection, therefore
-        # verify a NEW tree rather than trusting a stale pre-click element.
-        root = auto.ControlFromHandle(active.hwnd)
-        refreshed = unread_filter.candidates(root, (left, top, right, bottom))
-        current, current_reason = unread_filter.choose_unique(refreshed)
-        if current is None and current_reason == "ambiguous":
-            raise UnreadSendersUnavailable(
-                "Unread filter changed to ambiguous controls after clicking; "
-                "no chat names will be reported as verified unread.")
-        selected = unread_filter.state(current.control) if current else None
-        if selected is False:
-            raise UnreadSendersUnavailable(
-                "The WhatsApp Unread filter is not selected after the mouse click. "
-                "No sender names will be labelled unread.")
-
-        rows: list[tuple[float, str]] = []
-        for index, (ctrl, _depth) in enumerate(auto.WalkControl(root, maxDepth=12)):
-            if index >= 1100:
-                break
-            if not _is_visible(ctrl):
-                continue
-            if str(getattr(ctrl, "ControlTypeName", "")) not in (
-                    "ListItemControl", "DataItemControl", "GroupControl", "ButtonControl"):
-                continue
-            x, y, rx, by = _bounding(ctrl)
-            if not (left + 20 <= x < left + width * 0.47 and
-                    rx <= left + width * 0.55 and
-                    top + 150 <= y <= bottom - 60 and
-                    38 <= by - y <= 150):
-                continue
-            children: list[tuple[str, float, float]] = []
-            for child_index, (child, _level) in enumerate(auto.WalkControl(ctrl, maxDepth=4)):
-                if child_index >= 65:
-                    break
-                if not _is_visible(child):
-                    continue
-                if str(getattr(child, "ControlTypeName", "")) != "TextControl":
-                    continue
-                cx, cy, _, _ = _bounding(child)
-                if cx < x or cx > rx:
-                    continue
-                title = str(child.Name or "").strip()
-                if title:
-                    children.append((title, cy, cx))
-            name = first_row_title(children, y)
-            if name:
-                rows.append((y, name))
-            if len(rows) >= 15:
-                break
-        _assert_same_native_foreground(active.hwnd)
-        unique = list(dict.fromkeys(v for _, v in sorted(rows, key=lambda r: r[0])))
-        if not unique:
-            # Could be genuinely empty, but without an exposed numeric unread
-            # indicator cannot certify there are zero conversations.
-            raise UnreadSendersUnavailable(
-                "Unread filter opened, but WhatsApp did not expose readable chat-row titles; no names verified"
-            )
-        return {
-            "supported": True, "senders": unique[:12],
-            "visibleChatCount": len(unique[:12]), "totalUnreadChats": None,
-            "visibleOnly": True, "messagesRead": False,
-            "filterClickAttempted": True, "filterSelectedVerified": selected is True,
-            "source": "Personal WhatsApp Desktop visible chat titles",
-            "note": ("Unread filter selection was verified by Windows UIA. Only visible names were read."
-                     if selected is True else
-                     "Clicked Unread, but this WhatsApp version does not expose whether the filter is selected. "
-                     "These are visible chat titles, NOT verified unread senders. No message text was read."),
-        }
-    except UnreadSendersUnavailable:
-        raise
-    except Exception as exc:
-        raise UnreadSendersUnavailable(
-            "WhatsApp Desktop accessibility controls are unavailable on this version"
-        ) from exc
+        return visual_unread.visual_scan_unread(active.hwnd, cancel=cancel)
+    except visual_unread.VisualUnreadUnavailable as exc:
+        raise UnreadSendersUnavailable(str(exc)) from exc
