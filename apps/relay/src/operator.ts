@@ -93,6 +93,8 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.send_reviewed, whatsapp.attach_preview.',
     'Never use arbitrary shell, file deletion, payments, password/OTP reading or WhatsApp Send. Do not pretend a draft was sent.',
     'calendar.event_draft opens a prefilled Google/Outlook editor only, not a saved event or invitations. Return an honest draft summary.',
+    'calendar.save_reviewed can be used only after the owner explicitly asks to SAVE the exact reviewed Calendar event in the correct Chrome profile.',
+    'It requires separate final approval; the action tries visible Save but never claims API event ID, attendance invites or successful creation without provider verification.',
     'For creating a meeting, use calendar.event_draft only with explicit provider, title, startUtc, endUtc, timeZone and saved Chrome profile.',
     'If time, date, calendar provider, or selected recipient is unknown, ask one question and set steps:[]. Never guess.',
     'WhatsApp is PERSONAL DESKTOP only. whatsapp.read_selected reads visible chat after separate owner approval, do not send contents to Gemini.',
