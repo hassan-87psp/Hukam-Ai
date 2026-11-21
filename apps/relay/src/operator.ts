@@ -23,7 +23,9 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'web.open','web.search','youtube.search','youtube.play',
   'device.status','apps.list','window.active','window.focus',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
-  'whatsapp.unread_senders'
+  'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply',
+  'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'calendar.event_draft',
+  'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
 const FINAL_COMMAND = new Set<CommandStatus>(['completed','failed','cancelled','timed_out']);
@@ -80,11 +82,20 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'Return ONLY a JSON object with summary string and steps array (1-5) of {action,args}.',
     'Only use these precise action names: app.open, folder.open, folder.list, file.search, file.open, file.reveal,',
     'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
-    'browser.control, browser.profile_open, notepad.type, whatsapp.open, whatsapp.check, whatsapp.unread_senders.',
-    'No arbitrary commands, shell, deleting data, sending WhatsApp, scheduling actual calendar events,',
-    'reading chat messages, payment, or unsupported computer capabilities.',
-    'If the user asks to create or schedule a real Calendar event, or send files/messages,',
-    'you cannot complete it yet: return {"summary":"Unsupported workflow requires integration","steps":[]} rather than fake a Google search.',
+    'browser.control, browser.profile_open, notepad.type, ui.inspect, ui.activate, calendar.event_draft,',
+    'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
+    'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.attach_preview.',
+    'Never use arbitrary shell, file deletion, payments, password/OTP reading or WhatsApp Send. Do not pretend a draft was sent.',
+    'calendar.event_draft opens a prefilled Google/Outlook editor only, not a saved event or invitations. Return an honest draft summary.',
+    'For creating a meeting, use calendar.event_draft only with explicit provider, title, startUtc, endUtc, timeZone and saved Chrome profile.',
+    'If time, date, calendar provider, or selected recipient is unknown, return {"summary":"Details needed","steps":[]} instead of guessing.',
+    'WhatsApp is PERSONAL DESKTOP only. whatsapp.read_selected reads visible chat after separate owner approval, do not send contents to Gemini.',
+    'whatsapp.draft_reply needs exact selected contact and reply text, types only; never sends.',
+    'whatsapp.attach_preview needs exact selected contact and fully qualified local file path in an allowed folder; does not send.',
+    'For ChatGPT image/banner/script tasks in a saved Project, open browser.profile_open to its exact configured ChatGPT URL,',
+    'then chatgpt.prompt_draft for the reviewed prompt. chatgpt.submit_prompt needs separate approval.',
+    'chatgpt.download_visible can only download a currently visible, uniquely identified result after it is ready.',
+    'Any UI Automation failure must be returned as failure/unverified, never fabricated success.',
     'Never invent screen coordinates. Do not use browser.control kind click. Browser control kind scroll:',
     '{"kind":"scroll","steps":-2} scrolls down. browser.control requires a foreground browser.',
     'For "Notepad kholo aur 1 se 9 likho": steps app.open args {"app":"notepad"},',
@@ -92,6 +103,9 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'For "YouTube kholo": use web.open args {"url":"https://www.youtube.com/"} not youtube.search.',
     'For "scroll karo": use browser.control with {"kind":"scroll","steps":-2}.',
     'For "WhatsApp kis ka message aaya": use whatsapp.unread_senders with {}.',
+    'For "WhatsApp ki selected chat parh ke batao": use whatsapp.read_selected with {}.',
+    'For "screen par kya buttons hain": use ui.inspect with {}. ui.activate needs exact label.',
+    'Do not activate Send, Delete, Pay, Submit or other consequential buttons using ui.activate.',
     'For "Google Calendar kholo": web.open https://calendar.google.com/calendar/u/0/r.',
     'For "Outlook Calendar kholo": web.open https://outlook.office.com/calendar/.',
     'For saved ChatGPT project opening, use browser.profile_open only with exact saved Default/Profile N and the configured chatgpt.com URL. Do not guess profile names.',
@@ -103,7 +117,9 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
       method:'POST',
       headers:{'content-type':'application/json','x-goog-api-key':key},
       body:JSON.stringify({systemInstruction:{parts:[{text:policy}]},
-        contents:[{role:'user',parts:[{text:'Project preferences:\n'+context.slice(0,4500)+'\n\nUser command:\n'+request}]}],
+        contents:[{role:'user',parts:[{text:'Current UTC date/time: '+new Date().toISOString()+
+          '. Default user time zone: Asia/Kuala_Lumpur (unless Project says otherwise).\nProject preferences:\n'+context.slice(0,4500)+
+          '\n\nUser command:\n'+request}]}],
         generationConfig:{temperature:0.1,maxOutputTokens:650,responseMimeType:'application/json'}}),
       signal:controller.signal,
     });
@@ -147,19 +163,16 @@ export class Operator {
     if(typeof text!=='string'||text.trim().length<2||text.length>1200)
       throw new HttpError(400,'BAD_COMMAND','Write a command from 2 to 1200 characters');
     const request=text.trim();
-    // Do not let model-generated "open page" steps masquerade as
-    // completed calendar creation, private-message sending or image generation.
-    const lower=request.toLowerCase();
-    if(/(?:calendar|calender|meeting)/.test(lower) && /(?:add|create|schedule|banado|banao|set|invite|reschedule)/.test(lower))
-      throw new HttpError(422,'CALENDAR_INTEGRATION_MISSING',
-        'Creating or changing calendar events is not connected yet. Opening Calendar alone is not event creation.');
-    if(/whats?app/.test(lower) && /(?:send|bhej|reply|forward|file|attach)/.test(lower))
-      throw new HttpError(422,'WHATSAPP_SEND_UNSUPPORTED',
-        'WhatsApp sending/files workflow is not connected. HUKM will not claim it was sent.');
-    if(/(?:chatgpt|banner|image generation|pic bana|design bana)/.test(lower) && /(?:bana|create|generate|download|save)/.test(lower))
-      throw new HttpError(422,'CREATIVE_WORKFLOW_UNSUPPORTED',
-        'The ChatGPT content-generation/download workflow is not automated yet.');
+    // Draft and preview workflows are allowed; sending, invitations, and
+    // end-to-end creative generation still require real verified integrations.
     const project=projectId==null?null:this.projects.get(userId,String(projectId));
+    const lower=request.toLowerCase();
+    const useProjectBrowser=/(?:calendar|calender|meeting|chatgpt|banner|image generation|pic bana|design bana)/.test(lower);
+    if(useProjectBrowser && (!project || !/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile)))
+      throw new HttpError(422,'PROJECT_PROFILE_REQUIRED','Select a HUKM Project with a configured Chrome profile (Default or Profile N).');
+    if(/(?:chatgpt|banner|image generation|pic bana|design bana)/.test(lower) &&
+       (!project?.chatgptProjectUrl || !project.chatgptProjectUrl.startsWith('https://chatgpt.com/')))
+      throw new HttpError(422,'PROJECT_URL_REQUIRED','This HUKM Project needs an exact ChatGPT Project URL before using ChatGPT.');
     const notes=project?this.projects.notes(userId,project.id).slice(0,8):[];
     const context=project?
       [project.name,project.description,project.instructions,project.chromeProfile?'Preferred Chrome profile label: '+project.chromeProfile:'',
@@ -174,6 +187,17 @@ export class Operator {
     }else{
       if(!geminiConfigured())throw new HttpError(503,'AI_NOT_CONFIGURED','Natural-language planner requires Gemini');
       result=await askGeminiPlan(request,context);
+    }
+    // Project routing is enforced by the relay, not just written into the AI prompt.
+    for(const step of result.steps){
+      if(step.action==='calendar.event_draft' && step.args.profile!==project?.chromeProfile)
+        throw new HttpError(422,'PROJECT_PROFILE_MISMATCH','Calendar must use the selected Project Chrome profile.');
+      if(step.action==='browser.profile_open' && String(step.args.url).startsWith('https://chatgpt.com') &&
+         project?.chatgptProjectUrl && step.args.url!==project.chatgptProjectUrl)
+        throw new HttpError(422,'PROJECT_URL_MISMATCH','ChatGPT opening must match the saved Project URL.');
+      if(['chatgpt.prompt_draft','chatgpt.submit_prompt','chatgpt.download_visible'].includes(step.action) &&
+         step.args.projectUrl!==project?.chatgptProjectUrl)
+        throw new HttpError(422,'PROJECT_URL_MISMATCH','ChatGPT actions must match this HUKM Project URL.');
     }
     // Bound backup growth on Render's small SQLite storage.
     run(this.db,`DELETE FROM operator_plans WHERE user_id=? AND id NOT IN
