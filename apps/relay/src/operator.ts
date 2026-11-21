@@ -27,7 +27,7 @@ const SAFE_AGENT_ACTIONS = new Set<ActionName>([
   'device.status','apps.list','window.active','window.focus','diagnostics.probe',
   'browser.control','browser.profile_open','notepad.type','whatsapp.open','whatsapp.check',
   'whatsapp.unread_senders', 'whatsapp.read_selected', 'whatsapp.draft_reply',
-  'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'calendar.event_draft',
+  'whatsapp.attach_preview', 'ui.inspect', 'ui.activate', 'ui.scroll', 'calendar.event_draft',
   'chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'
 ]);
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
@@ -88,7 +88,7 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'Answer follow-up messages using the original request and most recent answer supplied. Do not ask the same question twice if its answer is present.',
     'Only use these precise action names: app.open, folder.open, folder.list, file.search, file.open, file.reveal,',
     'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
-    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, calendar.event_draft,',
+    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, calendar.event_draft,',
     'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
     'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.attach_preview.',
     'Never use arbitrary shell, file deletion, payments, password/OTP reading or WhatsApp Send. Do not pretend a draft was sent.',
@@ -107,7 +107,7 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'For "Notepad kholo aur 1 se 9 likho": steps app.open args {"app":"notepad"},',
     'then notepad.type args {"text":"1\\n2\\n3\\n4\\n5\\n6\\n7\\n8\\n9"}.',
     'For "YouTube kholo": use web.open args {"url":"https://www.youtube.com/"} not youtube.search.',
-    'For "scroll karo": use browser.control with {"kind":"scroll","steps":-2}.',
+    'For "scroll karo": use ui.scroll with {"steps":-2}; never invent screen coordinates.',
     'For "WhatsApp kis ka message aaya": use whatsapp.unread_senders with {}.',
     'For "WhatsApp ki selected chat parh ke batao": use whatsapp.read_selected with {}.',
     'For "screen par kya buttons hain": use ui.inspect with {}. ui.activate needs exact label.',
