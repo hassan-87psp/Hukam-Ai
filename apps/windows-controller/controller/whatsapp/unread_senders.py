@@ -96,6 +96,16 @@ def read_unread_senders(cancel=None) -> dict:
 
     if not IS_WINDOWS:
         raise UnreadSendersUnavailable("WhatsApp Desktop sender reading requires Windows")
+    active=_focus_or_open(cancel)
+    try:
+        return visual_unread.visual_scan_unread(active.hwnd, cancel=cancel)
+    except visual_unread.VisualUnreadUnavailable as exc:
+        raise UnreadSendersUnavailable(str(exc)) from exc
+
+
+def _focus_or_open(cancel=None):
+    if cancel is not None and cancel.is_set():
+        raise UnreadSendersUnavailable("WhatsApp unread scan cancelled")
     # Always resolve the real/main native WhatsApp window, even when the
     # current foreground is a small WhatsApp helper toast or the full app is
     # minimized. The locator restores the verified chat window using Windows.
@@ -110,16 +120,18 @@ def read_unread_senders(cancel=None) -> dict:
             "HUKM could not restore and focus the installed Personal WhatsApp "
             "Desktop main window. No WhatsApp Web tab was opened.")
 
-    # WhatsApp on the owner's Windows 10 build exposes no reliable Unread
-    # control through UIAutomation. Traversing its huge UIA tree delayed the
-    # *visual* fallback until the relay's 30-second deadline had already
-    # passed. Instead, observe the actual left chat pane locally FIRST.
-    #
-    # The visual scanner only clicks a unique Unread chip supported by All
-    # and either Favourites or an independent Chats heading. It never uses
-    # a fixed coordinate, inspects chat message bodies, or claims unread
-    # names unless the result can be supported by the visible layout.
+    return active
+
+
+def read_unread_count(cancel=None):
+    """Bounded native count path; no unbounded UIA scan or chat open."""
+    active=_focus_or_open(cancel)
     try:
-        return visual_unread.visual_scan_unread(active.hwnd, cancel=cancel)
+        count=visual_unread.visual_read_count(active.hwnd,cancel=cancel)
     except visual_unread.VisualUnreadUnavailable as exc:
         raise UnreadSendersUnavailable(str(exc)) from exc
+    return {"unreadChats":count,"totalUnreadMessages":0 if count==0 else None,
+            "source":"WhatsApp Desktop Unread filter" if count is not None else "unavailable",
+            "messagesRead":False,
+            "note":"Count of unread conversations, not individual messages." if count is not None else
+                   "Unread badge count was not verified; unknown, not zero."}

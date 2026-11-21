@@ -606,7 +606,7 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     name: 'whatsapp.unread_senders', capability: 'whatsapp',
     // Two bounded local OCR passes (first screen + post-click) plus Windows
     // foreground acquisition may exceed the old 30s deadline on cold start.
-    label: 'List visible unread WhatsApp senders', timeoutMs: 90000, defaultApprove: true,
+    label: 'List visible unread WhatsApp senders', timeoutMs: 90000, alwaysApprove: true,
     validate: () => ok({}),
   },
   'whatsapp.read_visible': {

@@ -246,14 +246,25 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('WhatsApp open hai, lekin unread count parha nahi ja saka.', 'واٹس ایپ کھلا ہے، لیکن ان ریڈ تعداد نہیں پڑھی جا سکی۔', "WhatsApp is open, but the unread count couldn't be read.");
     case 'whatsapp.unread_senders': {
       const senders = Array.isArray(r.senders) ? r.senders.filter((x): x is string => typeof x === 'string').slice(0, 12) : [];
+      if (!senders.length && r.totalUnreadChats===0 && r.unreadCountVerified===true && r.source==='Explicit WhatsApp Unread zero badge')
+        return L('WhatsApp ke Unread badge par zero chats confirm hui hain.', 'واٹس ایپ میں صفر ان ریڈ چیٹس کی تصدیق ہوئی۔', 'The explicit WhatsApp Unread badge confirms zero unread conversations.');
       if (!senders.length) return L('WhatsApp ne unread sender names verify nahi kiye.', 'واٹس ایپ کے ناموں کی تصدیق نہیں ہوئی۔', 'No unread sender names could be verified.');
       if (r.filterSelectedVerified === false)
         return L(`Sir, visible chat names: ${senders.join(', ')}. WhatsApp ka Unread filter select hona confirm nahi hua, isliye inhe verified unread na samjhein.`,
           `نظر آنے والے چیٹ نام: ${senders.join('، ')}۔ ان ریڈ فلٹر کی تصدیق نہیں ہوئی۔`,
           `Visible chat names: ${senders.join(', ')}. Unread filter selection was NOT verified.`);
-      return L(`WhatsApp par visible unread chats: ${senders.join(', ')}. Messages ka content nahi parha.`,
-        `نظر آنے والی ان ریڈ چیٹس: ${senders.join('، ')}۔ میسج نہیں پڑھے۔`,
-        `Visible unread chats: ${senders.join(', ')}. Message contents were not read.`);
+      const counts=new Map<string,number>();
+      if(Array.isArray(r.conversations))for(const item of r.conversations){
+        if(item && typeof item.name==='string' && typeof item.unreadMessages==='number' &&
+          Number.isInteger(item.unreadMessages) && item.unreadMessages>0 && item.unreadMessages<=9999)
+          counts.set(item.name,item.unreadMessages);
+      }
+      const names=senders.map(n=>counts.has(n)?n+' — '+counts.get(n)+' unread messages':n).join(', ');
+      const total=r.unreadCountVerified===true && typeof r.totalUnreadChats==='number' && r.totalUnreadChats>=senders.length
+        ? r.totalUnreadChats : null;
+      return L(`WhatsApp par ${total===null?'total unread chats verify nahi hui':total+' unread chats ka badge hai'}. Visible senders: ${names}. Tamam unread messages ka total confirm nahi hua; message bodies nahi parhe.`,
+        `نظر آنے والی ان ریڈ چیٹس: ${names}۔ مکمل پیغامات کی تعداد کی تصدیق نہیں ہوئی۔`,
+        `Unread conversation badge: ${total===null?'unknown':total}. Visible senders: ${names}. Total unread messages not verified; message bodies were not read.`);
     }
     case 'whatsapp.read_visible':
       if (r.messagesRead === true && r.spokenOnDevice === true)

@@ -303,7 +303,7 @@ describe('explicit single-monitor OCR',()=>{
 describe('owner read-only WhatsApp preference (explicit opt-in)',()=>{
   it('defaults to per-scan approval but supports saved read-only permission',()=>{
     expect(requiresApproval('whatsapp.unread_senders')).toBe(true);
-    expect(requiresApproval('whatsapp.unread_senders',{'whatsapp.unread_senders':false})).toBe(false);
+    expect(requiresApproval('whatsapp.unread_senders',{'whatsapp.unread_senders':false})).toBe(true);
     expect(requiresApproval('whatsapp.compose',{'whatsapp.compose':false})).toBe(true);
   });
   for (const phrase of ['Kinke messages unread hain?', 'Who has messaged me on WhatsApp?',

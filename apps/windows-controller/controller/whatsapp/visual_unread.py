@@ -271,7 +271,8 @@ def _adaptive_unread(words,width,height):
                1.8*h<=chip.cy-w.cy<=22*h and 0<=w.x<=chip.x+2*h]
         searches=[w for w in words if re.fullmatch(r"search(?:\s+.*)?",_text(w)) and
                   .9*h<=chip.cy-w.cy<=14*h and 0<=w.x<=chip.x+4*h]
-        if len(heads)!=1 or not any(heads[0].cy+0.4*h<w.cy for w in searches):
+        heads=[w for w in heads if any(w.cy+0.4*h<q.cy for q in searches)]
+        if len(heads)!=1:
             continue
         aligned=[w for w in words if abs(w.cy-chip.cy)<=max(4,.5*h)]
         left=[w for w in aligned if _text(w)=="all" and
@@ -479,6 +480,100 @@ def _ensure_not_cancelled(cancel) -> None:
         )
 
 
+
+def _capture_for_scan(hwnd,cancel):
+    """Resize the verified app once if it is truly too small to inspect."""
+    try:
+        return _capture_left(hwnd)
+    except VisualUnreadUnavailable as exc:
+        if "too small" not in str(exc):
+            raise
+    _ensure_not_cancelled(cancel)
+    _safe_foreground(hwnd)
+    import win32gui
+    import win32con
+    if win32gui.IsZoomed(hwnd):
+        raise VisualUnreadUnavailable("WhatsApp client is too small even when maximized")
+    win32gui.ShowWindow(hwnd,win32con.SW_MAXIMIZE)
+    time.sleep(.35)
+    _ensure_not_cancelled(cancel)
+    return _capture_left(hwnd)
+
+
+def visual_read_count(hwnd,cancel=None):
+    """Read a count without clicking any control or opening any conversation."""
+    _ensure_not_cancelled(cancel)
+    image,left,top=_capture_for_scan(hwnd,cancel)
+    try:
+        words=_ocr_words(image,cancel=cancel)
+    except VisualUnreadUnavailable:
+        _ensure_not_cancelled(cancel)
+        words=[]
+    chip=locate_unread(words,image.width,image.height)
+    if chip is not None:
+        count=_verified_badge_count(words,chip)
+        if count is not None:
+            _safe_foreground(hwnd)
+            _ensure_not_cancelled(cancel)
+            return count
+    image,left,top,words,chip,native=_recover_before_click(hwnd,image,left,top,words,cancel)
+    count=native.get("count")
+    if count is None and chip is not None and not native:
+        count=_verified_badge_count(words,chip)
+    _safe_foreground(hwnd)
+    _ensure_not_cancelled(cancel)
+    return count
+
+
+def _green_badge(image,w):
+    """Color evidence corroborates an OCR numeral; never count colored blobs."""
+    pad=max(3,round(w.height*.65))
+    box=(max(0,int(w.x-pad)),max(0,int(w.y-pad)),
+         min(image.width,int(w.x+w.width+pad)),min(image.height,int(w.y+w.height+pad)))
+    if box[2]<=box[0] or box[3]<=box[1]:
+        return False
+    patch=image.crop(box).convert("RGB")
+    pixels=list(patch.getdata())
+    return bool(pixels) and sum(g>=95 and g-r>=32 and g-b>=18 for r,g,b in pixels)/len(pixels)>=.24
+
+
+def _conversation_counts(image,words,names,chip):
+    """Only associate an explicit green numeric badge with a unique title/time row."""
+    h=max(8,min(chip.height,26))
+    counts={}
+    for name in names:
+        matches=[]
+        for moment in words:
+            if not _DATE.fullmatch(moment.text.strip()) or moment.cy<=chip.cy+3*h:
+                continue
+            row=sorted((w for w in words if w.x+w.width<moment.x-h*.45 and
+                w.x>=max(0,chip.x-5*h) and abs(w.cy-moment.cy)<=max(4,.5*h) and
+                not _DATE.fullmatch(w.text.strip())),key=lambda w:w.x)
+            if not row:
+                continue
+            # Require the exact already-recognized sender title on that row.
+            if " ".join(w.text.strip() for w in row).casefold()!=name.casefold():
+                continue
+            badges=[w for w in words if re.fullmatch(r"[1-9]\d{0,3}",w.text.strip()) and
+                    .45*h<=w.cy-moment.cy<=3.5*h and
+                    abs(w.cx-(moment.x+moment.width))<=2.2*h and _green_badge(image,w)]
+            if len(badges)==1:
+                matches.append(int(badges[0].text.strip()))
+        if len(matches)==1:
+            counts[name]=matches[0]
+    return [{"name":name,"unreadMessages":counts.get(name)} for name in names]
+
+
+def _result_counts(image,words,senders,chip,count,verified):
+    rows=_conversation_counts(image,words,senders,chip) if verified else [
+        {"name":name,"unreadMessages":None} for name in senders]
+    # Matching visible unique rows to an explicit app badge is still not
+    # a provider API proof of complete coverage. Do not certify a total
+    # unread-message count from a partial OCR viewport.
+    return {"conversations":rows,"totalUnreadMessages":None,
+            "totalUnreadChats":count if verified else None,
+            "unreadCountVerified":count is not None and verified}
+
 def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     """Approved, foreground-only local OCR + real mouse click + verified list."""
     import win32api
@@ -488,7 +583,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     started = time.monotonic()
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_capture")
-    image, left, top = _capture_left(active_hwnd)
+    image, left, top = _capture_for_scan(active_hwnd,cancel)
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_ocr")
     try:
@@ -525,7 +620,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
         if not senders:
             raise VisualUnreadUnavailable("Unread filter is visible but sender rows could not be verified. No names guessed.")
         return {"supported":True,"senders":senders,"visibleChatCount":len(senders),
-                "totalUnreadChats":badge,"unreadCountVerified":badge is not None,"visibleOnly":True,"messagesRead":False,
+                **_result_counts(image,words,senders,chip,badge,True),"visibleOnly":True,"messagesRead":False,
                 "filterClickAttempted":False,"filterSelectedVerified":True,
                 "source":"Local Windows visual OCR of existing Personal WhatsApp Unread filter",
                 "note":"Existing Unread search placeholder confirms the visible filter; no additional click."}
@@ -620,8 +715,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
         "supported": True,
         "senders": senders,
         "visibleChatCount": len(senders),
-        "totalUnreadChats": count_after if selection_verified else None,
-        "unreadCountVerified": count_after is not None and selection_verified,
+        **_result_counts(after_image,second_words,senders,selected_chip,count_after,selection_verified),
         "visibleOnly": True, "messagesRead": False,
         "filterClickAttempted": True,
         "filterSelectedVerified": selection_verified,

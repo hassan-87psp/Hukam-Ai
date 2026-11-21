@@ -181,6 +181,7 @@ export interface UserSettings {
   audioReactiveOrb: boolean;
   notifications: { toasts: boolean; browser: boolean };
   approvalRequired: Partial<Record<ActionName, boolean>>;
+  whatsappUnreadTrusted?: boolean;
   screenshotRetentionHours: number;
   historyRetentionDays: number;
   whatsappContacts: WhatsAppContact[];
@@ -202,6 +203,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     'system.lock': true,
     'whatsapp.compose': true,
   },
+  whatsappUnreadTrusted:false,
   screenshotRetentionHours: 24,
   historyRetentionDays: 90,
   whatsappContacts: [],

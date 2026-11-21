@@ -490,8 +490,10 @@ export class Relay {
            result.unreadChats >= 0 && result.unreadChats <= 999 &&
            (result.source === 'WhatsApp Desktop Unread filter' || result.source === 'window title'));
         const sendersVerified = c.action !== 'whatsapp.unread_senders' ||
-          (Array.isArray(result.senders) && result.senders.length > 0 &&
-           result.senders.every((s: unknown) => typeof s === 'string' && s.trim().length > 0));
+          (Array.isArray(result.senders) &&
+           ((result.senders.length > 0 && result.senders.every((s: unknown) => typeof s === 'string' && s.trim().length > 0)) ||
+            (result.senders.length===0 && result.totalUnreadChats===0 && result.unreadCountVerified===true &&
+             result.filterSelectedVerified===true && result.source==='Explicit WhatsApp Unread zero badge')));
         const resultVerified = countVerified && sendersVerified;
         const success = msg.ok === true && resultVerified;
         this.finish(c.id, success ? 'completed' : 'failed', safeResult, success ? null : {
@@ -679,7 +681,11 @@ export class Relay {
     const enabled = parseJson<Capability[]>(deviceRow.capabilities_enabled, []);
     const id = newId('c_');
     const now = nowIso();
-    const needsApproval = requiresApproval(action, settings.approvalRequired);
+    // Separate explicit consent. Legacy per-action false flags cannot grant
+    // new read access; unattended automations still require individual approval.
+    const trustedUnread=action==='whatsapp.unread_senders' && settings.whatsappUnreadTrusted===true &&
+      source!=='automation' && !input.automationRunId;
+    const needsApproval = !trustedUnread && requiresApproval(action, settings.approvalRequired);
     let status: CommandStatus = needsApproval ? 'awaiting_approval' : 'pending';
     let error: { code: string; message: string } | null = null;
     if (deviceRow.paused) {
@@ -1005,6 +1011,7 @@ export function sanitizeSettings(s: UserSettings): UserSettings {
     audioReactiveOrb: !!s.audioReactiveOrb,
     notifications: { toasts: s.notifications?.toasts !== false, browser: !!s.notifications?.browser },
     approvalRequired: approval,
+    whatsappUnreadTrusted: s.whatsappUnreadTrusted===true,
     screenshotRetentionHours: clamp(s.screenshotRetentionHours, 1, 24 * 30, 24),
     historyRetentionDays: clamp(s.historyRetentionDays, 1, 3650, 90),
     whatsappContacts: contacts,

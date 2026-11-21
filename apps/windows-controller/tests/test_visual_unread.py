@@ -341,3 +341,15 @@ def test_uia_bounds_must_be_inside_the_original_capture():
     native={"bounds":[-1860,80,-1780,110],"selected":True}
     assert vu._chip_from_probe(native,-1920,0,image).x==60
     assert vu._chip_from_probe(native,0,0,image) is None
+
+def test_green_explicit_count_associates_with_one_title_row():
+    from PIL import Image,ImageDraw
+    image=Image.new("RGB",(520,920),(20,20,20))
+    paint=ImageDraw.Draw(image)
+    paint.ellipse((465,392,490,417),fill=(16,190,105))
+    x=[vu.Word("Sample",159,373,70,20),vu.Word("Contact",234,373,72,20),
+        vu.Word("Yesterday",394,373,75,18),vu.Word("3",474,400,8,12)]
+    rows=vu._conversation_counts(image,x,["Sample Contact"],vu.Word("Unread",163,183,72,19))
+    assert rows==[{"name":"Sample Contact","unreadMessages":3}]
+    empty=Image.new("RGB",(520,920),(20,20,20))
+    assert vu._conversation_counts(empty,x,["Sample Contact"],vu.Word("Unread",163,183,72,19))[0]["unreadMessages"] is None
