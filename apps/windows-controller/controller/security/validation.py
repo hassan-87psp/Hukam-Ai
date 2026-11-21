@@ -155,7 +155,7 @@ def validate(action: str, args: dict) -> dict:
         return {"query": _str(a.get("query"), "query", 200)}
     if action == "ui.activate":
         label = _str(a.get("label"), "label", 100)
-        if re.match(r"^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\\b|\\s)", label, re.I):
+        if re.match(r"^(?:send|delete|remove|purchase|pay|submit|confirm|approve|publish|share|sign out|log out|block|report|transfer|call|video call|join)(?:\b|\s)", label, re.I):
             raise ValidationError("sensitive button requires dedicated workflow")
         return {"label": label}
     if action == "calendar.event_draft":
@@ -167,7 +167,7 @@ def validate(action: str, args: dict) -> dict:
         if not re.fullmatch(r"(?:Default|Profile [1-9][0-9]?)", profile):
             raise ValidationError("invalid Chrome profile directory")
         start, end = a.get("startUtc"), a.get("endUtc")
-        iso = r"\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z"
+        iso = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"
         if not isinstance(start, str) or not isinstance(end, str) or not re.fullmatch(iso, start) or not re.fullmatch(iso, end):
             raise ValidationError("UTC timestamps must be YYYY-MM-DDTHH:MM:SSZ")
         try:
@@ -179,7 +179,7 @@ def validate(action: str, args: dict) -> dict:
         if not begin < finish or finish - begin > timedelta(days=1) or begin < now - timedelta(minutes=5) or begin > now + timedelta(days=366):
             raise ValidationError("Calendar event dates invalid")
         tz = _str(a.get("timeZone"), "timeZone", 70)
-        if not re.fullmatch(r"[A-Za-z_]+(?:/[A-Za-z0-9_+\\-]+){0,2}", tz):
+        if not re.fullmatch(r"[A-Za-z_]+(?:/[A-Za-z0-9_+\-]+){0,2}", tz):
             raise ValidationError("invalid IANA time zone")
         return {"provider": provider, "title": title, "profile": profile,
                 "startUtc": start, "endUtc": end, "timeZone": tz,
@@ -193,14 +193,14 @@ def validate(action: str, args: dict) -> dict:
         out = {"projectUrl": url}
         if action != "chatgpt.download_visible":
             prompt = a.get("prompt")
-            if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1800 or re.search(r"[\\x00-\\x08\\x0b-\\x1f]", prompt):
+            if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1800 or re.search(r"[\x00-\x08\x0b-\x1f]", prompt):
                 raise ValidationError("invalid ChatGPT prompt")
             out["prompt"] = prompt
         return out
     if action == "whatsapp.draft_reply":
         contact = _str(a.get("contact"), "contact", 80)
         message = a.get("message")
-        if not isinstance(message, str) or not message.strip() or len(message) > 1000 or re.search(r"[\\x00-\\x08\\x0b-\\x1f]", message):
+        if not isinstance(message, str) or not message.strip() or len(message) > 1000 or re.search(r"[\x00-\x08\x0b-\x1f]", message):
             raise ValidationError("invalid WhatsApp reply")
         return {"contact": contact, "message": message}
     if action == "whatsapp.attach_preview":
