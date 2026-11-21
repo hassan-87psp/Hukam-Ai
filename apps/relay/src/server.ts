@@ -184,9 +184,15 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   add('GET', '/api/ai/history', true, (c) =>
     savedChat(c.user!.id,c.url.searchParams.get('projectId')));
   add('DELETE', '/api/ai/history', true, (c) => {
-    const p=chatProject(c.user!.id,c.url.searchParams.get('projectId'));
-    if(p)projects.clearMessages(c.user!.id,p.id);
-    else run(db,'DELETE FROM ai_chat_turns WHERE user_id=?',c.user!.id);
+    const userId=c.user!.id;
+    const p=chatProject(userId,c.url.searchParams.get('projectId'));
+    if(p)projects.clearMessages(userId,p.id);
+    else {
+      run(db,'DELETE FROM ai_chat_turns WHERE user_id=?',userId);
+      relay.discardCommandDialogue(userId);
+    }
+    // Clearing chat must also forget its old unanswered command/question.
+    operator.discardPending(userId,p?.id??null);
     return {ok:true};
   });
   add('POST', '/api/ai/chat', true, async (c) => {
