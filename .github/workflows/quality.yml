@@ -25,6 +25,8 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --include=dev
+      - name: Audit production dependencies for high/critical vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run typecheck
       - name: Verify release version and package contract
         run: node scripts/check-release-version.mjs
