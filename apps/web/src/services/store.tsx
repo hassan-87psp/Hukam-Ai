@@ -4,6 +4,7 @@ import {
   clarifyMessage,
   failureMessage,
   parseCommand,
+  routeIntent,
   pick,
   replyMessage,
   STATUS_MESSAGES,
@@ -389,17 +390,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async (text: string, source: CommandSource = 'text') => {
       const t = text.trim();
       if (!t || submitting) return;
-      // Gemini is chat-only. A normal message does not require the laptop to
-      // be connected, and no command/device data is automatically sent to Google.
+      // A single intent gateway replaces conflicting keyword detectors.
+      // Gemini chat has no authority to operate the laptop; supervised plans
+      // are validated and require explicit owner review before execution.
       const local = parseCommand(t);
-      const taskWords = /\b(?:karo|krdo|kerdo|khol|open|add|schedule|likh|type|scroll|check|bhejo|send|create|download|whatsapp|calendar|notepad|note\s+pad|chrome|browser|youtube|file)\b/i.test(t);
-      const compound = /\b(?:aur|phir|then|after that|usme|us\s+me|likho.*notepad|notepad.*likho|meeting.*add|schedule.*meeting)\b|(?:notepad|note\s*pad).*?(?:likho|type)/i.test(t);
-      // Complex desktop workflows must reach the reviewed AI planner even
-      // when the legacy keyword parser incorrectly recognizes a basic action.
-      const taskWorkflow = /(?:calendar|calender|meeting).*(?:add|create|schedule|set|bana|invite)|(?:add|create|schedule|set).*(?:calendar|meeting)|(?:whatsapp|chat).*(?:reply|attach|file|message read|messages parh|msg parh)|(?:chatgpt|banner|image|script).*(?:bana|create|generate|draft|download|save)|(?:screen|window).*(?:dekho|observe|inspect|button)/i.test(t);
-      const shouldPlan = !pendingDialogueTopic && (taskWorkflow || (taskWords &&
-        ((local.kind === 'unsupported' || local.kind === 'reply') || compound)));
-      const maybeAi = !shouldPlan && !pendingDialogueTopic && (local.kind === 'unsupported' || local.kind === 'reply');
+      const route = routeIntent(t, local, pendingDialogueTopic === 'operator-followup');
+      const shouldPlan = route === 'plan';
+      const maybeAi = route === 'chat' && !pendingDialogueTopic;
       const history = chat
         .flatMap<{ role: 'user' | 'assistant'; text: string }>((m) => m.kind === 'user' && m.aiChat
           ? [{ role: 'user' as const, text: m.text.slice(0, 700) }]
@@ -426,13 +423,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (!hasDevice) { agent(STATUS_MESSAGES.noDevice,'warn'); return; }
           try {
             const projectId = new URLSearchParams(window.location.search).get('projectId');
-            const plan = await post<OperatorPlan>('/api/operator/plan', {
+            const planned = await post<OperatorPlan | {kind:'clarify'; question:string; questionUrdu?:string; topic:string}>('/api/operator/plan', {
               text:t, projectId:projectId||undefined,
             });
-            addChat({id:uid(),kind:'plan',plan,at:new Date().toISOString()});
-            agent({roman:'Task plan ready hai. Actions review karke Run karein.',
-              ur:'ٹاسک پلان تیار ہے۔ جائزہ لے کر شروع کریں.',
-              en:'Task plan ready. Review each action before starting.'},'info',false);
+            if('kind' in planned && planned.kind==='clarify') {
+              setPendingDialogueTopic('operator-followup');
+              agent({roman:planned.question,ur:planned.questionUrdu||planned.question,
+                en:planned.question},'info',source==='voice');
+            } else {
+              const plan=planned as OperatorPlan;
+              setPendingDialogueTopic(null);
+              addChat({id:uid(),kind:'plan',plan,at:new Date().toISOString()});
+              agent({roman:'Samajh gaya. Ye steps hain — dekh kar Run press karein. Har sensitive step ki alag approval hogi.',
+                ur:'سمجھ گیا۔ مراحل دیکھ کر رن دبائیں، اہم اقدامات کی الگ اجازت ہوگی۔',
+                en:'Plan ready. Review the steps before running. Sensitive actions need individual approval.'},'info',false);
+            }
           } catch (ex) {
             const reason = ex instanceof Error ? ex.message : 'This task is not supported safely.';
             agent({roman:reason,ur:reason,en:reason},'warn',false);
