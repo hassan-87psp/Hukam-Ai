@@ -340,9 +340,24 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({projectUrl:u.toString()});
     },
   },
+  'whatsapp.select_chat': {
+    name:'whatsapp.select_chat', capability:'whatsapp',
+    label:'Select exact visible contact in Personal WhatsApp Desktop',
+    timeoutMs:30000, alwaysApprove:true,
+    validate(a) {
+      const contact=str(a.contact,'contact',80);
+      return isErr(contact) ? contact : ok({contact});
+    },
+  },
   'whatsapp.read_selected': {
-    name:'whatsapp.read_selected', capability:'whatsapp', label:'Read currently visible WhatsApp chat',
-    timeoutMs:30000, alwaysApprove:true,validate:()=>ok({}),
+    name:'whatsapp.read_selected', capability:'whatsapp',
+    label:'Read selected visible WhatsApp chat (optional exact contact check)',
+    timeoutMs:30000, alwaysApprove:true,
+    validate(a) {
+      if(a.contact===undefined)return ok({});
+      const contact=str(a.contact,'contact',80);
+      return isErr(contact) ? contact : ok({contact});
+    },
   },
   'whatsapp.draft_reply': {
     name:'whatsapp.draft_reply', capability:'whatsapp', label:'Draft reply in selected WhatsApp chat',
