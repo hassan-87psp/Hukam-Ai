@@ -42,6 +42,15 @@ class UpdateError(Exception):
     pass
 
 
+class UpdateCancelled(UpdateError):
+    pass
+
+
+def _check_cancel(cancel) -> None:
+    if cancel is not None and cancel.is_set():
+        raise UpdateCancelled("Update cancelled before installer launch. No new installer was started.")
+
+
 class _LimitedRedirects(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         parsed = urllib.parse.urlsplit(newurl)
@@ -128,7 +137,8 @@ def _expected_digest(checksum_url: str, name: str) -> str:
     return match.group(1).lower()
 
 
-def _stage(url: str, target: Path, expected_digest: str, expected_size: int) -> None:
+def _stage(url: str, target: Path, expected_digest: str, expected_size: int, cancel=None) -> None:
+    _check_cancel(cancel)
     target.parent.mkdir(parents=True, exist_ok=True)
     free = shutil.disk_usage(target.parent).free
     if free < expected_size + 40 * 1024 * 1024:
@@ -144,7 +154,9 @@ def _stage(url: str, target: Path, expected_digest: str, expected_size: int) -> 
     try:
         with opener.open(request, timeout=30) as response, temporary.open("wb") as output:
             while True:
+                _check_cancel(cancel)
                 chunk = response.read(1024 * 1024)
+                _check_cancel(cancel)
                 if not chunk:
                     break
                 size += len(chunk)
@@ -154,6 +166,7 @@ def _stage(url: str, target: Path, expected_digest: str, expected_size: int) -> 
                 output.write(chunk)
         if size != expected_size or digest.hexdigest() != expected_digest:
             raise UpdateError("HUKM update SHA-256 integrity verification failed")
+        _check_cancel(cancel)
         os.replace(temporary, target)
     finally:
         try:
@@ -183,7 +196,8 @@ def _local_confirm(version: str) -> bool:
                                                "HUKM AI — Owner-approved update", flags) == 6
 
 
-def update_from_website() -> dict:
+def update_from_website(cancel=None) -> dict:
+    _check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("controller.update", "official release (simulation)")
         return {"updateAvailable": False, "simulated": True, "verified": False}
@@ -191,6 +205,7 @@ def update_from_website() -> dict:
         raise UpdateError("Updates require the installed Windows Controller")
     log.info("HUKM update stage=checking_release current_version=%s", VERSION)
     version, exe_url, checksum_url, size = _latest_assets()
+    _check_cancel(cancel)
     log.info("HUKM update stage=release_checked latest_version=%s", version)
     if not exe_url:
         return {"updateAvailable": False, "currentVersion": VERSION,
@@ -198,19 +213,25 @@ def update_from_website() -> dict:
     installer = data_dir() / "Updates" / ("HUKM-Setup-v" + version + ".exe")
     log.info("HUKM update stage=checking_checksum")
     expected = _expected_digest(checksum_url, installer.name)
+    _check_cancel(cancel)
     if installer.exists():
         digest = hashlib.sha256()
         with installer.open("rb") as f:
             for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                _check_cancel(cancel)
                 digest.update(chunk)
+        _check_cancel(cancel)
         if installer.stat().st_size != size or digest.hexdigest() != expected:
             installer.unlink()
     if not installer.exists():
         log.info("HUKM update stage=downloading_installer size_bytes=%d", size)
-        _stage(exe_url, installer, expected, size)
+        _stage(exe_url, installer, expected, size, cancel=cancel)
+    _check_cancel(cancel)
     log.info("HUKM update stage=verified_checksum latest_version=%s", version)
     log.info("HUKM update stage=awaiting_local_windows_confirmation")
-    if not _local_confirm(version):
+    confirmed = _local_confirm(version)
+    _check_cancel(cancel)
+    if not confirmed:
         log.info("HUKM update stage=cancelled_on_windows")
         return {"updateAvailable": True, "latestVersion": version,
                 "installerLaunched": False, "verified": False,
@@ -221,6 +242,7 @@ def update_from_website() -> dict:
         # version is NOT verified until its next authenticated device hello.
         # Separate signed-OS process. No shell, user-supplied arguments or
         # auto-install switches. Setup prompts the local Windows owner.
+        _check_cancel(cancel)
         subprocess.Popen([str(installer)], close_fds=True)
         log.info("HUKM update stage=installer_launched latest_version=%s", version)
     except OSError as exc:
