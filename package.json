@@ -19,7 +19,7 @@
     "test:controller": "python -m pytest -q apps/windows-controller/tests",
     "test:all": "npm run build && npm test && npm run test:controller",
     "typecheck": "tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/relay/tsconfig.json --noEmit",
-    "prebuild": "node -e \"console.log(\'Optional cloud Urdu TTS is not a build requirement; browser/device voice fallback remains available.\')\""
+    "prebuild": "node --version"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
