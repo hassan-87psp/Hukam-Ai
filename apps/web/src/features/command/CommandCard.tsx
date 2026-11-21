@@ -12,6 +12,9 @@ export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'app.open': AppWindow, 'folder.open': FolderOpen, 'folder.list': ListTree, 'file.search': Search, 'file.open': FileText,
   'file.reveal': FolderOpen, 'web.open': Globe, 'web.search': Search, 'youtube.search': Youtube, 'youtube.play': Youtube,
   'device.status': Laptop, 'apps.list': AppWindow, 'window.active': Monitor, 'window.focus': Monitor, 'screen.capture': Monitor,
+  'ui.inspect': Monitor, 'ui.activate': Monitor, 'calendar.event_draft': Globe,
+  'chatgpt.prompt_draft': Pencil, 'chatgpt.submit_prompt': Pencil, 'chatgpt.download_visible': FileText,
+  'whatsapp.read_selected': MessageCircle, 'whatsapp.draft_reply': MessageCircle, 'whatsapp.attach_preview': FileText,
   'browser.control': Monitor, 'browser.profile_open': Globe, 'notepad.type': Pencil, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.unread_senders': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
 };
 
@@ -171,6 +174,32 @@ export function CommandResult({ c }: { c: Command }) {
       );
     case 'browser.profile_open':
       return <p className="text-xs text-ink2">{r.note ?? 'Chrome profile launched, page unverified.'}</p>;
+    case 'ui.inspect':
+      return <div className="space-y-1 text-xs text-ink2">
+        <p>{r.window} · {Array.isArray(r.controls) ? r.controls.length : 0} interactive controls</p>
+        {Array.isArray(r.controls) && r.controls.slice(0,30).map((x:any,i:number)=>
+          <div key={i} className="rounded-lg bg-field/40 px-2 py-1">{String(x.role)}: {String(x.label)}</div>)}
+        <p>Messages and text input contents were not read.</p>
+      </div>;
+    case 'ui.activate':
+      return <p className="text-xs text-warn">{r.note ?? 'Control activated; outcome unverified.'}</p>;
+    case 'calendar.event_draft':
+      return <p className="text-xs text-warn">{r.note ?? 'Calendar composer opened; event NOT saved.'}</p>;
+    case 'chatgpt.prompt_draft':
+    case 'chatgpt.submit_prompt':
+      return <p className="text-xs text-warn">{r.note ?? 'ChatGPT input attempted; output not independently verified.'}</p>;
+    case 'chatgpt.download_visible':
+      return <div className="text-xs text-ink2"><p>{r.note ?? 'Download checked.'}</p>
+        {r.fileName && <p>File: {String(r.fileName)}</p>}</div>;
+    case 'whatsapp.read_selected':
+      return <div className="space-y-2 text-sm">
+        <p className="text-xs text-warn">Visible on-screen text, saved to your private HUKM command history after approval. Not forwarded to Gemini.</p>
+        {Array.isArray(r.visibleMessages) && r.visibleMessages.slice(0,8).map((message:string,i:number)=>
+          <p key={i} className="whitespace-pre-wrap break-words rounded-lg bg-field/40 p-2">{message}</p>)}
+      </div>;
+    case 'whatsapp.draft_reply':
+    case 'whatsapp.attach_preview':
+      return <p className="text-xs text-warn">{r.note ?? 'Draft/attachment prepared, not sent.'}</p>;
     case 'notepad.type':
       return <p className="text-xs text-ink2">{r.note ?? 'Notepad input sent; result not verified.'}</p>;
     case 'browser.control':
@@ -216,6 +245,33 @@ function ApprovalBox({ c }: { c: Command }) {
           <dt className="text-ink2">Message</dt><dd className="whitespace-pre-wrap" dir="auto">{a.message}</dd>
           <dt className="text-ink2">Effect</dt><dd className="text-ink2">Opens the chat with this text typed in. You press Send on the laptop.</dd>
         </>)}
+        {c.action === 'whatsapp.read_selected' && (<>
+          <dt className="text-ink2">Privacy</dt><dd>Visible messages from selected chat will be transferred to and stored in your private HUKM history. No automatic Gemini sharing.</dd>
+        </>)}
+        {c.action === 'whatsapp.draft_reply' && (<>
+          <dt className="text-ink2">Verified contact</dt><dd>{String(a.contact)}</dd>
+          <dt className="text-ink2">Reply</dt><dd className="whitespace-pre-wrap break-words">{String(a.message)}</dd>
+          <dt className="text-ink2">Effect</dt><dd>Types draft in selected WhatsApp Desktop chat, never sends.</dd>
+        </>)}
+        {c.action === 'whatsapp.attach_preview' && (<>
+          <dt className="text-ink2">Verified contact</dt><dd>{String(a.contact)}</dd>
+          <dt className="text-ink2">Local file</dt><dd className="break-all">{String(a.path)}</dd>
+          <dt className="text-ink2">Effect</dt><dd>Opens attachment preview only. Sending requires separate manual confirmation.</dd>
+        </>)}
+        {c.action === 'calendar.event_draft' && (<>
+          <dt className="text-ink2">Calendar</dt><dd>{String(a.provider)}</dd>
+          <dt className="text-ink2">Title</dt><dd>{String(a.title)}</dd>
+          <dt className="text-ink2">Time</dt><dd>{String(a.startUtc)} – {String(a.endUtc)} · {String(a.timeZone)}</dd>
+          <dt className="text-ink2">Chrome</dt><dd>{String(a.profile)}</dd>
+          <dt className="text-ink2">Effect</dt><dd>Opens a pre-filled event editor, not a saved meeting.</dd>
+        </>)}
+        {['chatgpt.prompt_draft','chatgpt.submit_prompt','chatgpt.download_visible'].includes(c.action) && (<>
+          <dt className="text-ink2">ChatGPT Project</dt><dd className="break-all">{String(a.projectUrl)}</dd>
+          {typeof a.prompt === 'string' && <><dt className="text-ink2">Exact prompt</dt><dd className="whitespace-pre-wrap break-words">{a.prompt}</dd></>}
+          <dt className="text-ink2">Effect</dt><dd>Only the reviewed action will run in the verified Chrome tab.</dd>
+        </>)}
+        {c.action === 'ui.inspect' && (<><dt className="text-ink2">Privacy</dt><dd>Foreground interactive button labels only; no text fields or hidden apps.</dd></>)}
+        {c.action === 'ui.activate' && (<><dt className="text-ink2">Exact visible label</dt><dd>{String(a.label)}</dd></>)}
         {c.action === 'screen.capture' && (<><dt className="text-ink2">Effect</dt><dd className="text-ink2">One screenshot of the main screen is sent to your account and auto-deleted per retention settings.</dd></>)}
         {c.action === 'whatsapp.unread_senders' && (<>
           <dt className="text-ink2">Data</dt><dd>Only sender names in the visible Unread chat list, not message bodies</dd>
