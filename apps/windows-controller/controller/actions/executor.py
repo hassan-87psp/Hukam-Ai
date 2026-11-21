@@ -16,7 +16,7 @@ from ..files import search as files
 from ..screen import capture as screen
 from ..screen import accessibility
 from ..security import validation as v
-from ..system import apps, info, known_folders, launcher, windows
+from ..system import apps, info, known_folders, launcher, windows, diagnostics
 from ..whatsapp import adapter as wa
 from ..whatsapp import reader as wa_reader
 from ..whatsapp import unread_senders as wa_senders
