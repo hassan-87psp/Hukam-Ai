@@ -83,25 +83,36 @@ def focus_whatsapp() -> windows.WindowInfo | None:
     Never focus Chrome/Edge or an unrelated WebView2 process.
     """
     active = windows.active_window()
-    if active and matches_desktop_window(active):
-        return active
     candidates = desktop_windows()
-    try:
-        if windows.IS_WINDOWS:
+    # Native WhatsApp can expose a tiny popup or an empty-title toast as a
+    # second window. Prefer the real chat surface, not the active helper.
+    def area(w: windows.WindowInfo) -> int:
+        if not windows.IS_WINDOWS:
+            return 1
+        try:
             import win32gui
+            if win32gui.IsIconic(w.hwnd):
+                # Minimized window GetWindowRect can report an off-screen
+                # placeholder. Use the normal/restored placement instead.
+                rect = win32gui.GetWindowPlacement(w.hwnd)[4]
+            else:
+                rect = win32gui.GetWindowRect(w.hwnd)
+            left, top, right, bottom = rect
+            return max(0, right - left) * max(0, bottom - top)
+        except Exception:
+            return 0
 
-            def area(w: windows.WindowInfo) -> int:
-                try:
-                    left, top, right, bottom = win32gui.GetWindowRect(w.hwnd)
-                    return max(0, right - left) * max(0, bottom - top)
-                except Exception:
-                    # pywintypes.error (invalid/stale HWND) is not always an
-                    # OSError subclass. Ignore a stale helper, never crash.
-                    return 0
-            candidates.sort(key=area, reverse=True)
-    except ImportError:
-        pass
+    if active and matches_desktop_window(active) and area(active) >= 200_000:
+        try:
+            import win32gui
+            if not windows.IS_WINDOWS or not win32gui.IsIconic(active.hwnd):
+                return active
+        except ImportError:
+            return active
+    candidates.sort(key=area, reverse=True)
     for candidate in candidates:
+        if windows.IS_WINDOWS and area(candidate) < 120_000:
+            continue
         if windows.bring_to_front(candidate):
             foreground = windows.active_window()
             if foreground and foreground.hwnd == candidate.hwnd and matches_desktop_window(foreground):
