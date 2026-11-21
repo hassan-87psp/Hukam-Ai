@@ -205,7 +205,7 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
     case 'chatgpt.submit_prompt':
       return L('ChatGPT ko prompt submit hua; result verify nahi hua.', 'پرامپٹ بھیجا، نتیجہ تصدیق شدہ نہیں۔', 'Prompt submitted; response not verified.');
     case 'chatgpt.download_visible':
-      return L('ChatGPT se nayi file download verify hui.', 'چیٹ جی پی ٹی فائل ڈاؤن لوڈ تصدیق ہوئی۔', 'A new file was detected after ChatGPT download.');
+      return L('Downloads check hua; exact ChatGPT file verify nahi hui. File review karein.', 'ڈاؤن لوڈز چیک ہوئے، اصل فائل کی تصدیق نہیں ہوئی۔', 'Downloads checked; the exact ChatGPT artifact is not independently verified. Review the file.');
     case 'whatsapp.select_chat':
       return L('WhatsApp par exact selected chat verify ho gayi. Koi message send nahi hua.', 'درست واٹس ایپ چیٹ منتخب ہو گئی، کوئی پیغام نہیں بھیجا۔', 'The exact WhatsApp chat was selected and verified. Nothing was sent.');
     case 'whatsapp.read_selected':

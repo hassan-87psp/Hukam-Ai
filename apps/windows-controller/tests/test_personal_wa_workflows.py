@@ -168,7 +168,9 @@ def test_chatgpt_project_url_and_draft_constraints(sandbox):
     submitted = run("chatgpt.submit_prompt", draft)
     assert submitted.ok and submitted.result["responseVerified"] is False
     d = run("chatgpt.download_visible", v.validate("chatgpt.download_visible", {"projectUrl": url}))
-    assert d.ok and d.result["downloadVerified"] is True
+    assert d.ok and d.result["downloadVerified"] is False
+    assert d.result["candidateDetected"] is True and d.result["verified"] is False
+    assert d.result["simulated"] is True
     with pytest.raises(v.ValidationError):
         v.validate("chatgpt.prompt_draft", {"projectUrl": "https://evil.example", "prompt": "Hi"})
 
