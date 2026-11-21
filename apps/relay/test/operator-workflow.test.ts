@@ -9,7 +9,7 @@ describe('approved Personal WhatsApp + screen + Calendar + ChatGPT workflow cont
   it('all high-impact actions require a second explicit approval',()=>{
     for(const action of ['ui.inspect','ui.activate','calendar.event_draft','calendar.save_reviewed',
       'chatgpt.prompt_draft','chatgpt.submit_prompt','chatgpt.download_visible',
-      'whatsapp.read_selected','whatsapp.draft_reply','whatsapp.send_reviewed','whatsapp.attach_preview'] as const){
+      'whatsapp.read_selected','whatsapp.draft_reply','whatsapp.send_reviewed','whatsapp.attach_preview','whatsapp.send_attachment_reviewed'] as const){
       expect(requiresApproval(action)).toBe(true);
     }
   });
@@ -35,6 +35,24 @@ describe('approved Personal WhatsApp + screen + Calendar + ChatGPT workflow cont
     expect(()=>validatePlanShape({steps:[{action:'whatsapp.send',args:{contact:'Ali',message:'hi'}}]})).toThrow();
     expect(validatePlanShape({steps:[{action:'whatsapp.send_reviewed',args:{contact:'Ali',message:'hi'}}]}).steps).toHaveLength(1);
     expect(validateCommand('whatsapp.send_reviewed',{contact:'Ali',message:''}).ok).toBe(false);
+  });
+  it('irreversible WhatsApp Send and Calendar Save actions must be the FINAL task step',()=>{
+    const msg={contact:'Ali',message:'Kal 3 PM milte hain'};
+    const event={provider:'google',title:'Meeting',profile:'Profile 1',
+      startUtc:future,endUtc:futureEnd,timeZone:'Asia/Kuala_Lumpur',details:'',location:''};
+    const send={action:'whatsapp.send_reviewed',args:msg};
+    const save={action:'calendar.save_reviewed',args:event};
+    const file={action:'whatsapp.send_attachment_reviewed',
+      args:{contact:'Ali',path:'C:\\Users\\Test\\Downloads\\report.pdf'}};
+    expect(validatePlanShape({steps:[{action:'whatsapp.draft_reply',args:msg},send]}).steps).toHaveLength(2);
+    expect(validatePlanShape({steps:[{action:'calendar.event_draft',args:event},save]}).steps).toHaveLength(2);
+    expect(validatePlanShape({steps:[file]}).steps).toHaveLength(1);
+    for(const first of [send,save,file]){
+      expect(()=>validatePlanShape({steps:[first,{action:'device.status',args:{}}]})).toThrow();
+      for(const second of [send,save,file]){
+        expect(()=>validatePlanShape({steps:[first,second]})).toThrow();
+      }
+    }
   });
   it('ChatGPT restricts the exact configured host, not arbitrary sites',()=>{
     const valid={projectUrl:'https://chatgpt.com/g/g-p-demo',prompt:'Make an orange trading banner'};
