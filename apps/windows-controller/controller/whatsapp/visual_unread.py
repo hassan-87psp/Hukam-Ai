@@ -138,6 +138,17 @@ def _safe_foreground(hwnd: int) -> None:
         )
 
 
+def _sidebar_capture_width(window_width: int, dpi: int = 96) -> int:
+    """Conservatively stay inside WhatsApp's chat list, not its message pane.
+
+    Typical Windows WhatsApp's left list spans about 430 logical pixels.
+    Leave a margin before that divider and scale for per-monitor DPI. This
+    can omit rightmost timestamps on unusual narrow layouts; privacy wins.
+    """
+    scale = max(1.0, min(float(dpi) / 96.0, 2.5))
+    return min(round(410 * scale), int(window_width * .57))
+
+
 def _capture_left(hwnd: int):
     """Return screenshot of ONLY native WhatsApp's left chat/sidebar pane."""
     import win32gui
@@ -152,8 +163,14 @@ def _capture_left(hwnd: int):
         raise VisualUnreadUnavailable(
             "WhatsApp Desktop window is too small for safe visual scanning; maximize it."
         )
-    # Never capture right-hand chat bubbles, images, or message bodies.
-    width = min(520, int(window_width * 0.57))
+    # Do not include WhatsApp's right-hand message pane. Window width is not
+    # the left sidebar width: a 1648px window may have a 430px sidebar.
+    try:
+        import ctypes
+        dpi = int(ctypes.windll.user32.GetDpiForWindow(hwnd)) or 96
+    except (AttributeError, OSError, ValueError):
+        dpi = 96
+    width = _sidebar_capture_width(window_width, dpi)
     height = min(920, window_height - 12)
     with mss.mss() as screen:
         raw = screen.grab({"left": left, "top": top,
