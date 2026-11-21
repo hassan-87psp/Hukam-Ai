@@ -19,7 +19,7 @@
     "test:controller": "python -m pytest -q apps/windows-controller/tests",
     "test:all": "npm run build && npm test && npm run test:controller",
     "typecheck": "tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/relay/tsconfig.json --noEmit",
-    "prebuild": "npm install --no-save --no-package-lock --ignore-scripts --no-audit node-edge-tts@1.2.12"
+    "prebuild": "node --version"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

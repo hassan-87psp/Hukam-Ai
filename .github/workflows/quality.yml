@@ -27,10 +27,9 @@ jobs:
       - run: npm ci --include=dev
       - run: npm run typecheck
       - run: npm test
-      # Build already-installed workspaces; the root prebuild installs a
-      # best-effort third-party online TTS preview and can hit npm ETARGET.
-      # Production Render still runs the full install and startup checks.
-      - run: npm run build -w apps/web && npm run build -w apps/relay
+      # Mirror Render's production build path, including the root prebuild.
+      # Optional voice preview must never be able to abort deployment.
+      - run: npm run build
 
   windows-controller-tests:
     name: Windows controller (simulated, no laptop commands)
