@@ -207,6 +207,10 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
     case 'whatsapp.unread_senders': {
       const senders = Array.isArray(r.senders) ? r.senders.filter((x): x is string => typeof x === 'string').slice(0, 12) : [];
       if (!senders.length) return L('WhatsApp ne unread sender names verify nahi kiye.', 'واٹس ایپ کے ناموں کی تصدیق نہیں ہوئی۔', 'No unread sender names could be verified.');
+      if (r.filterSelectedVerified === false)
+        return L(`Sir, visible chat names: ${senders.join(', ')}. WhatsApp ka Unread filter select hona confirm nahi hua, isliye inhe verified unread na samjhein.`,
+          `نظر آنے والے چیٹ نام: ${senders.join('، ')}۔ ان ریڈ فلٹر کی تصدیق نہیں ہوئی۔`,
+          `Visible chat names: ${senders.join(', ')}. Unread filter selection was NOT verified.`);
       return L(`WhatsApp par visible unread chats: ${senders.join(', ')}. Messages ka content nahi parha.`,
         `نظر آنے والی ان ریڈ چیٹس: ${senders.join('، ')}۔ میسج نہیں پڑھے۔`,
         `Visible unread chats: ${senders.join(', ')}. Message contents were not read.`);
