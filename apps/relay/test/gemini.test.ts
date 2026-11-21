@@ -42,13 +42,42 @@ describe('Gemini chat-only integration', () => {
     expect(request.contents).toEqual([
       { role: 'user', parts: [{ text: 'Salam' }] },
       { role: 'model', parts: [{ text: 'Walaikum salam' }] },
-      { role: 'user', parts: [{ text: 'Kal ki planning mein help karo' }] },
+      { role: 'user', parts: [{ text: 'User reply language: Roman Urdu with English words. User message: Kal ki planning mein help karo' }] },
     ]);
     expect(request.tools).toBeUndefined();
     expect(request.contents.some((c: any) => JSON.stringify(c).includes('deviceToken'))).toBe(false);
     expect(response).toEqual({
       kind: 'ai', provider: 'gemini', reply: 'Bilkul, kal ka main goal kya hai?',
     });
+  });
+
+  it('returns natural Roman Urdu for chat and genuine Urdu-script for TTS, not fake laptop limitations',async()=>{
+    let system='';
+    const response=await chatWithGemini('WhatsApp Desktop ko kholo',[],{
+      key:'FAKE_TEST_SECRET',responseLang:'roman',
+      fetcher:(async (_url,init)=>{
+        const req=JSON.parse(String(init?.body));
+        system=req.systemInstruction.parts[0].text;
+        return new Response(JSON.stringify({candidates:[{content:{parts:[{
+          text:JSON.stringify({reply:'Ji, Personal WhatsApp Desktop open karna hai. HUKM controller se command chalaiye.',
+            spokenUrdu:'جی، پرسنل واٹس ایپ ڈیسک ٹاپ کھولنا ہے۔'})
+        }]}}]}),{status:200});
+      }) as typeof fetch,
+    });
+    expect(system).toContain('SEPARATE paired Windows controller');
+    expect(system).not.toContain('do NOT have direct access to the laptop');
+    expect(response.reply).toContain('Personal WhatsApp Desktop');
+    expect(response.spokenUrdu).toContain('واٹس');
+    expect(response.kind).toBe('ai');
+  });
+  it('does not mistake Roman Urdu as Urdu-script voice text',async()=>{
+    const x=await chatWithGemini('Hi',[],{
+      key:'test',fetcher:(async ()=>new Response(JSON.stringify({candidates:[{content:{parts:[{
+        text:JSON.stringify({reply:'Ji boliye',spokenUrdu:'Ji boliye'})
+      }]}}]}),{status:200})) as typeof fetch,
+    });
+    expect(x.reply).toBe('Ji boliye');
+    expect(x.spokenUrdu).toBeUndefined();
   });
 
   it('does not surface provider error details or secrets', async () => {
