@@ -27,6 +27,24 @@ def words():
     ]
 
 
+def test_native_ocr_backend_reads_a_clean_synthetic_unread_label():
+    # Real Windows OCR API capability smoke, not a signed-in WhatsApp test.
+    import sys
+    if sys.platform != "win32":
+        pytest.skip("Windows built-in OCR engine only")
+    from pathlib import Path
+    from PIL import Image, ImageDraw, ImageFont
+    canvas=Image.new("RGB",(610,260),(24,24,24))
+    paint=ImageDraw.Draw(canvas)
+    font_path=Path("C:/Windows/Fonts/arial.ttf")
+    font=ImageFont.truetype(str(font_path),36) if font_path.exists() else ImageFont.load_default()
+    paint.text((35,84),"All",fill="white",font=font)
+    paint.text((180,84),"Unread 8",fill="white",font=font)
+    paint.text((410,84),"Favourites",fill="white",font=font)
+    labels=vu._ocr_words(canvas)
+    assert any("unread" in w.text.casefold() for w in labels)
+
+
 def test_unread_button_between_verified_all_and_favourites():
     label=vu.locate_unread(words(),520,920)
     assert label is not None and "unread" in label.text.lower()
