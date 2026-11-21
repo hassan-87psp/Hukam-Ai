@@ -283,6 +283,67 @@ function MobileQuick() {
 /** Owner-scoped shortcuts for persistent project memory and tasks.
  * The server owns the data; empty while loading is not confused with no projects.
  */
+type RelayReadinessData = {
+  relay:{reachable:boolean;version:string};
+  gemini:{configured:boolean;reachable:boolean|null};
+  controller:{paired:number;connected:number;paused:number};
+  tasks:{awaitingApproval:number;activeRuns:number};
+};
+
+/** A static GitHub Pages page is not proof that the HUKM relay is online.
+ * Readiness is the authenticated relay's own status, not a guessed badge.
+ */
+function RelayReadiness(){
+  const [data,setData]=useState<RelayReadinessData|null>(null);
+  const [state,setState]=useState<'checking'|'ready'|'unavailable'>('checking');
+  useEffect(()=>{
+    let active=true;
+    const refresh=()=>{
+      void get<RelayReadinessData>('/api/runtime/status')
+        .then(status=>{if(active){setData(status);setState('ready');}})
+        .catch(()=>{if(active){setData(null);setState('unavailable');}});
+    };
+    refresh();
+    const interval=window.setInterval(refresh,30_000);
+    return ()=>{active=false;window.clearInterval(interval);};
+  },[]);
+  return <Card className="p-0">
+    <CardHeader icon={<Zap className="h-5 w-5"/>} title="HUKM Service Status"
+      action={<Link to="/devices" className="text-xs text-ice hover:underline">Devices</Link>}/>
+    <div className="space-y-2 px-5 pb-5 pt-2 text-sm">
+      {state==='checking'&&<p className="text-ink2">Checking authenticated HUKM relay…</p>}
+      {state==='unavailable'&&<div className="rounded-xl bg-warn/10 p-3 text-warn">
+        Relay connection could not be verified. A static website alone cannot control the laptop.
+      </div>}
+      {state==='ready'&&data&&<>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-ink2">Backend relay</span>
+          <span className={data.relay.reachable?'text-ok':'text-warn'}>
+            {data.relay.reachable?'Reachable':'Unavailable'} · v{data.relay.version}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-ink2">Windows Controllers</span>
+          <span>{data.controller.connected} online / {data.controller.paired} paired</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-ink2">Gemini setup</span>
+          <span className={data.gemini.configured?'text-ok':'text-warn'}>
+            {data.gemini.configured?'Configured':'Not configured'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-ink2">Pending approvals</span>
+          <span>{data.tasks.awaitingApproval}</span>
+        </div>
+        <p className="border-t border-line/15 pt-2 text-[11px] text-ink2">
+          Backend-reported status only. Gemini reachability and real Windows operation are not verified by this panel.
+        </p>
+      </>}
+    </div>
+  </Card>;
+}
+
 function ProjectWorkspaces(){
   const [projects,setProjects]=useState<{id:string;name:string;description:string;updatedAt:string}[]>([]);
   const [status,setStatus]=useState<'loading'|'ready'|'error'>('loading');
@@ -354,6 +415,7 @@ export default function Dashboard() {
           <CommandStatusCard />
           <RecentCommands limit={4} />
           <ConnectedLaptop />
+          <RelayReadiness />
         </div>
       </PageFrame>
     );
@@ -379,6 +441,7 @@ export default function Dashboard() {
       <ProjectWorkspaces />
       <div className="mt-6 grid grid-cols-3 gap-5">
         <ConnectedLaptop />
+        <RelayReadiness />
         <ThisSession />
         <ScreenPreview />
         <RecentCommands />
