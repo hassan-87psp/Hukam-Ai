@@ -212,14 +212,19 @@ def test_whatsapp_compose_never_sends(sandbox):
     launcher.simulated_calls.clear()
     out = run(make_exec(), "whatsapp.compose", {"contact": "Ali", "message": "Main 10 minute mein call karunga", "phone": "923001234567"})
     assert out.ok and out.result["sent"] is False
-    assert launcher.simulated_calls[-1][0] == "open_uri"
-    assert launcher.simulated_calls[-1][1].startswith("whatsapp://send?phone=923001234567&text=Main%2010")
+    # The old phone URI could open Chrome. Native UIA chat selection and
+    # unsent draft typing are required, with no Web fallback.
+    assert out.result["via"] == "desktop"
+    assert out.result["draftEntered"] is True
+    assert out.result["recipientVerified"] is True
+    assert ("launch_whatsapp_native", "WhatsApp Desktop") in launcher.simulated_calls
+    assert not any(kind == "open_url" for kind, _ in launcher.simulated_calls)
 
 def test_whatsapp_opens_desktop_by_default_or_web_on_request(sandbox):
     launcher.simulated_calls.clear()
     out = run(make_exec(), "whatsapp.open", {})
     assert out.ok and out.result["opened"] == "desktop"
-    assert launcher.simulated_calls[-1] == ("open_uri", "whatsapp:")
+    assert launcher.simulated_calls[-1] == ("launch_whatsapp_native", "WhatsApp Desktop")
     other = run(make_exec(), "whatsapp.open", {"mode": "web"})
     assert other.ok and other.result["opened"] == "web"
     assert launcher.simulated_calls[-1] == ("open_url", "https://web.whatsapp.com/")
