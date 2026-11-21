@@ -106,6 +106,7 @@ function FileList({ items }: { items: any[] }) {
 }
 
 export function CommandResult({ c }: { c: Command }) {
+  const { runAction } = useStore();
   const r = (c.result ?? {}) as Record<string, any>;
   const [zoom, setZoom] = useState(false);
   const [visionBusy, setVisionBusy] = useState(false);
@@ -205,9 +206,21 @@ export function CommandResult({ c }: { c: Command }) {
     case 'browser.profile_open':
       return <p className="text-xs text-ink2">{r.note ?? 'Chrome profile launched, page unverified.'}</p>;
     case 'diagnostics.probe':
-      return <div className="space-y-1 text-xs text-ink2">
-        <p>WhatsApp Desktop: {r.whatsappDesktopWindow ? 'detected' : 'not detected'}</p>
-        <p>UI Automation: {r.uiautomationInstalled ? 'available' : 'unavailable'}</p>
+      return <div className="space-y-2 text-xs text-ink2">
+        <p className={r.whatsappDesktopWindow ? 'font-semibold text-ok' : 'font-semibold text-warn'}>
+          WhatsApp Desktop: {r.whatsappDesktopWindow
+            ? 'window detected' : r.whatsappProcessRunning
+              ? 'process running, but window inaccessible' : 'NOT detected'}
+        </p>
+        <p>WhatsApp windows: {String(r.whatsappWindowCount ?? 'unknown')}
+          · WhatsApp foreground: {r.whatsappForeground ? 'Yes' : 'No'}
+        </p>
+        {r.whatsappDiagnosis && <p className="rounded-lg bg-field/50 p-2 text-ink">{String(r.whatsappDiagnosis)}</p>}
+        {r.whatsappForeground !== true && <button className="btn-ghost px-3 py-2 text-xs"
+          onClick={()=>void runAction('whatsapp.open',{mode:'desktop'},{label:'Open installed WhatsApp Desktop on laptop'})}>
+          Open / Focus WhatsApp Desktop
+        </button>}
+        <p>Windows UI Automation: {r.uiautomationInstalled ? 'available' : 'unavailable'}</p>
         <p>Chrome profiles: {Array.isArray(r.chromeProfileDirectories) ? r.chromeProfileDirectories.join(', ') : 'unknown'}</p>
         <p>Monitors: {String(r.monitorCount ?? 'unknown')} · Foreground: {String(r.activeApp ?? 'none')}</p>
         <p>Private messages and screenshots were not collected.</p>
