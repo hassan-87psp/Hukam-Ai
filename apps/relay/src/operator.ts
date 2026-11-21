@@ -65,6 +65,18 @@ export function validatePlanShape(v:unknown):{summary:string;steps:Step[]} {
   if(!Array.isArray(obj.steps)||obj.steps.length<1||obj.steps.length>5)
     throw new HttpError(400,'BAD_PLAN','A plan must contain 1 to 5 supported actions');
   const steps=obj.steps.map(validateStep);
+  // Final irreversible actions are not safely repeatable. Restrict an AI
+  // plan to at most ONE such action, and only as its final step. After an
+  // uncertain Send/Save, no additional computer commands may follow.
+  const irreversible = new Set<ActionName>([
+    'whatsapp.send_reviewed', 'whatsapp.send_attachment_reviewed',
+    'calendar.save_reviewed',
+  ]);
+  const finalActions = steps.filter(s=>irreversible.has(s.action));
+  if(finalActions.length>1 ||
+      (finalActions.length===1 && !irreversible.has(steps[steps.length-1].action)))
+    throw new HttpError(422,'UNSAFE_PLAN',
+      'WhatsApp Send or Calendar Save must be the only final high-impact action in a plan.');
   return {summary:cleanSummary(obj.summary)||steps.map(x=>ACTIONS[x.action].label).join(', '),steps};
 }
 function restoreJson(text:string):unknown{
