@@ -25,6 +25,13 @@ const SECTIONS = [
   ['ai', 'AI engine'], ['privacy', 'Privacy & retention'],
 ];
 
+type AiDiagnostic = {
+  configured:boolean;model:string;checkedAt:string;
+  chat:{ok:boolean;latencyMs:number;errorCode?:string}|null;
+  planner:{ok:boolean;latencyMs:number;errorCode?:string}|null;
+  noLaptopActions:boolean;accuracyVerified:false;
+};
+
 const OPTIONAL_APPROVAL: ActionName[] = ['screen.capture', 'file.open', 'app.open', 'web.open', 'folder.open', 'youtube.play', 'whatsapp.open', 'whatsapp.check'];
 
 export default function Settings() {
@@ -34,6 +41,9 @@ export default function Settings() {
   const [shots, setShots] = useState<any[]>([]);
   const [pw, setPw] = useState({ current: '', next: '' });
   const [system, setSystem] = useState<any>(null);
+  const [aiDiagnostic,setAiDiagnostic]=useState<AiDiagnostic|null>(null);
+  const [aiTestBusy,setAiTestBusy]=useState(false);
+  const [aiTestError,setAiTestError]=useState('');
   const loadSessions = () => get('/api/auth/sessions').then(setSessions).catch(() => {});
   const loadShots = () => get('/api/screenshots').then(setShots).catch(() => {});
   useEffect(() => {
@@ -167,16 +177,44 @@ export default function Settings() {
             </form>
           </Section>
 
-          <Section id="ai" icon={<Brain className="h-5 w-5" />} title="AI engine" desc="Version 1 needs no paid AI service. Commands are understood by a local rule-based engine.">
-            <ul className="space-y-1.5">
+          <Section id="ai" icon={<Brain className="h-5 w-5" />} title="AI engine & connection test"
+            desc="Gemini powers HUKM chat and proposed task plans. Laptop execution requires independent owner approval.">
+            <div className="space-y-2">
               {(system?.providers ?? []).map((p: any) => (
-                <li key={p.id} className="flex items-center justify-between rounded-xl bg-field/40 px-3 py-2 text-sm">
+                <div key={p.id} className="flex items-center justify-between gap-2 rounded-xl bg-field/40 px-3 py-2 text-sm">
                   <span>{p.label}</span>
-                  {p.status === 'active' ? <Badge tone="ok" dot>Active</Badge> : <Badge tone="muted">Not connected</Badge>}
-                </li>
+                  <Badge tone={p.status==='active'?'ok':'muted'}>{p.status==='active'?'Configured':'Not connected'}</Badge>
+                </div>
               ))}
-            </ul>
-            <p className="mt-2 text-xs text-ink2">A ChatGPT Plus subscription is not an API for third-party apps. See docs/integration-status.md for what has (and hasn’t) been verified.</p>
+            </div>
+            <div className="mt-3 rounded-xl bg-field/30 p-3">
+              <p className="text-sm font-semibold">Live Gemini connection check</p>
+              <p className="mt-1 text-xs text-ink2">Test uses only two fixed harmless prompts: one chat and one task plan. It does not send personal chats or execute any laptop commands. May consume a small amount of Gemini API quota.</p>
+              <button type="button" className="btn-primary mt-3" disabled={aiTestBusy} onClick={async()=>{
+                setAiTestBusy(true);setAiTestError('');setAiDiagnostic(null);
+                try {
+                  const result=await post<AiDiagnostic>('/api/ai/diagnostics',{});
+                  setAiDiagnostic(result);
+                } catch(e){
+                  setAiTestError(e instanceof Error?e.message:'Could not test Gemini');
+                } finally {setAiTestBusy(false);}
+              }}>
+                <Brain className="h-4 w-4"/> {aiTestBusy?'Testing Gemini…':'Test Gemini Connection'}
+              </button>
+              {aiTestError&&<p className="mt-2 text-xs text-warn" role="alert">{aiTestError}</p>}
+              {aiDiagnostic&&<div className="mt-3 space-y-2 text-xs" aria-live="polite">
+                <p>Model: <span className="font-semibold">{aiDiagnostic.model}</span></p>
+                {([['Chat',aiDiagnostic.chat],['Task planning',aiDiagnostic.planner]] as const).map(([name,result])=>
+                  <div key={name} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-field/60 px-3 py-2">
+                    <span>{name}</span>
+                    <span className={result?.ok?'text-ok':'text-warn'}>
+                      {!aiDiagnostic.configured?'API key not configured':result?.ok?'Test response received · '+result.latencyMs+'ms':result?.errorCode??'Not tested'}
+                    </span>
+                  </div>)}
+                <p className="text-ink2">Checked {new Date(aiDiagnostic.checkedAt).toLocaleString()}. This checks Google API protocol availability at that moment only—not AI answer accuracy, WhatsApp, files or Windows control.</p>
+              </div>}
+            </div>
+            <p className="mt-3 text-xs text-ink2">The Gemini key stays on the backend server. A ChatGPT Plus subscription is separate and cannot substitute for a Gemini API key. Real Windows and external account tests are still required.</p>
           </Section>
 
           <Section id="privacy" icon={<ShieldCheck className="h-5 w-5" />} title="Privacy & data retention">
