@@ -77,7 +77,7 @@ export function beginDialogue(topic: string, input: string, contacts: readonly W
     result.intent = /\b(play|chalao|lagao|bajao)\b/.test(normalize(input)) ? 'youtube.play' : 'youtube.search';
   if (topic === 'message-body') {
     const wanted = recipientFromInitial(input);
-    const saved = wanted && findSavedContact(wanted, contacts);
+    const saved = wanted ? findSavedContact(wanted, contacts) : null;
     const contact = saved?.name ?? (wanted ? plausibleContactName(wanted) : null);
     if (!contact) return {
       state: null,
