@@ -16,7 +16,7 @@ const CAP_LABEL: Record<Capability, { label: string; desc: string }> = {
   youtube: { label: 'YouTube', desc: 'Search and open videos' },
   screen: { label: 'Screen capture', desc: 'On-demand screenshots (approval by default)' },
   input: { label: 'Window focus', desc: 'Bring a window to the front' },
-  whatsapp: { label: 'WhatsApp', desc: 'Open Desktop/Web, unread count, drafts, approved offline visible-chat reading (v1.1)' },
+  whatsapp: { label: 'WhatsApp Desktop', desc: 'Installed Personal WhatsApp Desktop; approved chat selection, visible reading, drafts and separately reviewed Send. Real-device verification pending.' },
 };
 
 function PairModal({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -62,7 +62,7 @@ function PairModal({ open, onClose }: { open: boolean; onClose: () => void }) {
       ) : !code ? (
         <div className="space-y-4">
           <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink2">
-            <li>On the laptop, download and start <b className="text-ink">hukm-controller.exe</b> (see the setup guide).</li>
+            <li>Install HUKM Controller on your laptop once. The one-file Setup EXE is being prepared and tested; a direct website download is not released yet.</li>
             <li>Create a one-time code here. It expires in 10 minutes and works once.</li>
             <li>Enter this site’s address and the code in the controller window.</li>
           </ol>
@@ -115,7 +115,7 @@ function CopyLine({ text, mono }: { text: string; mono?: boolean }) {
   );
 }
 
-function DeviceCard({ d }: { d: Device }) {
+function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null }) {
   const { toast, setDevices, devices } = useStore();
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(d.name);
@@ -163,12 +163,16 @@ function DeviceCard({ d }: { d: Device }) {
         <dl className="grid content-start grid-cols-[130px_1fr] gap-x-3 gap-y-2.5 text-sm">
           <dt className="text-ink2">Operating system</dt><dd>{d.os ? `${d.os} ${d.osVersion ?? ''}` : '—'}</dd>
           <dt className="text-ink2">Hostname</dt><dd>{d.hostname ?? '—'}</dd>
-          <dt className="text-ink2">Controller</dt><dd>{d.controllerVersion ? `v${d.controllerVersion}` : '—'}{d.controllerVersion && d.controllerVersion !== '1.4.1' &&
-  <p className="mt-1 text-xs text-warn">
-    Outdated Controller detected. This device is reporting v{d.controllerVersion}, not v1.6.0.
-    If you have installed v1.4.0, close ALL older controller windows and launch START_HUKM.cmd
-    from the installed Controller folder. Do not delete the pairing config.
-  </p>}</dd>
+          <dt className="text-ink2">Controller</dt><dd>{d.controllerVersion ? `v${d.controllerVersion}` : '—'}
+            {d.controllerVersion && latestVersion && d.controllerVersion!==latestVersion&&
+              <p className="mt-1 text-xs text-warn">
+                Controller version v{d.controllerVersion} differs from backend v{latestVersion}.
+                Do not delete existing pairing. One-time installer updates are being prepared;
+                automatic website updates are not yet active.
+              </p>}
+            {d.controllerVersion && latestVersion && d.controllerVersion===latestVersion&&
+              <p className="mt-1 text-xs text-ok">Controller and backend version match. Real laptop operation still needs testing.</p>}
+          </dd>
           <dt className="text-ink2">Last seen</dt><dd>{d.online ? 'Now' : timeAgo(d.lastSeen)}</dd>
           <dt className="text-ink2">Paired</dt><dd>{dateTime(d.createdAt)}</dd>
           <dt className="text-ink2">Last command</dt><dd>{d.lastCommand ? `${ACTION_LABEL[d.lastCommand.action]} · ${STATUS_LABEL[d.lastCommand.status]} · ${timeAgo(d.lastCommand.at)}` : '—'}</dd>
@@ -214,11 +218,19 @@ function DeviceCard({ d }: { d: Device }) {
 export default function Devices() {
   const { devices } = useStore();
   const [pair, setPair] = useState(false);
+  const [latestVersion,setLatestVersion]=useState<string|null>(null);
+  useEffect(()=>{
+    let active=true;
+    void get<{version:string}>('/api/system').then(r=>{
+      if(active&&typeof r.version==='string')setLatestVersion(r.version);
+    }).catch(()=>{});
+    return ()=>{active=false;};
+  },[]);
   return (
     <PageFrame>
       <PageHeader title="Devices" subtitle="Laptops paired with your account. Remote access is always visible and revocable." actions={<button className="btn-primary" onClick={() => setPair(true)}><Plus className="h-4 w-4" /> Pair new device</button>} />
       <div className="space-y-5">
-        {devices.map((d) => <DeviceCard key={d.id} d={d} />)}
+        {devices.map((d) => <DeviceCard key={d.id} d={d} latestVersion={latestVersion} />)}
         {!devices.length && (
           <Card><EmptyState icon={<Laptop className="h-5 w-5" />} title="No laptop paired yet" body="Install the HUKM controller on your Windows laptop and pair it with a one-time code." action={<button className="btn-primary" onClick={() => setPair(true)}><Plus className="h-4 w-4" /> Pair new device</button>} /></Card>
         )}

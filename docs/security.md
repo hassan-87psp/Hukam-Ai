@@ -2,7 +2,7 @@
 
 HUKM can act on a personal computer, so security is part of the product, not an add-on.
 
-## Current v1.6.9 safety boundaries
+## Current v1.7.0 safety boundaries
 
 **Windows Stop, pause and disconnect are best-effort safeguards, not a promise to undo a completed click.** The controller registers a cancellation signal before asynchronous command dispatch, remembers early cancels, invalidates work from disconnected WebSocket sessions and serializes OS input. If Stop arrives after an irreversible click, the result is `INTERRUPTED_UNVERIFIED`; HUKM does not claim success or automatically retry. Verify the target app yourself before sending another command.
 

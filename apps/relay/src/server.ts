@@ -8,6 +8,7 @@ import { loadConfig, type RelayConfig } from './config';
 import { restoreCloudSnapshot, startCloudBackup } from './backup';
 import { femaleUrduAudio, reportFemaleVoiceError } from './female-tts';
 import { chatWithGemini, cleanGeminiInput, geminiConfigured, GeminiError } from './gemini';
+import { diagnoseGemini } from './ai-diagnostics';
 import { HttpError, Relay } from './core';
 import { Projects } from './projects';
 import { Operator } from './operator';
@@ -15,7 +16,7 @@ import { analyzeScreenshot } from './vision';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
-export const VERSION = '1.6.9';
+export const VERSION = '1.7.0';
 const COOKIE = 'hukm_session';
 const MAX_BODY = 64 * 1024;
 
@@ -112,6 +113,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   const ttsLimit = new RateLimiter(10, 60_000);
   const aiLimit = new RateLimiter(12, 60_000);
   const aiDailyLimit = new RateLimiter(120, 24 * 60 * 60_000);
+  const aiDiagnosticLimit = new RateLimiter(2, 5 * 60_000);
+  const aiDiagnosticDailyLimit = new RateLimiter(16, 24 * 60 * 60_000);
   const apiLimit = new RateLimiter(600, 60_000);
 
   const hasUser = () => !!one(db, 'SELECT 1 AS x FROM users LIMIT 1');
@@ -184,6 +187,16 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   // Keys never leave the server. The model is chat-only; it cannot execute actions.
   // History comes from owner-scoped server storage, NOT untrusted browser-supplied turns.
   add('GET', '/api/ai/status', true, () => ({ configured: geminiConfigured(), provider: 'gemini' }));
+  // Explicit, owner-clicked connectivity test. Uses only fixed harmless
+  // prompts, never sends chats/Projects/screenshots and never executes plans.
+  // Each test invokes Google twice and may consume small Gemini quota.
+  add('POST', '/api/ai/diagnostics', true, async (c) => {
+    const key='ai-diagnostic:'+c.user!.id;
+    if (!aiDiagnosticLimit.take(key) || !aiDiagnosticDailyLimit.take(key))
+      throw new HttpError(429,'AI_DIAGNOSTIC_LIMIT',
+        'Too many Gemini diagnostic requests. Try again later.');
+    return diagnoseGemini();
+  });
   const chatProject = (userId: string, value: unknown) => {
     if (value === undefined || value === null || value === '') return null;
     if (typeof value !== 'string' || value.length > 120)

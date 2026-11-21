@@ -112,6 +112,16 @@ describe('authentication', () => {
   });
 });
 
+describe('Gemini diagnostics require owner login and explicit CSRF-protected click',()=>{
+  it('does not allow anonymous diagnostics or cross-site diagnostic requests',async()=>{
+    expect((await api('POST','/api/ai/diagnostics',{},
+      {cookie:null})).status).toBe(401);
+    expect((await api('POST','/api/ai/diagnostics',{},
+      {noClientHeader:true})).status).toBe(403);
+    expect((await api('GET','/api/ai/diagnostics')).status).toBe(404);
+  });
+});
+
 describe('Projects, instructions, memory and private conversations', () => {
   it('requires authentication and CSRF header', async () => {
     expect((await api('GET','/api/projects',undefined,{cookie:null})).status).toBe(401);
