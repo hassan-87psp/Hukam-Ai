@@ -72,6 +72,7 @@ interface Store {
   submitting: boolean;
   pendingWhatsAppChoice: boolean;
   pendingDialogueTopic: string | null;
+  restoreOperatorPending(pending:boolean): void;
   activeDevice: Device | null;
   // actions
   setup(email: string, name: string, password: string, setupCode: string): Promise<void>;
@@ -423,10 +424,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (!hasDevice) { agent(STATUS_MESSAGES.noDevice,'warn'); return; }
           try {
             const projectId = new URLSearchParams(window.location.search).get('projectId');
-            const planned = await post<OperatorPlan | {kind:'clarify'; question:string; questionUrdu?:string; topic:string}>('/api/operator/plan', {
+            const planned = await post<OperatorPlan | {kind:'clarify'; question:string; questionUrdu?:string; topic:string} |
+              {kind:'cancelled';message:string}>('/api/operator/plan', {
               text:t, projectId:projectId||undefined,
             });
-            if('kind' in planned && planned.kind==='clarify') {
+            if('kind' in planned && planned.kind==='cancelled'){
+              setPendingDialogueTopic(null);
+              agent({roman:planned.message,ur:'ٹھیک ہے، کام منسوخ ہو گیا۔ کوئی کارروائی نہیں ہوئی۔',
+                en:'Okay, task cancelled. No laptop action was taken.'},'info',false);
+            } else if('kind' in planned && planned.kind==='clarify') {
               setPendingDialogueTopic('operator-followup');
               agent({roman:planned.question,ur:planned.questionUrdu||planned.question,
                 en:planned.question},'info',source==='voice');
@@ -570,6 +576,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     auth, user, settings, devices, commands, commandMap, approvals, automations, chat, toasts, realtime, brain, listening, speaking,
     audioLevel, submitting, pendingWhatsAppChoice, pendingDialogueTopic, activeDevice,
     setup, login, logout, refresh, runText, runAction, approve, reject, cancel, saveSettings, setDevices, setAutomations, toast,
+    restoreOperatorPending: (pending:boolean)=>setPendingDialogueTopic((topic)=>pending?'operator-followup':topic==='operator-followup'?null:topic),
     dismissToast, clearChat: () => { setChat([]); setPendingWhatsAppChoice(false); setPendingDialogueTopic(null); }, setListening, setAudioLevel, say, loadMoreCommands, setUser,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
