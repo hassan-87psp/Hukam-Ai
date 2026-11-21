@@ -155,6 +155,8 @@ def validate(action: str, args: dict) -> dict:
         return {"query": _str(a.get("query"), "query", 200)}
     if action == "desktop.control":
         kind = a.get("kind")
+        if not isinstance(kind, str):
+            raise ValidationError("desktop action kind must be text")
         mouse_kinds = {"click", "double_click", "right_click", "drag"}
         if kind in mouse_kinds:
             def coord(name):
@@ -167,7 +169,10 @@ def validate(action: str, args: dict) -> dict:
                 out.update({"toX": coord("toX"), "toY": coord("toY")})
             return out
         if kind == "type":
-            return {"kind": kind, "text": _str(a.get("text"), "text", 1000)}
+            text = _str(a.get("text"), "text", 1000)
+            if not text:
+                raise ValidationError("text must not be blank")
+            return {"kind": kind, "text": text}
         if kind == "scroll":
             steps = a.get("steps")
             if type(steps) is not int or steps == 0 or abs(steps) > 5:
