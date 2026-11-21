@@ -46,21 +46,26 @@ export default function Chat() {
   const end = useRef<HTMLDivElement>(null);
   const [searchParams,setSearchParams] = useSearchParams();
   const [projects,setProjects] = useState<{id:string;name:string}[]>([]);
+  const [pendingQuestion,setPendingQuestion] = useState<string|null>(null);
   const activeProject = searchParams.get('projectId') ?? '';
   const visibleChat = chat.filter(m => (m.projectId ?? null) === (activeProject || null));
   useEffect(()=>{void get<{id:string;name:string}[]>('/api/projects').then(setProjects).catch(()=>{});},[]);
   useEffect(()=>{
     let active=true;
+    setPendingQuestion(null);
     const query=activeProject?'?projectId='+encodeURIComponent(activeProject):'';
     // Operator and deterministic clarification are both recovered after refresh.
     const pending=get<{question:string;topic:string}|null>('/api/operator/pending'+query);
     const basic=activeProject?Promise.resolve(null):
       get<{topic:string}|null>('/api/dialogue/pending');
     void Promise.all([pending,basic]).then(([operator,dialogue])=>{
-      if(active)restoreOperatorPending(operator?'operator-followup':dialogue?.topic??null);
+      if(active){
+        restoreOperatorPending(operator?'operator-followup':dialogue?.topic??null);
+        setPendingQuestion(operator?.question??null);
+      }
     }).catch(()=>{});
     return ()=>{active=false;};
-  },[activeProject,restoreOperatorPending]);
+  },[activeProject,restoreOperatorPending,visibleChat.length]);
   useEffect(()=>{
     let active=true;
     const query=activeProject?'?projectId='+encodeURIComponent(activeProject):'';
@@ -109,7 +114,7 @@ export default function Chat() {
       </div>
       {pendingDialogueTopic && (
         <div className="mx-1 mb-3 rounded-2xl border border-ice/25 bg-blue/10 p-3">
-          <p className="mb-2 text-sm font-medium">HUKM aapke jawab ka intezar kar raha hai. Type karein ya bolein.</p>
+          <p className="mb-2 text-sm font-medium">{pendingQuestion??'HUKM aapke jawab ka intezar kar raha hai. Type karein ya bolein.'}</p>
           <div className="flex flex-wrap gap-2">
             {dialogueChoices(pendingDialogueTopic).map((choice) => (
               <button key={choice.value} className="btn-primary" onClick={() => void runText(choice.value)}>
