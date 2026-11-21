@@ -331,7 +331,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "Desktop input cancelled before execution")
         try:
-            return desktop_input.control(a)
+            return desktop_input.control(a, cancel=cancel)
         except desktop_input.DesktopInputError as exc:
             raise ActionError("DESKTOP_INPUT_REFUSED", str(exc)) from exc
         except RuntimeError as exc:
