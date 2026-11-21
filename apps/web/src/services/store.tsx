@@ -572,11 +572,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return 'idle';
   }, [listening, commands, submitting, flash, devices]);
 
+  const restoreOperatorPending = useCallback((pending:boolean)=>{
+    setPendingDialogueTopic((topic)=>pending?'operator-followup':topic==='operator-followup'?null:topic);
+  },[]);
+
   const value: Store = {
     auth, user, settings, devices, commands, commandMap, approvals, automations, chat, toasts, realtime, brain, listening, speaking,
     audioLevel, submitting, pendingWhatsAppChoice, pendingDialogueTopic, activeDevice,
     setup, login, logout, refresh, runText, runAction, approve, reject, cancel, saveSettings, setDevices, setAutomations, toast,
-    restoreOperatorPending: (pending:boolean)=>setPendingDialogueTopic((topic)=>pending?'operator-followup':topic==='operator-followup'?null:topic),
+    restoreOperatorPending,
     dismissToast, clearChat: () => { setChat([]); setPendingWhatsAppChoice(false); setPendingDialogueTopic(null); }, setListening, setAudioLevel, say, loadMoreCommands, setUser,
   };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
