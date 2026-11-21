@@ -14,6 +14,7 @@ import re
 
 from ..config import IS_WINDOWS
 from ..system import launcher, windows
+from . import locator
 
 log = logging.getLogger("hukm.whatsapp.reader")
 
@@ -102,7 +103,7 @@ def read_visible_aloud() -> dict:
         raise ReadError("Reading visible WhatsApp chat needs a Windows laptop")
 
     active = windows.active_window()
-    if not active or "whatsapp" not in active.title.casefold() or active.process.casefold() not in PROCESSES:
+    if not active or not locator.matches_desktop_window(active):
         raise ReadError("Open WhatsApp Desktop, select a chat, then click Read visible chat")
 
     try:
