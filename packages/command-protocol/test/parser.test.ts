@@ -33,7 +33,12 @@ describe('approved browser control', () => {
     expect(c('type: Sir Sajid, kal meeting 9 PM')).toMatchObject({ action: 'browser.control', args: { kind: 'type', text: 'Sir Sajid, kal meeting 9 PM' } });
   });
   it('parses scroll and browser key', () => {
-    expect(c('scroll down 2').args).toEqual({ kind: 'scroll', steps: -2 });
+    expect(c('scroll down 2')).toMatchObject({action:'ui.scroll',args:{steps:-2}});
+    expect(c('scroll karo')).toMatchObject({action:'ui.scroll',args:{steps:-2}});
+    expect(c('browser scroll down 2').args).toEqual({kind:'scroll',steps:-2});
+    expect(requiresApproval('ui.scroll')).toBe(true);
+    expect(validateCommand('ui.scroll',{steps:0}).ok).toBe(false);
+    expect(validateCommand('ui.scroll',{steps:6}).ok).toBe(false);
     expect(c('press ctrl+l').args).toEqual({ kind: 'key', key: 'ctrl+l' });
   });
   it('requires approval and refuses unsafe input', () => {
