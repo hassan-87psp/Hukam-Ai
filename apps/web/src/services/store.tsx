@@ -84,7 +84,7 @@ interface Store {
   logout(): Promise<void>;
   refresh(): Promise<void>;
   runText(text: string, source?: CommandSource): Promise<void>;
-  runAction(action: ActionName, args: Record<string, unknown>, opts?: { source?: CommandSource; label?: string; silent?: boolean }): Promise<Command | null>;
+  runAction(action: ActionName, args: Record<string, unknown>, opts?: { source?: CommandSource; label?: string; silent?: boolean; deviceId?: string }): Promise<Command | null>;
   approve(id: string): Promise<void>;
   reject(id: string): Promise<void>;
   cancel(id: string): Promise<void>;
@@ -494,7 +494,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
           return;
         }
-        const out = await post('/api/commands', { text: t, source, clientRequestId: uid(), deviceId: activeDevice?.id });
+        const out = await post('/api/commands', { text: t, source, clientRequestId: uid(), deviceId: opts.deviceId ?? activeDevice?.id });
         // A one-word follow-up ("Desktop wala") is resolved on the relay,
         // so it has no optimistic local parser acknowledgement.
         if (out.kind === 'command' && (local.kind !== 'command' || inDialogue))
@@ -532,7 +532,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const runAction = useCallback(
-    async (action: ActionName, args: Record<string, unknown>, opts: { source?: CommandSource; label?: string; silent?: boolean } = {}) => {
+    async (action: ActionName, args: Record<string, unknown>, opts: { source?: CommandSource; label?: string; silent?: boolean; deviceId?: string } = {}) => {
       if (!opts.silent) {
         if (opts.label) addChat({ id: uid(), kind: 'user', text: opts.label, source: opts.source ?? 'ui', at: new Date().toISOString() });
         agent(ackMessage(action, args), 'info');
