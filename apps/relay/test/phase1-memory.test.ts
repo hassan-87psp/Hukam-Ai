@@ -124,7 +124,7 @@ describe('Phase 1: recoverable conversations, project isolation and pending ques
     ]);
     expect(plannerRequests.length).toBe(before);
     const health=await api('GET','/api/health');
-    expect(health.data.version).toBe('1.8.2');
+    expect(health.data.version).toBe('1.8.3');
   });
 
   it('creates a reviewed owner-only desktop input plan without asking Gemini to invent coordinates',async()=>{
