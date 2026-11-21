@@ -167,10 +167,16 @@ export class Operator {
     // end-to-end creative generation still require real verified integrations.
     const project=projectId==null?null:this.projects.get(userId,String(projectId));
     const lower=request.toLowerCase();
-    const useProjectBrowser=/(?:calendar|calender|meeting|chatgpt|banner|image generation|pic bana|design bana)/.test(lower);
+    const useProjectBrowser=(
+      /(?:calendar|calender|meeting)/.test(lower) &&
+      /(?:add|create|schedule|banado|banao|set|invite|reschedule|draft)/.test(lower)
+    ) || (
+      /(?:chatgpt|banner|image generation|pic bana|design bana)/.test(lower) &&
+      /(?:bana|create|generate|download|save|draft|submit)/.test(lower)
+    );
     if(useProjectBrowser && (!project || !/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile)))
       throw new HttpError(422,'PROJECT_PROFILE_REQUIRED','Select a HUKM Project with a configured Chrome profile (Default or Profile N).');
-    if(/(?:chatgpt|banner|image generation|pic bana|design bana)/.test(lower) &&
+    if(useProjectBrowser && /(?:chatgpt|banner|image generation|pic bana|design bana)/.test(lower) &&
        (!project?.chatgptProjectUrl || !project.chatgptProjectUrl.startsWith('https://chatgpt.com/')))
       throw new HttpError(422,'PROJECT_URL_REQUIRED','This HUKM Project needs an exact ChatGPT Project URL before using ChatGPT.');
     const notes=project?this.projects.notes(userId,project.id).slice(0,8):[];
