@@ -56,7 +56,8 @@ export async function restoreCloudSnapshot(dataDir: string): Promise<boolean> {
     try {
       const checks = candidate.prepare('PRAGMA integrity_check').all();
       const schema = candidate.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get();
-      if (checks.length !== 1 || checks[0].integrity_check !== 'ok' || !schema)
+      const violations = candidate.prepare('PRAGMA foreign_key_check').all();
+      if (checks.length !== 1 || checks[0].integrity_check !== 'ok' || !schema || violations.length !== 0)
         throw new Error('Cloud SQLite snapshot integrity or schema check failed');
     } finally { candidate.close(); }
     const local = join(dataDir,'hukm.db');
@@ -83,6 +84,24 @@ export function startCloudBackup(db: DB, dataDir: string) {
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pending: Promise<void> | null = null;
+  let failures=0;
+  let lastUploadAt:string|null=null;
+  // Bounded, single retry timer. No background tight loop or repeated log of
+  // provider exceptions that may contain sensitive configuration.
+  function schedule(delay:number){
+    if(closed||!auth||timer)return;
+    timer=setTimeout(()=>{
+      timer=null;
+      void flush().catch(()=>{});
+    },delay);
+    timer.unref?.();
+  }
+  function failed(){
+    dirty=true;
+    failures=Math.min(failures+1,8);
+    log('error','HUKM private backup failed; local writes retained for retry',{failures});
+    schedule(Math.min(300_000,5000*2**(failures-1)));
+  }
 
   async function flush(): Promise<void> {
     if (!auth) return;
@@ -103,12 +122,15 @@ export function startCloudBackup(db: DB, dataDir: string) {
       if (!checkpoint || checkpoint.busy !== 0 || checkpoint.log !== checkpoint.checkpointed) {
         throw new Error('SQLite snapshot checkpoint incomplete');
       }
-      bytes = readFileSync(join(dataDir, 'hukm.db'));
+      const snapshotPath=join(dataDir,'hukm.db');
+      const length=statSync(snapshotPath).size;
+      if(length<100||length>MAX_BYTES)throw new Error('SQLite snapshot exceeds configured size limit');
+      bytes = readFileSync(snapshotPath);
       if (bytes.length < 100 || bytes.length > MAX_BYTES || !bytes.subarray(0,16).equals(HEADER)) {
         throw new Error('SQLite snapshot validation failed');
       }
     } catch (e) {
-      dirty = true;
+      failed();
       throw e;
     }
     pending = (async () => {
@@ -124,10 +146,12 @@ export function startCloudBackup(db: DB, dataDir: string) {
         signal: AbortSignal.timeout(TIMEOUT),
       });
       if (!response.ok) throw new Error('Cloud backup save failed: HTTP ' + response.status);
+      failures=0;
+      lastUploadAt=new Date().toISOString();
       log('info', 'HUKM SQLite snapshot saved to Milvoy private storage', { bytes: bytes.length });
     })();
     try { await pending; }
-    catch (e) { dirty = true; throw e; }
+    catch (e) { failed(); throw e; }
     finally { pending = null; }
     if (dirty) await flush();
   }
@@ -135,23 +159,15 @@ export function startCloudBackup(db: DB, dataDir: string) {
   function markDirty() {
     if (!auth || closed) return;
     dirty = true;
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(() => {
-      timer = null;
-      void flush().catch((e) => {
-        log('error', 'HUKM backup failed; retry scheduled', { error: String(e) });
-        if (!closed) {
-          timer = setTimeout(() => void flush().catch((err) => log('error', 'HUKM backup retry failed', { error: String(err) })), 5000);
-          timer.unref?.();
-        }
-      });
-    }, 500);
-    timer.unref?.();
+    // Do not postpone backup indefinitely under continuous telemetry.
+    schedule(failures ? Math.min(300_000,5000*2**(failures-1)) : 500);
   }
 
   async function close() {
     if (timer) { clearTimeout(timer); timer = null; }
-    try { await flush(); } finally { closed = true; }
+    closed=true;
+    await flush();
   }
-  return { enabled: !!auth, flush, markDirty, close };
+  return { enabled: !!auth, flush, markDirty, close,
+    status:()=>({enabled:!!auth,dirty,pending:pending!==null,lastUploadAt,consecutiveFailures:failures}) };
 }

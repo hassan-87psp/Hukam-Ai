@@ -44,7 +44,9 @@ class ControllerClient:
         self.cancelled_early: dict[str, float] = {}
         self.connection_epoch = 0
         self.active_commands: set[asyncio.Task] = set()
-        self.outbox: dict[str, dict] = {}  # results not yet acknowledged by the relay
+        self.outbox: dict[str, dict] = {}  # bounded RAM-only original results
+        self.outbox_sizes: dict[str, int] = {}
+        self.outbox_bytes = 0
         self.ws = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self.stop_event = asyncio.Event()
@@ -122,7 +124,7 @@ class ControllerClient:
                     self.cancelled_early.pop(oldest, None)
             log.info("cancel requested for %s", cid[:16])
         elif t == "result_ack":
-            self.outbox.pop(msg.get("commandId", ""), None)
+            self._drop_result(str(msg.get("commandId", "")))
         elif t == "pause":
             self.paused = True
             self.cancel_active("emergency pause")
@@ -150,7 +152,7 @@ class ControllerClient:
         cid = str(cmd.get("id", ""))
         action = str(cmd.get("action", ""))
         epoch = self.connection_epoch if epoch is None else epoch
-        if not cid or epoch != self.connection_epoch or self.stop_event.is_set():
+        if not cid or len(cid)>120 or epoch != self.connection_epoch or self.stop_event.is_set():
             return
         if not await self.send({"type": "ack", "commandId": cid}):
             # No acknowledged delivery means no local side effect is safe.
@@ -166,7 +168,7 @@ class ControllerClient:
             }).to_message(cid))
             return
         if not claimed:
-            cached = self.dedupe.get(cid)
+            cached = self.outbox.get(cid) or self.dedupe.get(cid)
             log.info("duplicate delivery of %s ignored", cid)
             if cached:
                 await self.send(cached)
@@ -245,6 +247,23 @@ class ControllerClient:
         finally:
             self.cancels.pop(cid, None)
 
+    def _drop_result(self, cid: str) -> None:
+        self.outbox.pop(cid, None)
+        self.outbox_bytes -= self.outbox_sizes.pop(cid, 0)
+
+    def _remember_result(self, cid: str, msg: dict) -> None:
+        # Wire-size budget, not a measured process RAM ceiling. Retain a bounded
+        # recent delivery cache; old claims remain in the tiny recovery journal.
+        size = len(json.dumps(msg).encode("utf-8"))
+        self._drop_result(cid)
+        if size > 6 * 1024 * 1024:
+            return
+        while self.outbox and (len(self.outbox) >= 16 or self.outbox_bytes + size > 6 * 1024 * 1024):
+            self._drop_result(next(iter(self.outbox)))
+        self.outbox[cid] = msg
+        self.outbox_sizes[cid] = size
+        self.outbox_bytes += size
+
     async def finish(self, cid: str, out: Outcome) -> None:
         msg = out.to_message(cid)
         try:
@@ -252,7 +271,7 @@ class ControllerClient:
         except OSError:
             # The already durable start marker remains. Do not repeat the action.
             log.warning("Could not persist result; retaining in-memory delivery only")
-        self.outbox[cid] = msg
+        self._remember_result(cid, msg)
         await self.send(msg)
 
     # ---- loops ------------------------------------------------------

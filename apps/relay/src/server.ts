@@ -186,6 +186,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
         paused: devices.filter(d => d.paused).length,
       },
       tasks: { awaitingApproval: relay.listApprovals(c.user!.id).length, activeRuns },
+      backup: backup.status(),
     };
   });
   // Keys never leave the server. The model is chat-only; it cannot execute actions.
@@ -672,8 +673,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
       }
       await new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections?.();
-      await backup.close();
-      db.close();
+      try { await backup.close(); }
+      finally { db.close(); }
     },
   };
 }

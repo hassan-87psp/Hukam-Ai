@@ -9,6 +9,17 @@ from collections import OrderedDict
 from pathlib import Path
 
 
+MAX_JOURNAL_BYTES = 32 * 1024 * 1024
+
+
+def _result_marker(cid: str) -> dict:
+    # Persist only deduplication evidence, not private UI/OCR/messages/files.
+    # The original result may be in relay history or the bounded RAM outbox.
+    return {"type": "result", "commandId": cid, "ok": False,
+            "error": {"code": "RESULT_NOT_RETAINED",
+                      "message": "Command already executed; original result not retained locally. Do not repeat automatically."}}
+
+
 class DedupeStore:
     def __init__(self, path: Path, capacity: int = 500):
         self.path = path
@@ -16,9 +27,23 @@ class DedupeStore:
         self._lock = threading.Lock()
         self._items: "OrderedDict[str, dict | None]" = OrderedDict()
         try:
+            if path.stat().st_size > MAX_JOURNAL_BYTES:
+                raise ValueError("Recovery journal exceeds safe size")
             data = json.loads(path.read_text(encoding="utf-8"))
-            for k, val in data:
-                self._items[k] = val
+            if not isinstance(data, list) or len(data) > capacity:
+                raise ValueError("Invalid recovery journal structure")
+            changed = False
+            for item in data:
+                if not isinstance(item, list) or len(item) != 2:
+                    raise ValueError("Invalid recovery journal row")
+                k, val = item
+                if not isinstance(k, str) or not k or len(k) > 120 or k in self._items or (val is not None and not isinstance(val, dict)):
+                    raise ValueError("Invalid recovery journal command")
+                marker = None if val is None else _result_marker(k)
+                changed = changed or marker != val
+                self._items[k] = marker
+            if changed:
+                self._trim_and_save()
         except FileNotFoundError:
             pass
         except (OSError, ValueError, TypeError) as exc:
@@ -47,7 +72,7 @@ class DedupeStore:
             return True
 
     def store_result(self, cid: str, message: dict) -> None:
-        slim = {k: val for k, val in message.items() if k != "screenshot"}
+        slim = _result_marker(cid)
         with self._lock:
             self._items[cid] = slim
             self._trim_and_save()

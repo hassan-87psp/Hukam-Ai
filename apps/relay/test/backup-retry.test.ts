@@ -1,7 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { Projects } from '../src/projects';
+import { MemoryRecords } from '../src/memory-records';
+import { Skills } from '../src/skills';
 import { openDb, type DB } from '../src/db';
 import { restoreCloudSnapshot, startCloudBackup } from '../src/backup';
 
@@ -184,5 +187,41 @@ describe('cloud snapshot conflict protection',()=>{
       expect(await restoreCloudSnapshot(remote)).toBe(false);
       expect(readFileSync(join(remote,'hukm.db'))).toEqual(cloud);
     }finally{vi.unstubAllEnvs();vi.unstubAllGlobals();rmSync(dir,{recursive:true,force:true});}
+  });
+});
+
+describe('full schema private snapshot rehearsal (isolated)',()=>{
+  it('restores project memory and taught skills without overwriting local data',async()=>{
+    const dir=mkdtempSync(join(tmpdir(),'hukm-full-recovery-'));
+    const migrations=resolve(process.cwd(),'database/migrations');
+    const source=join(dir,'source'),target=join(dir,'target');
+    vi.stubEnv('HUKM_BACKUP_URL','https://backup.example.test/snapshot');
+    vi.stubEnv('HUKM_BACKUP_TOKEN','test-only');
+    let bytes:Uint8Array|undefined;
+    vi.stubGlobal('fetch',vi.fn(async (_url:string,init?:RequestInit)=>{
+      if(init?.method==='PUT'){bytes=new Uint8Array(init.body as Uint8Array);return new Response(null,{status:200});}
+      if(!bytes)throw new Error('Missing synthetic backup');
+      return new Response(bytes,{status:200});
+    }));
+    const db=openDb(source,migrations), backup=startCloudBackup(db,source);
+    try{
+      db.prepare('INSERT INTO users(id,email,name,password_hash,created_at) VALUES(?,?,?,?,?)').run('a','a@example.test','Test','synthetic-hash',new Date().toISOString());
+      const project=new Projects(db).save('a',null,{name:'Synthetic project'});
+      const memory=new MemoryRecords(db);
+      memory.save('a',project.id,null,{category:'project',title:'Sample',content:'Synthetic reference'});
+      new Skills(db).teach('a',project.id,{alias:'Morning check',skillId:'whatsapp-count'});
+      backup.markDirty();await backup.flush();
+      expect(backup.status()).toMatchObject({enabled:true,dirty:false,pending:false,consecutiveFailures:0});
+      expect(await restoreCloudSnapshot(target)).toBe(true);
+      const restored=openDb(target,migrations);
+      try{
+        expect(new Projects(restored).get('a',project.id).name).toBe('Synthetic project');
+        expect(new MemoryRecords(restored).list('a',project.id)[0].content).toBe('Synthetic reference');
+        expect(new Skills(restored).resolve('a',project.id,'Morning check').id).toBe('whatsapp-count');
+        expect(restored.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      }finally{restored.close();}
+    }finally{
+      try{await backup.close();}finally{db.close();vi.unstubAllGlobals();vi.unstubAllEnvs();rmSync(dir,{recursive:true,force:true});}
+    }
   });
 });
