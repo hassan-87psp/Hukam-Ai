@@ -38,6 +38,7 @@ export const ALL_CAPABILITIES: Capability[] = [
 
 export type ActionName =
   | 'app.open'
+  | 'app.close'
   | 'folder.open'
   | 'folder.list'
   | 'file.search'
