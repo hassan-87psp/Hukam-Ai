@@ -1,14 +1,14 @@
-HUKM AI Windows Controller - Consolidated Install/Update (v1.6.9)
+HUKM AI Windows Controller - Consolidated Install/Update (v1.7.0)
 
-0. The GitHub Actions artifact contains TWO files: HUKM-Windows-Controller-v1.6.9.zip and its .sha256 checksum.
-   On PowerShell run Get-FileHash .\HUKM-Windows-Controller-v1.6.9.zip -Algorithm SHA256
+0. The GitHub Actions artifact contains TWO files: HUKM-Windows-Controller-v1.7.0.zip and its .sha256 checksum.
+   On PowerShell run Get-FileHash .\HUKM-Windows-Controller-v1.7.0.zip -Algorithm SHA256
    and compare to the .sha256 file before extracting the inner ZIP.
 1. Extract the ENTIRE inner ZIP to one temporary folder.
 2. Close any previous HUKM Controller black window. Do not delete old folders yet.
 3. Run INSTALL_OR_UPDATE.cmd. It installs to LOCALAPPDATA/HUKM AI/Controller, safely backs up any previous EXE.
 4. Run VERIFY_HUKM.cmd and check the installed version and existing pairing.
 5. Run START_HUKM.cmd only when ready for live tests. Confirm ONLINE in the authenticated relay dashboard.
-6. Verify the actual backend first (not GitHub Pages): https://hukm-ai-relay.onrender.com/api/health must return valid JSON showing v1.6.9.
+6. Verify the actual backend first (not GitHub Pages): https://hukm-ai-relay.onrender.com/api/health must return valid JSON showing v1.7.0.
    This public HTTP check is NOT proof of pairing or a working Windows application; real laptop tests are deferred by the owner.
 7. Only when satisfied, run ENABLE_AUTOSTART.cmd once; thereafter sign-in to Windows starts Controller.
 
