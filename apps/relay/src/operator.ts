@@ -88,7 +88,7 @@ async function askGeminiPlan(request:string,context:string,fetcher:typeof fetch=
     'Answer follow-up messages using the original request and most recent answer supplied. Do not ask the same question twice if its answer is present.',
     'Only use these precise action names: app.open, folder.open, folder.list, file.search, file.open, file.reveal,',
     'web.open, web.search, youtube.search, youtube.play, device.status, apps.list, window.active, window.focus,',
-    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, calendar.event_draft,',
+    'browser.control, browser.profile_open, notepad.type, diagnostics.probe, ui.inspect, ui.activate, ui.scroll, calendar.event_draft, calendar.save_reviewed,',
     'chatgpt.prompt_draft, chatgpt.submit_prompt, chatgpt.download_visible,',
     'whatsapp.open, whatsapp.check, whatsapp.unread_senders, whatsapp.read_selected, whatsapp.draft_reply, whatsapp.send_reviewed, whatsapp.attach_preview.',
     'Never use arbitrary shell, file deletion, payments, password/OTP reading or WhatsApp Send. Do not pretend a draft was sent.',
