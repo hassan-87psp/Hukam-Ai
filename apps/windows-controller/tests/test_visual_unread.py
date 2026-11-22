@@ -547,3 +547,66 @@ def test_extended_timestamp_formats():
     for value in ("hello","9","waiting","invoice","0"):
         assert vu._DATE.fullmatch(value) is None
 
+
+
+def test_owner_post_click_enhanced_ocr_reads_verified_chat_without_second_click(monkeypatch):
+    """Simulate the owner's exact v1.9.2 stage sequence and a split OCR result."""
+    from PIL import Image
+    import win32api
+    import win32gui
+    from controller.system import pointer_motion
+
+    screenshot=Image.new("RGB",(520,920))
+    header=[
+        vu.Word("Chats",97,69,62,19),
+        vu.Word("Search",150,133,49,12),
+        vu.Word("All",110,185,19,12),
+        vu.Word("Unread",168,182,55,12),
+        vu.Word("Favourites",277,185,75,12),
+    ]
+    # Alternative image preprocessing recovers rows, but not small header text.
+    enhanced_rows=[
+        vu.Word("Ayesha",155,277,57,12),
+        vu.Word("Family",219,277,43,12),
+        vu.Word("6:25",425,277,33,12),
+        vu.Word("PM",462,277,16,12),
+    ]
+    seen=[]
+    monkeypatch.setattr(vu,"_capture_for_scan",lambda *_:(screenshot,0,0))
+    monkeypatch.setattr(vu,"_capture_left",lambda *_:(screenshot,0,0))
+    monkeypatch.setattr(vu,"_ocr_words",lambda *_a,**_kw:header)
+    monkeypatch.setattr(vu,"_ocr_enlarged",lambda *_a,**_kw:enhanced_rows)
+    monkeypatch.setattr(vu,"_safe_foreground",lambda *_:None)
+    monkeypatch.setattr(vu,"_same_capture",lambda *_:True)
+    samples=iter([10,20])
+    monkeypatch.setattr(vu,"_chip_background",lambda *_:next(samples))
+    monkeypatch.setattr(win32gui,"GetClientRect",lambda hwnd:(0,0,1200,1000))
+    monkeypatch.setattr(win32gui,"ClientToScreen",lambda hwnd,p:p)
+    monkeypatch.setattr(win32gui,"WindowFromPoint",lambda p:100)
+    monkeypatch.setattr(win32gui,"GetAncestor",lambda hwnd,what:100)
+    monkeypatch.setattr(win32api,"GetCursorPos",lambda :(196,188))
+    monkeypatch.setattr(win32api,"mouse_event",lambda *args:seen.append(args))
+    monkeypatch.setattr(pointer_motion,"move_visible",lambda point,guard:guard())
+    monkeypatch.setattr(vu.time,"sleep",lambda *_:None)
+    result=vu.visual_scan_unread(100)
+    assert result["senders"]==["Ayesha Family"]
+    assert result["filterClickAttempted"] is True
+    assert result["filterSelectedVerified"] is True
+    assert result["unreadCountVerified"] is False
+    assert len(seen)==2, "one click = one button down + one button up"
+
+
+def test_post_click_logs_geometry_but_not_private_sender_or_preview(caplog):
+    from PIL import Image
+    import logging
+    words=[
+        vu.Word("Private Person",155,277,90,12),
+        vu.Word("Private preview content",155,305,200,11),
+        vu.Word("6:25",425,277,33,12),
+    ]
+    with caplog.at_level(logging.INFO):
+        vu._row_geometry_diagnostics(words,Image.new("RGB",(520,920)),
+                                     vu.Word("Unread",168,182,55,12),"test")
+    assert "Private Person" not in caplog.text
+    assert "Private preview content" not in caplog.text
+    assert "timestamp_geometry" in caplog.text
