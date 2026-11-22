@@ -20,7 +20,7 @@ describe('ephemeral owner-approved live screen preview',()=>{
   async function waitFor<T>(fn:()=>T|undefined,ms=3000):Promise<T>{
     const start=Date.now();
     while(Date.now()-start<ms){
-      const value=fn();if(value!==undefined)return value;
+      const value=fn();if(value)return value;
       await new Promise(resolve=>setTimeout(resolve,20));
     }
     throw new Error('Live preview event timeout');
