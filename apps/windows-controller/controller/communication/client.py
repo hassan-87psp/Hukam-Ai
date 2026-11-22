@@ -159,6 +159,7 @@ class ControllerClient:
                 "allowedDirs": [{"key": k, "path": str(p)} for k, p in roots],
                 "apps": self.cfg.apps,
                 "screenCapture": self.cfg.screen_capture,
+                "liveScreenPreview": self.cfg.screen_capture,
                 "browser": self.cfg.browser,
             },
         }
