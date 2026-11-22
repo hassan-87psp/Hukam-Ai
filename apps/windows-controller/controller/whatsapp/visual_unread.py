@@ -510,7 +510,10 @@ def visible_sender_titles(words: list[Word], width: int, chip_bottom: float) -> 
     WhatsApp may OCR '6:25' and 'PM' as two words; the clock alone anchors it.
     """
     row_top=chip_bottom+max(34,min(60,chip_bottom*.22))
-    times=sorted((w for w in words if row_top<w.cy<min(920,chip_bottom+850)
+    # OCR is confined to the verified WhatsApp sidebar. A 2K display can
+    # expose more than twelve chats below the old 920px height cutoff.
+    row_bottom=max(920,min(4096,max((w.y+w.height for w in words),default=0)+1))
+    times=sorted((w for w in words if row_top<w.cy<row_bottom
                   and w.cx>=width*.60 and _DATE.fullmatch(w.text.strip())),
                  key=lambda w:(w.cy,w.x))
     names=[]
@@ -521,7 +524,7 @@ def visible_sender_titles(words: list[Word], width: int, chip_bottom: float) -> 
         # not qualify even if it contains a tempting contact-like string.
         tolerance=max(13,1.35*moment.height)
         possible=[w for w in words
-                  if row_top<w.cy<min(920,chip_bottom+850)
+                  if row_top<w.cy<row_bottom
                   and minimum<=w.x<cutoff and w.x+w.width<=cutoff
                   and 7<=w.height<=40 and len(w.text)<=65
                   and abs(w.cy-moment.cy)<=tolerance
@@ -546,7 +549,9 @@ def visible_sender_titles(words: list[Word], width: int, chip_bottom: float) -> 
         title=" ".join(w.text.strip() for w in parts).strip()
         if 2<=len(title)<=65 and title.casefold() not in _SKIP and title not in names:
             names.append(title)
-    return names[:12]
+    # Retain all timestamp-verified visible rows on tall windows; the
+    # global pagination limit still caps the total result size.
+    return names[:30]
 
 
 def _row_geometry_diagnostics(words,image,chip,stage):
