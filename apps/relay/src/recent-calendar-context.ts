@@ -31,16 +31,30 @@ export function calendarSchedulingIntent(request:string):boolean{
 }
 
 export function recentCalendarContext(db:DB,userId:string,projectId:string|null,now=Date.now()):RecentCalendarContext|null{
-  if(projectId!==null)return null; // Separate HUKM Projects never inherit General browser context.
   const cutoff=new Date(now-WINDOW_MS).toISOString();
   // The latest explicit app/navigation command wins. Opening a different
   // app or website invalidates Calendar focus rather than resurrecting an
-  // older Google Calendar tab from the same day.
-  const rows=all(db,`SELECT action,args,status,created_at,result FROM commands
-    WHERE user_id=? AND source IN ('text','voice','ui')
-      AND action IN ('web.open','browser.profile_open','app.open','whatsapp.open')
-      AND created_at>=? AND status IN ('pending','running','completed')
-    ORDER BY created_at DESC,rowid DESC LIMIT 1`,userId,cutoff);
+  // older Calendar tab from the same day. Projects may inspect ONLY their
+  // own operator plans; General commands cannot cross into a Project.
+  const rows=projectId===null
+    ? all(db,`SELECT action,args,status,created_at,result FROM commands
+      WHERE user_id=? AND source IN ('text','voice','ui')
+        AND action IN ('web.open','browser.profile_open','app.open','whatsapp.open')
+        AND created_at>=? AND status IN ('pending','running','completed')
+        AND (client_request_id IS NULL OR NOT EXISTS (
+          SELECT 1 FROM operator_runs r JOIN operator_plans p ON p.id=r.plan_id
+          WHERE r.user_id=commands.user_id AND p.user_id=commands.user_id
+            AND substr(commands.client_request_id,1,length(r.id)+1)=r.id||'-'
+            AND p.project_id IS NOT NULL))
+      ORDER BY created_at DESC,rowid DESC LIMIT 1`,userId,cutoff)
+    : all(db,`SELECT c.action,c.args,c.status,c.created_at,c.result FROM commands c
+      JOIN operator_runs r ON r.user_id=c.user_id
+        AND substr(c.client_request_id,1,length(r.id)+1)=r.id||'-'
+      JOIN operator_plans p ON p.id=r.plan_id AND p.user_id=c.user_id
+      WHERE c.user_id=? AND p.project_id=?
+        AND c.action IN ('web.open','browser.profile_open','app.open','whatsapp.open')
+        AND c.created_at>=? AND c.status IN ('pending','running','completed')
+      ORDER BY c.created_at DESC,c.rowid DESC LIMIT 1`,userId,projectId,cutoff);
   if(!rows.length)return null;
   const latest=rows[0];
   if(latest.action!=='web.open'&&latest.action!=='browser.profile_open')return null;
