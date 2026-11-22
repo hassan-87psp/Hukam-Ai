@@ -1,11 +1,22 @@
 import {describe,it,expect} from 'vitest';
-import {validatePlanShape,exactWhatsAppReply} from '../src/operator';
+import {validatePlanShape,exactWhatsAppReply,navigationAllowsNextStep} from '../src/operator';
 import {ACTIONS, requiresApproval, validateCommand} from '../../../packages/command-protocol/src/index';
 
 const future = new Date(Date.now()+2*86400000).toISOString().replace(/\.\d{3}Z$/,'Z');
 const futureEnd = new Date(Date.now()+2*86400000+3600000).toISOString().replace(/\.\d{3}Z$/,'Z');
 
 describe('approved Personal WhatsApp + screen + Calendar + ChatGPT workflow contracts',()=>{
+  it('stops a multi-step computer plan after unverified navigation, including simulation',()=>{
+    expect(navigationAllowsNextStep('ui.navigate_verified',{
+      inputDelivered:true,navigationVerified:true,verified:true})).toBe(true);
+    for(const result of [
+      {inputDelivered:true,navigationVerified:false,verified:false},
+      {inputDelivered:true,navigationVerified:true,verified:false},
+      {inputDelivered:true,navigationVerified:true,verified:true,simulated:true},
+      {},
+    ])expect(navigationAllowsNextStep('ui.navigate_verified',result)).toBe(false);
+    expect(navigationAllowsNextStep('device.status',{})).toBe(true);
+  });
   it('all high-impact actions require a second explicit approval',()=>{
     for(const action of ['ui.inspect','ui.activate','calendar.event_draft','calendar.save_reviewed',
       'chatgpt.prompt_draft','chatgpt.submit_prompt','chatgpt.download_visible',
