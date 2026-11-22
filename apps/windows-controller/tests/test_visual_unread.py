@@ -793,3 +793,20 @@ def test_2k_sidebar_does_not_guess_names_without_row_timestamps():
     words=[vu.Word("Private preview is not a contact",155,1270,260,14),
            vu.Word("Contact Without Clock",155,1160,190,14)]
     assert vu.visible_sender_titles(words,520,chip.y+chip.height)==[]
+
+
+def test_2k_monitor_capture_is_not_silently_clipped_at_920px():
+    # Real 2K and 4K monitors must permit the lower WhatsApp chat rows.
+    region=vu._visible_region((0,0,1450,1432),(0,0,2560,1440))
+    assert region==(0,0,520,1420)
+    assert region[3]>1300
+    region_4k=vu._visible_region((3840,0,5500,2158),(3840,0,7680,2160))
+    assert region_4k==(3840,0,520,1600)
+    # The existing 1080p capture remains bounded for performance/privacy.
+    assert vu._visible_region((0,0,1350,1060),(0,0,1920,1080))==(0,0,520,920)
+
+
+def test_2k_monitor_negative_virtual_desktop_origin_keeps_correct_geometry():
+    region=vu._visible_region((-1928,-8,-480,1432),(-1920,0,0,1440))
+    assert region==(-1920,0,520,1420)
+    assert region[0]<0
