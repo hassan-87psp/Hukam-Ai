@@ -6,3 +6,4 @@ export * from './messages';
 export * from './provider';
 
 export { routeIntent, desktopWhatsAppWorkflow, namedWhatsAppRead, type IntentRoute, type DesktopWhatsAppWorkflow } from './intent';
+export { parseChatGPTAsk, chatGPTSendApproval, chromeProfile } from './chatgpt-intent';

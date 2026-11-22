@@ -20,6 +20,9 @@ import { Skills } from './skills';
 import { freshTask, boundedFollowup, numberWritingPlan, specialistHint, isExplicitSend, isPrivateFollowup } from './brain-context';
 import {calendarSchedulingIntent,explicitCalendarProvider,recentCalendarContext} from './recent-calendar-context';
 import {CALENDAR_SLOT_PREFIX,blankCalendarSlots,decodeCalendarSlots,advanceCalendarSlots} from './calendar-dialogue';
+import {parseChatGPTAsk,chatGPTSendApproval,chromeProfile} from '../../../packages/command-protocol/src/chatgpt-intent';
+import {CHATGPT_ASK_PREFIX,CHATGPT_REVIEWED_PREFIX,decodeChatGPTAsk,decodeReviewedChatGPT,
+  savedChatGPTProfile,recentlyUsedChatGPTProfile,validChatGPTUrl} from './chatgpt-dialogue';
 
 type Step = {action:ActionName;args:Record<string,unknown>};
 type Proposal = {summary:string;steps:Step[]} | {question:string};
@@ -300,6 +303,93 @@ export class Operator {
     // NEXT "meeting schedule karo 5.bjy" turn. No model guessing, no
     // WhatsApp or private page data, no automatic Calendar Save.
     const project=projectId==null?null:this.projects.get(userId,String(projectId));
+    const freshPending=last && Date.parse(String(last.expires_at))>=Date.now()
+      ? String(last.request):null;
+    const explicitChatGPTAsk=parseChatGPTAsk(answer);
+    const unfinishedChatGPT=decodeChatGPTAsk(freshPending);
+    const reviewedChatGPT=decodeReviewedChatGPT(freshPending);
+    // A stand-alone "haan bhej do" is NOT authorization to send anything.
+    // If no reviewed dialogue exists for this owner/workspace, ask rather
+    // than passing the bare confirmation to Gemini as a new task.
+    if(!freshPending && chatGPTSendApproval(answer))
+      return {kind:'clarify',topic:'operator-followup',
+        question:'Kis reviewed message ya ChatGPT sawal ko bhejna hai? Pehle exact task batayein.'};
+    if(reviewedChatGPT && !explicitChatGPTAsk && !freshTask(answer)){
+      // The drafted prompt, exact browser target and user identity are pinned
+      // to this short-lived, owner-scoped dialogue. Never accept a model's
+      // proposed prompt or an unrelated 'yes' as permission to send.
+      if(!chatGPTSendApproval(answer))
+        return {kind:'clarify',topic:'operator-followup',
+          question:'ChatGPT prompt draft ready hai. Kya exact sawal bhejna hai? "Haan bhej do" ya "Cancel" bolein.'};
+      if(project && (reviewedChatGPT.projectUrl!==project.chatgptProjectUrl ||
+          reviewedChatGPT.profile!==project.chromeProfile))
+        throw new HttpError(422,'PROJECT_PROFILE_MISMATCH',
+          'ChatGPT Project identity changed after the approved draft. Send blocked.');
+      const result=validatePlanShape({
+        summary:'Submit exact reviewed ChatGPT question (response not verified; separate approval required)',
+        steps:[{action:'chatgpt.submit_prompt',
+          args:{projectUrl:reviewedChatGPT.projectUrl,prompt:reviewedChatGPT.prompt}}],
+      });
+      const plan=this.persistPlan(userId,project?.id??null,answer,result);
+      this.clearPending(userId,key);
+      return plan;
+    }
+    if(explicitChatGPTAsk || (unfinishedChatGPT && !freshTask(answer))){
+      // Every "AI se pocho" request uses the REAL Chrome profile + ChatGPT
+      // web UI, not Gemini. Questions are never submitted automatically.
+      let state=explicitChatGPTAsk
+        ? {
+          question:explicitChatGPTAsk.question,
+          profile:project
+            ? chromeProfile(project.chromeProfile)
+            : savedChatGPTProfile(this.db,userId)??recentlyUsedChatGPTProfile(this.db,userId),
+          projectUrl:project?.chatgptProjectUrl??'https://chatgpt.com/',
+        }
+        : {...unfinishedChatGPT!};
+      if(project){
+        if(!validChatGPTUrl(project.chatgptProjectUrl??'') ||
+           !/^https:\/\/chatgpt\.com\//.test(project.chatgptProjectUrl))
+          throw new HttpError(422,'PROJECT_URL_REQUIRED',
+            'Is HUKM Project mein valid ChatGPT Project URL set karein.');
+        state.profile=chromeProfile(project.chromeProfile);
+        state.projectUrl=project.chatgptProjectUrl;
+      }
+      if(!explicitChatGPTAsk){
+        if(!state.question){
+          const candidate=answer.trim();
+          // Reject a one-word approval as a question to an external service.
+          if(candidate.length>1 && !chatGPTSendApproval(candidate) &&
+             !chromeProfile(candidate))state.question=candidate;
+        }else if(!state.profile){
+          const chosen=chromeProfile(answer);
+          if(chosen)state.profile=chosen;
+        }
+      }
+      if(state.question && (!state.question.trim() || state.question.length>1800))
+        throw new HttpError(422,'CHATGPT_QUESTION_INVALID',
+          'ChatGPT sawal 1 se 1800 characters mein likhein.');
+      if(!state.question || !state.profile){
+        const question=!state.question
+          ? 'ChatGPT se kya poochna hai? Sawal natural Roman Urdu mein bata dein.'
+          : 'ChatGPT ke liye kaunsa saved Chrome profile use karna hai? "Default" ya "Profile 1" jaisa exact naam batayein.';
+        this.savePending(userId,key,CHATGPT_ASK_PREFIX+JSON.stringify(state),question,
+          12*60*60_000);
+        return {kind:'clarify',topic:'operator-followup',question};
+      }
+      // Two supervised actions: open the correct signed-in browser, then TYPE
+      // the exact question as a draft. A later separate confirmation/approval
+      // is necessary before clicking ChatGPT Send.
+      const result=validatePlanShape({
+        summary:'Open ChatGPT in '+state.profile+' and draft question for review (do NOT submit)',
+        steps:[
+          {action:'browser.profile_open',args:{profile:state.profile,url:state.projectUrl}},
+          {action:'chatgpt.prompt_draft',args:{projectUrl:state.projectUrl,prompt:state.question}},
+        ],
+      });
+      const plan=this.persistPlan(userId,project?.id??null,answer,result);
+      this.clearPending(userId,key);
+      return plan;
+    }
     const savedCalendar=last && Date.parse(last.expires_at)>=Date.now()
       ? decodeCalendarSlots(last.request):null;
     const calendarDraftPrefix='HUKM_OPENED_CALENDAR_DRAFT:';
@@ -689,6 +779,7 @@ export class Operator {
     let verifiedContactRead:string|null=null;
     let verifiedDraft:{contact:string;message:string}|null=null;
     let openedCalendarDraft:Record<string,unknown>|null=null;
+    let draftedChatGPT:{prompt:string;profile:string;projectUrl:string}|null=null;
     try{
       for(let i=0;i<plan.steps.length;i++){
         if(this.getRun(userId,taskId).status==='cancelled')return;
@@ -728,6 +819,18 @@ export class Operator {
           // sessions, attendees or provider credentials.
           openedCalendarDraft={...step.args};
         }
+        if(i===plan.steps.length-1 && data.simulated!==true &&
+           step.action==='chatgpt.prompt_draft' &&
+           data.promptDrafted===true && data.submitted===false &&
+           plan.steps.length>=2 &&
+           plan.steps[i-1].action==='browser.profile_open' &&
+           plan.steps[i-1].args.url===step.args.projectUrl &&
+           typeof plan.steps[i-1].args.profile==='string' &&
+           typeof step.args.prompt==='string'){
+          draftedChatGPT={prompt:String(step.args.prompt),
+            profile:String(plan.steps[i-1].args.profile),
+            projectUrl:String(step.args.projectUrl)};
+        }
         if(data.verified!==true)unverified=true;
       }
       this.update(taskId,unverified?'unverified':'completed',unverified?
@@ -737,6 +840,14 @@ export class Operator {
         this.savePending(userId,this.dialogueKey(plan.projectId),
           'HUKM_OPENED_CALENDAR_DRAFT:'+JSON.stringify(openedCalendarDraft),
           'Calendar draft open hua hai. Date, time, title aur sahi account check karein. Final Save ke liye "Save karo" bolein ya "Cancel".',
+          10*60_000);
+      }
+      if(draftedChatGPT){
+        // The laptop reported a typed prompt, not a delivered ChatGPT answer.
+        // The second step is independently approved and exact-text verified.
+        this.savePending(userId,this.dialogueKey(plan.projectId),
+          CHATGPT_REVIEWED_PREFIX+JSON.stringify(draftedChatGPT),
+          'ChatGPT mein sawal draft hai. Details check karke "Haan bhej do" bolein, ya "Cancel".',
           10*60_000);
       }
       if(verifiedDraft){
