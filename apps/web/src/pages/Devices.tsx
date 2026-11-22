@@ -203,7 +203,7 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
         </div>
       </div>
       {liveOpen&&liveAllowed&&<div className="p-5 pb-0">
-        <LiveScreenPanel deviceId={d.id} onClose={()=>setLiveOpen(false)}/>
+        <LiveScreenPanel deviceId={d.id} monitorCount={d.controllerConfig?.monitorCount??1} onClose={()=>setLiveOpen(false)}/>
       </div>}
       {lastUpdate && d.controllerVersion !== latestVersion &&
         <div className="mx-5 mt-4 space-y-2 rounded-xl bg-field/60 p-4 text-sm ring-1 ring-line/25">

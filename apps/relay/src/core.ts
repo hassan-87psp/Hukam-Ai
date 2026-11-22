@@ -123,7 +123,7 @@ export class Relay {
   // One viewer per device, one monitor, 90 seconds maximum with local Windows consent.
   private liveViews = new Map<string, {
     userId:string; viewer:WebSocket; sessionId:string; deviceId:string;
-    expiresAt:number; ready:boolean; lastFrame:number;
+    monitor:number; expiresAt:number; ready:boolean; lastFrame:number;
   }>();
   private timer: NodeJS.Timeout | null = null;
   private lastMaintenance = 0;
@@ -247,9 +247,15 @@ export class Relay {
   // ---- owner-approved ephemeral screen preview ------------------------
   private startLiveView(userId:string,viewer:WebSocket,rawDevice:unknown,rawMonitor:unknown) {
     if(typeof rawDevice!=='string'||!rawDevice||rawDevice.length>120||
-       rawMonitor!==1)throw new HttpError(400,'LIVE_ARGUMENTS','Choose monitor 1 on a paired laptop');
+       typeof rawMonitor!=='number'||!Number.isInteger(rawMonitor)||
+       rawMonitor<1||rawMonitor>16)
+      throw new HttpError(400,'LIVE_ARGUMENTS','Choose one physical monitor between 1 and 16');
     const row=this.getDeviceRow(userId,rawDevice);
     const config=parseJson<Record<string,unknown>>(row.controller_config,{});
+    const available=typeof config.monitorCount==='number' && Number.isInteger(config.monitorCount)
+      ? Math.max(1,Math.min(16,config.monitorCount)):1;
+    if(rawMonitor>available)
+      throw new HttpError(400,'LIVE_MONITOR','Selected monitor is not reported by the paired Windows laptop');
     const enabled=parseJson<Capability[]>(row.capabilities_enabled,[]);
     const reported=parseJson<Capability[]>(row.capabilities_reported,[]);
     if(row.paused||!enabled.includes('screen')||!reported.includes('screen')||
@@ -261,16 +267,16 @@ export class Relay {
       if(session.viewer===viewer)this.endLiveView(id,'viewer_switched');
     }
     const sessionId=newId('live_');
-    const session={userId,viewer,sessionId,deviceId:rawDevice,
+    const session={userId,viewer,sessionId,deviceId:rawDevice,monitor:rawMonitor,
       expiresAt:Date.now()+90_000,ready:false,lastFrame:0};
     this.liveViews.set(rawDevice,session);
-    if(!this.sendDevice(rawDevice,{type:'live_screen.start',sessionId,monitor:1,durationSeconds:90})){
+    if(!this.sendDevice(rawDevice,{type:'live_screen.start',sessionId,monitor:rawMonitor,durationSeconds:90})){
       this.liveViews.delete(rawDevice);
       throw new HttpError(409,'LIVE_OFFLINE','Laptop disconnected before live approval');
     }
-    this.audit(userId,'user','live_screen.requested',{monitor:1},rawDevice);
+    this.audit(userId,'user','live_screen.requested',{monitor:rawMonitor},rawDevice);
     this.sendClient(viewer,{type:'live_screen.status',deviceId:rawDevice,
-      sessionId,status:'awaiting_local_approval'});
+      sessionId,monitor:rawMonitor,status:'awaiting_local_approval'});
   }
 
   private endLiveView(deviceId:string,reason:string,sendStop=true){
@@ -279,7 +285,7 @@ export class Relay {
     this.liveViews.delete(deviceId);
     if(sendStop)this.sendDevice(deviceId,{type:'live_screen.stop',sessionId:s.sessionId});
     this.sendClient(s.viewer,{type:'live_screen.status',deviceId,
-      sessionId:s.sessionId,status:'ended',reason});
+      sessionId:s.sessionId,monitor:s.monitor,status:'ended',reason});
     this.audit(s.userId,'system','live_screen.ended',{reason},deviceId);
   }
 
@@ -291,19 +297,20 @@ export class Relay {
       const status=msg.type==='live_screen.denied'?'denied':'ended';
       this.liveViews.delete(conn.deviceId);
       this.sendClient(session.viewer,{type:'live_screen.status',deviceId:conn.deviceId,
-        sessionId:session.sessionId,status,reason:String(msg.reason??'stopped').slice(0,100)});
+        sessionId:session.sessionId,monitor:session.monitor,status,reason:String(msg.reason??'stopped').slice(0,100)});
       return;
     }
     if(msg.type==='live_screen.ready'){
       session.ready=true;
       this.sendClient(session.viewer,{type:'live_screen.status',deviceId:conn.deviceId,
-        sessionId:session.sessionId,status:'live'});
+        sessionId:session.sessionId,monitor:session.monitor,status:'live'});
       return;
     }
     if(msg.type!=='live_screen.frame'||!session.ready)return;
     // Never write a live frame to screenshots, logs, audit, database or Gemini.
     // Reject oversized or malformed traffic; don't allow backpressure buildup.
-    if(msg.mime!=='image/jpeg'||typeof msg.dataBase64!=='string'||
+    if(msg.monitor!==session.monitor||
+       msg.mime!=='image/jpeg'||typeof msg.dataBase64!=='string'||
        msg.dataBase64.length>400_000||msg.dataBase64.length<100||
        !/^[A-Za-z0-9+/]+={0,2}$/.test(msg.dataBase64)||
        !Number.isInteger(msg.width)||!Number.isInteger(msg.height)||
@@ -316,7 +323,7 @@ export class Relay {
       this.endLiveView(conn.deviceId,'viewer_unavailable');return;
     }
     this.sendClient(session.viewer,{type:'live_screen.frame',deviceId:conn.deviceId,
-      sessionId:session.sessionId,mime:'image/jpeg',
+      sessionId:session.sessionId,monitor:session.monitor,mime:'image/jpeg',
       dataBase64:msg.dataBase64,width:msg.width,height:msg.height});
   }
 

@@ -43,7 +43,7 @@ describe('ephemeral owner-approved live screen preview',()=>{
     device.on('message',d=>deviceEvents.push(JSON.parse(d.toString())));
     device.send(JSON.stringify({type:'hello',controllerVersion:'1.9.6',os:'Windows',osVersion:'11',
       hostname:'TEST',capabilities:['screen','system'],
-      config:{allowedDirs:[],apps:[],screenCapture:true,liveScreenPreview:true,browser:'default'}}));
+      config:{allowedDirs:[],apps:[],screenCapture:true,liveScreenPreview:true,monitorCount:4,browser:'default'}}));
     await waitFor(()=>deviceEvents.find(x=>x.type==='welcome'));
   });
   afterAll(async()=>{
@@ -72,7 +72,7 @@ describe('ephemeral owner-approved live screen preview',()=>{
     expect(pending.sessionId).toBe(command.sessionId);
 
     const frame=Buffer.alloc(160,25).toString('base64');
-    const message={type:'live_screen.frame',sessionId:command.sessionId,
+    const message={type:'live_screen.frame',sessionId:command.sessionId,monitor:1,
       mime:'image/jpeg',dataBase64:frame,width:640,height:360};
     device.send(JSON.stringify(message));
     await new Promise(r=>setTimeout(r,55));
@@ -87,6 +87,32 @@ describe('ephemeral owner-approved live screen preview',()=>{
     expect((await api('GET','/api/screenshots')).data).toEqual([]);
     viewer.close();
     await waitFor(()=>deviceEvents.some(x=>x.type==='live_screen.stop'&&x.sessionId===command.sessionId));
+  });
+
+  it('supports owner-selected Monitor 2, keeps other monitor frames out, and rejects Monitor 5',async()=>{
+    const viewer=await socket('/ws/client',{cookie});
+    const events:any[]=[];
+    viewer.on('message',m=>events.push(JSON.parse(m.toString())));
+    const initial=deviceEvents.length;
+    viewer.send(JSON.stringify({type:'live_screen.subscribe',deviceId,monitor:5}));
+    const invalid=await waitFor(()=>events.find(m=>m.status==='error'));
+    expect(invalid.reason).toMatch(/not reported/i);
+    expect(deviceEvents.length).toBe(initial);
+    viewer.send(JSON.stringify({type:'live_screen.subscribe',deviceId,monitor:2}));
+    const command=await waitFor(()=>deviceEvents.find(m=>
+      m.type==='live_screen.start'&&m.monitor===2));
+    const pending=await waitFor(()=>events.find(m=>m.status==='awaiting_local_approval'&&m.monitor===2));
+    expect(pending.sessionId).toBe(command.sessionId);
+    device.send(JSON.stringify({type:'live_screen.ready',sessionId:command.sessionId}));
+    await waitFor(()=>events.some(m=>m.status==='live'&&m.monitor===2));
+    const bytes=Buffer.alloc(240,42).toString('base64');
+    device.send(JSON.stringify({type:'live_screen.frame',sessionId:command.sessionId,monitor:2,
+      mime:'image/jpeg',dataBase64:bytes,width:720,height:405}));
+    const frame=await waitFor(()=>events.find(m=>m.type==='live_screen.frame'&&m.monitor===2));
+    expect(frame.dataBase64).toBe(bytes);
+    viewer.send(JSON.stringify({type:'live_screen.unsubscribe'}));
+    await waitFor(()=>deviceEvents.some(m=>m.type==='live_screen.stop'&&m.sessionId===command.sessionId));
+    viewer.close();
   });
 
   it('refuses duplicate viewers and terminates on emergency pause',async()=>{
