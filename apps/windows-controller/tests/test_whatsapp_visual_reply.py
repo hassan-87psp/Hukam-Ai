@@ -42,7 +42,7 @@ def test_visual_search_only_targets_verified_query_and_unique_result(monkeypatch
     ]
     clicks=[];typed=[]
     monkeypatch.setattr(visual_reply,"_same",lambda *_a,**_kw:None)
-    monkeypatch.setattr(visual_reply,"_click_at",lambda _hwnd,point,**kw:clicks.append(point))
+    monkeypatch.setattr(visual_reply,"_click_at",lambda _hwnd,point,cancel=None:clicks.append(point))
     monkeypatch.setattr(visual_reply,"exact_header",lambda *_a,**kw:True)
     monkeypatch.setattr(visual_reply.vu,"_capture_left",lambda *_:(image,0,0))
     monkeypatch.setattr(visual_reply.vu,"_ocr_words",lambda *_a,**_kw:results)
