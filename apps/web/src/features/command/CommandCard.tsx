@@ -24,6 +24,10 @@ function unverifiedReason(action: ActionName): string {
       return 'ChatGPT prompt was submitted or attempted, but a generated response has not been verified. Check the selected Project tab.';
     case 'chatgpt.read_response':
       return 'Only visibly accessible response text can be read; the full answer, context and completion may be unknown.';
+    case 'ui.navigate_verified':
+      return 'One approved navigation click may have occurred. The expected new screen control was NOT verified; do not repeat automatically.';
+    case 'ui.activate_observed':
+      return 'The exact inspected button was clicked, but the resulting screen state is not verified.';
     case 'chatgpt.followup_draft':
       return 'Follow-up text was drafted only; no ChatGPT Send has happened.';
     case 'chatgpt.download_visible':
