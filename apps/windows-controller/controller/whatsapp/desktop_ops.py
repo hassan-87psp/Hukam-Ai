@@ -55,7 +55,7 @@ def _type_guarded(editor, text, check, cancel=None):
         _check_cancel(cancel)
         check()
         if (not editor.HasKeyboardFocus or editor.IsOffscreen or not editor.IsEnabled
-                or getattr(editor, "IsPassword", None) is not False):
+                or getattr(editor, "IsPassword", None) not in (False,0)):
             raise DesktopWhatsAppError("WhatsApp input field focus or safety changed")
         _send_unicode(character)
     _check_cancel(cancel)
@@ -110,6 +110,44 @@ def _check_selected_contact(root, rect, expected: str) -> None:
         )
 
 
+def _editor_text(editor):
+    """Read one confirmed editor through ValuePattern or TextPattern.
+
+    Some WebView/contenteditable controls expose only TextPattern. Do not
+    interpret arbitrary chat text as a composer value; the caller must first
+    uniquely identify an Edit/Document control in the bottom-right composer.
+    """
+    try:
+        value=editor.GetValuePattern().Value
+        if isinstance(value,str) and len(value)<=2000:
+            return value
+    except Exception:
+        pass
+    try:
+        value=editor.GetTextPattern().DocumentRange.GetText(-1)
+        if isinstance(value,str) and len(value)<=2000:
+            return value.rstrip("\r\n")
+    except Exception:
+        pass
+    raise DesktopWhatsAppError("Exact WhatsApp composer text unavailable from UIA ValuePattern or TextPattern")
+
+
+def _send_button_label(control,name):
+    """Require an exact independently exposed Send identifier; no icon guessing."""
+    if " ".join(name.casefold().split()) in ("send","send message"):
+        return True
+    try:
+        ident="".join(c for c in str(control.AutomationId or "").casefold() if c.isalnum())
+        if ident in ("sendbutton","sendmessagebutton","messagesendbutton","btnsend","sendbtn"):
+            return True
+    except Exception:
+        pass
+    try:
+        return " ".join(str(control.HelpText or "").casefold().split()) in ("send","send message")
+    except Exception:
+        return False
+
+
 def _composer(root, rect):
     left, top, width, height = rect
     matches = []
@@ -122,7 +160,14 @@ def _composer(root, rect):
             continue
         if any(word in name.casefold() for word in ("search", "caption", "contact")):
             continue
-        if kind == "EditControl" or "message" in name.casefold():
+        try:
+            ident="".join(ch for ch in str(c.AutomationId or "").casefold() if ch.isalnum())
+            hint=" ".join(str(c.HelpText or "").casefold().split())
+        except Exception:
+            ident="";hint=""
+        if (kind=="EditControl" or "message" in name.casefold() or
+                ident in ("messageinput","composemessage","conversationinput","textboxmessage") or
+                hint in ("type a message","write a message")):
             matches.append(c)
     if len(matches) != 1:
         raise DesktopWhatsAppError(
@@ -201,7 +246,7 @@ def select_chat(expected_contact: str, cancel=None) -> dict:
                     "Contact is not visible and WhatsApp's in-app Search is not accessible. "
                     "Search for the contact manually in Desktop, then try again")
             try:
-                current = str(editor.GetValuePattern().Value or "")
+                current = _editor_text(editor)
             except Exception as exc:
                 raise DesktopWhatsAppError(
                     "WhatsApp search field contents are not safely accessible") from exc
@@ -337,7 +382,7 @@ def draft_reply(expected_contact: str, message: str, cancel=None) -> dict:
         # Avoid replacing an existing draft. If the app doesn't expose the
         # composer value safely, fail instead of blindly inserting text.
         try:
-            value = str(composer.GetValuePattern().Value or "")
+            value = _editor_text(composer)
         except Exception as exc:
             raise DesktopWhatsAppError(
                 "WhatsApp does not expose the editor's existing text; drafting aborted to avoid overwriting"
@@ -353,7 +398,7 @@ def draft_reply(expected_contact: str, message: str, cancel=None) -> dict:
         if after.hwnd != active.hwnd or after.pid != active.pid:
             raise DesktopWhatsAppError("WhatsApp changed after typing; inspect draft manually")
         _check_selected_contact(fresh_root, fresh_rect, expected_contact)
-        if str(_composer(fresh_root, fresh_rect).GetValuePattern().Value or "") != message:
+        if _editor_text(_composer(fresh_root, fresh_rect)) != message:
             raise DesktopWhatsAppError("Entered draft did not match exact requested text. Review manually; no Send performed")
         return {"recipientVerified": True, "draftEntered": True,
                 "sent": False, "verified": False, "contact": expected_contact,
@@ -510,7 +555,7 @@ def send_reviewed(expected_contact: str, expected_message: str, cancel=None) -> 
         left, top, width, height = rect
         choices = [
             c for c, name, kind, x, y, right, _bottom in _controls(root)
-            if kind == "ButtonControl" and name.casefold() in ("send", "send message")
+            if kind == "ButtonControl" and _send_button_label(c,name)
             and (left + width * 0.65 <= x <= left + width)
             and (top + height * 0.70 <= y <= top + height)
         ]
@@ -525,7 +570,7 @@ def send_reviewed(expected_contact: str, expected_message: str, cancel=None) -> 
         if fresh.hwnd != active.hwnd or fresh.pid != active.pid:
             raise DesktopWhatsAppError("WhatsApp window changed; no Send attempted")
         _check_selected_contact(fresh_root, fresh_rect, expected_contact)
-        if str(_composer(fresh_root, fresh_rect).GetValuePattern().Value or "") != expected_message:
+        if _editor_text(_composer(fresh_root, fresh_rect)) != expected_message:
             raise DesktopWhatsAppError("WhatsApp draft changed; no Send attempted")
         if cancel is not None and cancel.is_set():
             raise DesktopWhatsAppError("WhatsApp Send cancelled before clicking")
@@ -552,7 +597,7 @@ def send_reviewed(expected_contact: str, expected_message: str, cancel=None) -> 
                 break
             root2 = auto.ControlFromHandle(active.hwnd)
             editor2 = _composer(root2, rect)
-            if not str(editor2.GetValuePattern().Value or "").strip():
+            if not _editor_text(editor2).strip():
                 return {
                     "sendAttempted": True, "draftCleared": True,
                     "sentUiConfirmed": False, "deliveryVerified": False,

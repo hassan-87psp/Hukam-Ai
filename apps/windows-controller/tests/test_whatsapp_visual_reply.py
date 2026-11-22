@@ -89,3 +89,38 @@ def test_uia_reply_fallback_never_types_twice_on_partial_input(monkeypatch):
     monkeypatch.setattr(visual_reply,"draft_reply_visual",lambda *a:pytest.fail("duplicate draft"))
     with pytest.raises(desktop_ops.DesktopWhatsAppError,match="partial typing"):
         desktop_ops.draft_reply("Known Contact","Hello")
+
+
+def test_uia_textpattern_fallback_reads_only_exact_editor_text():
+    from types import SimpleNamespace
+    def unavailable():
+        raise RuntimeError("ValuePattern not exposed")
+    editor=SimpleNamespace(
+        GetValuePattern=unavailable,
+        GetTextPattern=lambda:SimpleNamespace(
+            DocumentRange=SimpleNamespace(GetText=lambda n:"Hello there\r")))
+    assert desktop_ops._editor_text(editor)=="Hello there"
+    not_editor=SimpleNamespace(GetValuePattern=unavailable,GetTextPattern=unavailable)
+    with pytest.raises(desktop_ops.DesktopWhatsAppError,match="ValuePattern or TextPattern"):
+        desktop_ops._editor_text(not_editor)
+
+
+def test_send_button_requires_exact_control_identity():
+    from types import SimpleNamespace
+    def item(aid,hint):
+        return SimpleNamespace(AutomationId=aid,HelpText=hint)
+    assert desktop_ops._send_button_label(item("sendMessageButton",""),"")
+    assert desktop_ops._send_button_label(item("","Send message"),"")
+    assert desktop_ops._send_button_label(item("",""),"Send")
+    assert not desktop_ops._send_button_label(item("attachFileButton",""),"Send file")
+    assert not desktop_ops._send_button_label(item("",""),"Close")
+    assert not desktop_ops._send_button_label(item("random","Some message"),"")
+
+
+def test_document_control_composer_accessible_by_exact_automation_id(monkeypatch):
+    from types import SimpleNamespace
+    rect=(100.,100.,1200.,800.)
+    item=SimpleNamespace(AutomationId="messageInput",HelpText="")
+    monkeypatch.setattr(desktop_ops,"_controls",lambda root,max_nodes=1050:iter(
+        [(item,"","DocumentControl",600.,790.,850.,830.)]))
+    assert desktop_ops._composer(object(),rect) is item
