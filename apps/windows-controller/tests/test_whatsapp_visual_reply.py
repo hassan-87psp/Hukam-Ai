@@ -30,6 +30,42 @@ def test_exact_contact_already_selected_avoids_any_click(monkeypatch):
     assert result["sent"] is False
 
 
+def test_visual_search_only_targets_verified_query_and_unique_result(monkeypatch):
+    from PIL import Image
+    import controller.browser.operator as keyboard
+    chip=vu.Word("Unread",168,182,55,12)
+    image=Image.new("RGB",(520,920))
+    header=[vu.Word("Search",150,133,49,12),chip]
+    results=[
+        vu.Word("Known",155,133,50,12),vu.Word("Contact",210,133,65,12),
+        vu.Word("Known",155,370,50,12),vu.Word("Contact",210,370,65,12),
+    ]
+    clicks=[];typed=[]
+    monkeypatch.setattr(visual_reply,"_same",lambda *_a,**_kw:None)
+    monkeypatch.setattr(visual_reply,"_click_at",lambda _hwnd,point,**kw:clicks.append(point))
+    monkeypatch.setattr(visual_reply,"exact_header",lambda *_a,**kw:True)
+    monkeypatch.setattr(visual_reply.vu,"_capture_left",lambda *_:(image,0,0))
+    monkeypatch.setattr(visual_reply.vu,"_ocr_words",lambda *_a,**_kw:results)
+    monkeypatch.setattr(visual_reply.time,"sleep",lambda *_:None)
+    monkeypatch.setattr(keyboard,"_send_unicode",lambda ch:typed.append(ch))
+    result=visual_reply._search_exact_contact_visual(200,"Known Contact",image,header,0,0,chip)
+    assert result["recipientVerified"] is True
+    assert result["sent"] is False
+    assert "".join(typed)=="Known Contact"
+    assert len(clicks)==2
+
+
+def test_visual_search_never_types_without_unique_search_placeholder(monkeypatch):
+    from PIL import Image
+    import controller.browser.operator as keyboard
+    chip=vu.Word("Unread",168,182,55,12)
+    image=Image.new("RGB",(520,920))
+    monkeypatch.setattr(visual_reply,"_click_at",lambda *_a,**_kw:pytest.fail("unverified Search clicked"))
+    monkeypatch.setattr(keyboard,"_send_unicode",lambda *_:pytest.fail("unexpected typing"))
+    with pytest.raises(visual_reply.VisualReplyUnavailable,match="Search field"):
+        visual_reply._search_exact_contact_visual(200,"Known Contact",image,[chip],0,0,chip)
+
+
 def test_visual_draft_requires_exact_header_and_does_not_send(monkeypatch):
     import controller.browser.operator as keyboard
     from PIL import Image
