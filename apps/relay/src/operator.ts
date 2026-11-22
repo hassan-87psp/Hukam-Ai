@@ -18,6 +18,8 @@ import { agentToolInstruction, isAgentTool } from './agent-tools';
 import { MemoryRecords } from './memory-records';
 import { Skills } from './skills';
 import { freshTask, boundedFollowup, numberWritingPlan, specialistHint, isExplicitSend, isPrivateFollowup } from './brain-context';
+import {calendarSchedulingIntent,explicitCalendarProvider,recentCalendarContext} from './recent-calendar-context';
+import {CALENDAR_SLOT_PREFIX,blankCalendarSlots,decodeCalendarSlots,advanceCalendarSlots} from './calendar-dialogue';
 
 type Step = {action:ActionName;args:Record<string,unknown>};
 type Proposal = {summary:string;steps:Step[]} | {question:string};
@@ -293,6 +295,115 @@ export class Operator {
       return {kind:'cancelled',message:'Theek hai, task cancel kar diya. Koi laptop action nahi hua.'};
     }
     const last=one(this.db,'SELECT * FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
+    // Conversational, not an independent command: a completed or pending
+    // owner request to open Google Calendar supplies provider context to the
+    // NEXT "meeting schedule karo 5.bjy" turn. No model guessing, no
+    // WhatsApp or private page data, no automatic Calendar Save.
+    const project=projectId==null?null:this.projects.get(userId,String(projectId));
+    const savedCalendar=last && Date.parse(last.expires_at)>=Date.now()
+      ? decodeCalendarSlots(last.request):null;
+    const calendarDraftPrefix='HUKM_OPENED_CALENDAR_DRAFT:';
+    let reviewedCalendar:Record<string,unknown>|null=null;
+    if(last && Date.parse(last.expires_at)>=Date.now() &&
+       String(last.request).startsWith(calendarDraftPrefix)){
+      try{
+        const candidate=JSON.parse(String(last.request).slice(calendarDraftPrefix.length)) as unknown;
+        if(candidate && typeof candidate==='object' && !Array.isArray(candidate)){
+          const validation=validateCommand('calendar.save_reviewed',candidate as Record<string,unknown>);
+          if(validation.ok)reviewedCalendar=validation.args;
+        }
+      }catch { /* No unverified saved draft may trigger a Calendar Save */ }
+    }
+    if(reviewedCalendar && !freshTask(answer)){
+      // This is intentionally a SECOND explicit instruction after a real,
+      // non-simulated event editor was launched. The laptop independently
+      // verifies the exact URL, title, owner and visible Save control.
+      if(!/^(?:(?:haan|han|yes|okay|ok)\s+)?(?:save|save karo|save kar do|event save karo|confirm save|confirm karo)$/i.test(answer)){
+        return {kind:'clarify',topic:'operator-followup',
+          question:'Calendar draft open hua tha. Puri details check karke "Save karo" bolein, ya "Cancel".'};
+      }
+      const result=validatePlanShape({
+        summary:'Owner-requested final Calendar Save attempt for '+String(reviewedCalendar.title)+
+          ' (on-device confirmation and separate approval; delivery not guaranteed)',
+        steps:[{action:'calendar.save_reviewed',args:reviewedCalendar}],
+      });
+      const plan=this.persistPlan(userId,project?.id??null,answer,result);
+      this.clearPending(userId,key);
+      return plan;
+    }
+    const newCalendarRequest=calendarSchedulingIntent(answer);
+    const recentCalendar=newCalendarRequest
+      ? recentCalendarContext(this.db,userId,project?.id??null):null;
+    const provider=newCalendarRequest
+      ? explicitCalendarProvider(answer)??recentCalendar?.provider??null:null;
+    const providerMarker='HUKM_CALENDAR_PROVIDER:';
+    const providerQuestion=last && Date.parse(last.expires_at)>=Date.now() &&
+      String(last.request).startsWith(providerMarker) && !newCalendarRequest && !freshTask(answer);
+    const providerChoice=providerQuestion
+      ? explicitCalendarProvider(answer) ??
+        (/^google(?:\s+calendar)?$/i.test(answer)?'google':
+         /^outlook(?:\s+calendar)?$/i.test(answer)?'outlook':null)
+      : null;
+    if(newCalendarRequest&&!provider){
+      const question='Meeting Google Calendar mein banani hai ya Outlook Calendar mein?';
+      this.savePending(userId,key,providerMarker+answer,question,12*60*60_000);
+      return {kind:'clarify',topic:'operator-followup',question};
+    }
+    if(providerQuestion&&!providerChoice){
+      return {kind:'clarify',topic:'operator-followup',
+        question:'Google Calendar ya Outlook Calendar? Sirf provider ka naam batayein.'};
+    }
+    if((newCalendarRequest && provider) || providerChoice ||
+       (savedCalendar && !newCalendarRequest && !freshTask(answer))){
+      const original=providerChoice
+        ? String(last!.request).slice(providerMarker.length):'';
+      const initial=newCalendarRequest && provider
+        ? blankCalendarSlots(provider,project?.chromeProfile||recentCalendar?.profile||null)
+        : providerChoice
+          ? advanceCalendarSlots(blankCalendarSlots(providerChoice,project?.chromeProfile||null),original).slots
+          : savedCalendar!;
+      // Follow-up slots live in owner+workspace SQLite, not the model prompt.
+      // A Project profile is authoritative; an unconfigured Project must be
+      // configured explicitly before an event is drafted in its identity.
+      if(project)initial.profile=/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile)
+        ? project.chromeProfile:null;
+      const advanced=advanceCalendarSlots(initial,answer,
+        newCalendarRequest?'':String(last?.question??''));
+      if(project && !/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile)){
+        const question='Is HUKM Project ki Settings mein exact Chrome profile (Default ya Profile N) save karein. Phir meeting continue karein.';
+        this.savePending(userId,key,CALENDAR_SLOT_PREFIX+JSON.stringify({...advanced.slots,profile:null}),
+          question,12*60*60_000);
+        return {kind:'clarify',topic:'operator-followup',question};
+      }
+      if(advanced.question){
+        this.savePending(userId,key,CALENDAR_SLOT_PREFIX+JSON.stringify(advanced.slots),
+          advanced.question,12*60*60_000);
+        return {kind:'clarify',topic:'operator-followup',question:advanced.question};
+      }
+      const event={
+        provider:advanced.slots.provider,
+        title:advanced.slots.title!,
+        profile:advanced.slots.profile!,
+        startUtc:advanced.startUtc!,
+        endUtc:advanced.endUtc!,
+        timeZone:'Asia/Kuala_Lumpur',
+        details:'',
+        location:'',
+      };
+      // Even the verb "schedule" authorizes only a proposed DRAFT here.
+      // Calendar Save/invites require a later explicit, separate owner review.
+      const result=validatePlanShape({
+        summary:'Prepare '+(advanced.slots.provider==='google'?'Google':'Outlook')+
+          ' Calendar meeting draft: '+advanced.slots.title+
+          ' on '+advanced.slots.date+' at '+advanced.slots.hour+':'+
+          String(advanced.slots.minute).padStart(2,'0')+
+          ' Malaysia time (not saved; separate approval required)',
+        steps:[{action:'calendar.event_draft',args:event}],
+      });
+      const plan=this.persistPlan(userId,project?.id??null,answer,result);
+      this.clearPending(userId,key);
+      return plan;
+    }
     let request=answer;
     let isFollowup=false;
     if(last){
@@ -311,7 +422,6 @@ export class Operator {
     }
     // Draft and preview workflows are allowed; sending, invitations, and
     // end-to-end creative generation still require real verified integrations.
-    const project=projectId==null?null:this.projects.get(userId,String(projectId));
     const lower=request.toLowerCase();
     const useProjectBrowser=(
       /(?:calendar|calender|meeting)/.test(lower) &&
@@ -578,6 +688,7 @@ export class Operator {
     let visibleUnreadSendersReviewed=false;
     let verifiedContactRead:string|null=null;
     let verifiedDraft:{contact:string;message:string}|null=null;
+    let openedCalendarDraft:Record<string,unknown>|null=null;
     try{
       for(let i=0;i<plan.steps.length;i++){
         if(this.getRun(userId,taskId).status==='cancelled')return;
@@ -610,11 +721,24 @@ export class Operator {
           typeof step.args.contact==='string' && typeof step.args.message==='string'){
           verifiedDraft={contact:String(step.args.contact),message:String(step.args.message)};
         }
+        if(i===plan.steps.length-1 && data.simulated!==true &&
+           step.action==='calendar.event_draft' &&
+           data.eventDraftOpened===true && data.eventSaved===false){
+          // Store approved input metadata only, never browser screenshots,
+          // sessions, attendees or provider credentials.
+          openedCalendarDraft={...step.args};
+        }
         if(data.verified!==true)unverified=true;
       }
       this.update(taskId,unverified?'unverified':'completed',unverified?
         'Actions reported success, but their final on-screen outcome was not independently verified.':null,
         plan.steps.length,ids);
+      if(openedCalendarDraft){
+        this.savePending(userId,this.dialogueKey(plan.projectId),
+          'HUKM_OPENED_CALENDAR_DRAFT:'+JSON.stringify(openedCalendarDraft),
+          'Calendar draft open hua hai. Date, time, title aur sahi account check karein. Final Save ke liye "Save karo" bolein ya "Cancel".',
+          10*60_000);
+      }
       if(verifiedDraft){
         // Explicit send has a ten-minute owner-scoped confirmation window.
         // Draft body is already stored in authenticated command history; do
