@@ -91,7 +91,8 @@ describe('HUKM natural ChatGPT response and follow-up memory',()=>{
   }));
   it('corrupt visible-thread state cannot grant an action',async()=>fixture(async(op,db)=>{
     pending(db,'owner',null,CHATGPT_VISIBLE_PREFIX,initial);
-    await expect(op.plan('owner','Usko detail mein samjhao',null))
-      .rejects.toMatchObject({code:'AI_NOT_CONFIGURED'});
+    const outcome=await op.plan('owner','Usko detail mein samjhao',null);
+    expect('steps' in outcome).toBe(false);
+    expect(outcome).toMatchObject({kind:'clarify'});
   }));
 });
