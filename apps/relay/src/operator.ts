@@ -21,7 +21,10 @@ import { freshTask, boundedFollowup, numberWritingPlan, specialistHint, isExplic
 import {calendarSchedulingIntent,explicitCalendarProvider,recentCalendarContext} from './recent-calendar-context';
 import {CALENDAR_SLOT_PREFIX,blankCalendarSlots,decodeCalendarSlots,advanceCalendarSlots} from './calendar-dialogue';
 import {parseChatGPTAsk,chatGPTSendApproval,chromeProfile} from '../../../packages/command-protocol/src/chatgpt-intent';
-import {CHATGPT_ASK_PREFIX,CHATGPT_REVIEWED_PREFIX,decodeChatGPTAsk,decodeReviewedChatGPT,
+import {CHATGPT_ASK_PREFIX,CHATGPT_REVIEWED_PREFIX,
+  CHATGPT_SENDING_PREFIX,CHATGPT_SUBMITTED_PREFIX,CHATGPT_VISIBLE_PREFIX,
+  decodeChatGPTAsk,decodeReviewedChatGPT,decodeChatGPTSending,decodeChatGPTSubmitted,decodeChatGPTVisible,
+  isChatGPTReadIntent,isChatGPTContextFollowup,
   savedChatGPTProfile,recentlyUsedChatGPTProfile,validChatGPTUrl} from './chatgpt-dialogue';
 
 type Step = {action:ActionName;args:Record<string,unknown>};
@@ -284,7 +287,8 @@ export class Operator {
       VALUES(?,?,?,?,'operator-followup',?,?,?)
       ON CONFLICT(user_id,project_key) DO UPDATE SET request=excluded.request,
         question=excluded.question,updated_at=excluded.updated_at,expires_at=excluded.expires_at`,
-      userId,key,request.slice(0,1800),question,stamp,stamp,addMs(ttlMs));
+      userId,key,request.slice(0,request.startsWith('HUKM_CHATGPT_')||request.startsWith('HUKM_REVIEWED_CHATGPT_')?2600:1800),
+      question,stamp,stamp,addMs(ttlMs));
   }
   async plan(userId:string,text:unknown,projectId:unknown):Promise<Plan|Clarification|Cancelled> {
     if(typeof text!=='string'||text.trim().length<2||text.length>1200)
@@ -297,7 +301,7 @@ export class Operator {
       this.clearPending(userId,key);
       return {kind:'cancelled',message:'Theek hai, task cancel kar diya. Koi laptop action nahi hua.'};
     }
-    const last=one(this.db,'SELECT * FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
+    let last=one(this.db,'SELECT * FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
     // Conversational, not an independent command: a completed or pending
     // owner request to open Google Calendar supplies provider context to the
     // NEXT "meeting schedule karo 5.bjy" turn. No model guessing, no
@@ -308,6 +312,45 @@ export class Operator {
     const explicitChatGPTAsk=parseChatGPTAsk(answer);
     const unfinishedChatGPT=decodeChatGPTAsk(freshPending);
     const reviewedChatGPT=decodeReviewedChatGPT(freshPending);
+    const sendingChatGPT=decodeChatGPTSending(freshPending);
+    const submittedChatGPT=decodeChatGPTSubmitted(freshPending);
+    const visibleChatGPT=decodeChatGPTVisible(freshPending);
+    // A draft may be in-flight; no second submit or read until the owner
+    // has a completed, non-simulated device result from that exact command.
+    if(sendingChatGPT && !explicitChatGPTAsk && !freshTask(answer))
+      return {kind:'clarify',topic:'operator-followup',
+        question:'ChatGPT Submit command ka result pehle verify hoga. HUKM Task History check karein; dobara Send mat karein.'};
+    if(submittedChatGPT && !explicitChatGPTAsk && !freshTask(answer)){
+      if(isChatGPTReadIntent(answer)){
+        const result=validatePlanShape({summary:'Read the currently visible ChatGPT reply to the exact submitted question (approval required; may be partial)',
+          steps:[{action:'chatgpt.read_response',args:{
+            projectUrl:submittedChatGPT.projectUrl,prompt:submittedChatGPT.prompt}}]});
+        return this.persistPlan(userId,project?.id??null,answer,result);
+      }
+      if(isChatGPTContextFollowup(answer))
+        return {kind:'clarify',topic:'operator-followup',
+          question:'Isi ChatGPT conversation ka jawab pehle read karna zaroori hai. "Jawab batao" bolein.'};
+      this.clearPending(userId,key);last=undefined;
+    }
+    if(visibleChatGPT && !explicitChatGPTAsk && !freshTask(answer)){
+      if(isChatGPTContextFollowup(answer)){
+        if(!visibleChatGPT.threadUrl || !validChatGPTUrl(visibleChatGPT.threadUrl))
+          throw new HttpError(422,'CHATGPT_THREAD_MISSING','Exact ChatGPT conversation URL not verified.');
+        if(project && (visibleChatGPT.profile!==project.chromeProfile ||
+            visibleChatGPT.projectUrl!==project.chatgptProjectUrl))
+          throw new HttpError(422,'PROJECT_IDENTITY_CHANGED','Project browser identity changed; follow-up blocked.');
+        const result=validatePlanShape({
+          summary:'Draft owner-requested follow-up in the SAME observed ChatGPT thread; do not submit',
+          steps:[{action:'chatgpt.followup_draft',args:{
+            projectUrl:visibleChatGPT.threadUrl,
+            previousPrompt:visibleChatGPT.prompt,
+            prompt:answer,
+          }}],
+        });
+        return this.persistPlan(userId,project?.id??null,answer,result);
+      }
+      this.clearPending(userId,key);last=undefined;
+    }
     // A stand-alone "haan bhej do" is NOT authorization to send anything.
     // If no reviewed dialogue exists for this owner/workspace, ask rather
     // than passing the bare confirmation to Gemini as a new task.
@@ -321,7 +364,7 @@ export class Operator {
       if(!chatGPTSendApproval(answer))
         return {kind:'clarify',topic:'operator-followup',
           question:'ChatGPT prompt draft ready hai. Kya exact sawal bhejna hai? "Haan bhej do" ya "Cancel" bolein.'};
-      if(project && (reviewedChatGPT.projectUrl!==project.chatgptProjectUrl ||
+      if(project && ((reviewedChatGPT.baseProjectUrl??reviewedChatGPT.projectUrl)!==project.chatgptProjectUrl ||
           reviewedChatGPT.profile!==project.chromeProfile))
         throw new HttpError(422,'PROJECT_PROFILE_MISMATCH',
           'ChatGPT Project identity changed after the approved draft. Send blocked.');
@@ -331,7 +374,8 @@ export class Operator {
           args:{projectUrl:reviewedChatGPT.projectUrl,prompt:reviewedChatGPT.prompt}}],
       });
       const plan=this.persistPlan(userId,project?.id??null,answer,result);
-      this.clearPending(userId,key);
+      this.savePending(userId,key,CHATGPT_SENDING_PREFIX+JSON.stringify(reviewedChatGPT),
+        'ChatGPT prompt submit attempt pending. Result check karne ke baad jawab read kiya ja sakta hai.',10*60_000);
       return plan;
     }
     if(explicitChatGPTAsk || (unfinishedChatGPT && !freshTask(answer))){
@@ -779,7 +823,9 @@ export class Operator {
     let verifiedContactRead:string|null=null;
     let verifiedDraft:{contact:string;message:string}|null=null;
     let openedCalendarDraft:Record<string,unknown>|null=null;
-    let draftedChatGPT:{prompt:string;profile:string;projectUrl:string}|null=null;
+    let draftedChatGPT:{prompt:string;profile:string;projectUrl:string;baseProjectUrl?:string}|null=null;
+    let submittedChatGPTState:{prompt:string;profile:string;projectUrl:string;baseProjectUrl?:string}|null=null;
+    let readChatGPTState:{prompt:string;profile:string;projectUrl:string;baseProjectUrl?:string;threadUrl:string}|null=null;
     try{
       for(let i=0;i<plan.steps.length;i++){
         if(this.getRun(userId,taskId).status==='cancelled')return;
@@ -831,6 +877,39 @@ export class Operator {
             profile:String(plan.steps[i-1].args.profile),
             projectUrl:String(step.args.projectUrl)};
         }
+        if(i===plan.steps.length-1 && data.simulated!==true &&
+           step.action==='chatgpt.submit_prompt' && data.submitted===true){
+          const prev=one(this.db,'SELECT request FROM operator_dialogues WHERE user_id=? AND project_key=?',
+            userId,this.dialogueKey(plan.projectId));
+          const sending=decodeChatGPTSending(prev?.request);
+          if(sending && sending.prompt===step.args.prompt && sending.projectUrl===step.args.projectUrl)
+            submittedChatGPTState=sending;
+        }
+        if(i===plan.steps.length-1 && data.simulated!==true &&
+           step.action==='chatgpt.read_response' &&
+           data.responseRead===true && data.promptMatched===true &&
+           typeof data.responseText==='string' && data.responseText.length>0 &&
+           typeof data.threadUrl==='string' && validChatGPTUrl(data.threadUrl)){
+          const prev=one(this.db,'SELECT request FROM operator_dialogues WHERE user_id=? AND project_key=?',
+            userId,this.dialogueKey(plan.projectId));
+          const submitted=decodeChatGPTSubmitted(prev?.request);
+          if(submitted && submitted.prompt===step.args.prompt && submitted.projectUrl===step.args.projectUrl)
+            readChatGPTState={...submitted,threadUrl:data.threadUrl};
+        }
+        if(i===plan.steps.length-1 && data.simulated!==true &&
+           step.action==='chatgpt.followup_draft' &&
+           data.promptDrafted===true && data.submitted===false &&
+           data.previousPromptMatched===true){
+          const prev=one(this.db,'SELECT request FROM operator_dialogues WHERE user_id=? AND project_key=?',
+            userId,this.dialogueKey(plan.projectId));
+          const seen=decodeChatGPTVisible(prev?.request);
+          if(seen && seen.threadUrl===step.args.projectUrl &&
+             seen.prompt===step.args.previousPrompt){
+            draftedChatGPT={prompt:String(step.args.prompt),
+              projectUrl:String(step.args.projectUrl),profile:seen.profile,
+              baseProjectUrl:seen.baseProjectUrl??seen.projectUrl};
+          }
+        }
         if(data.verified!==true)unverified=true;
       }
       this.update(taskId,unverified?'unverified':'completed',unverified?
@@ -841,6 +920,21 @@ export class Operator {
           'HUKM_OPENED_CALENDAR_DRAFT:'+JSON.stringify(openedCalendarDraft),
           'Calendar draft open hua hai. Date, time, title aur sahi account check karein. Final Save ke liye "Save karo" bolein ya "Cancel".',
           10*60_000);
+      }
+      if(submittedChatGPTState){
+        // Transfer no private ChatGPT content to Gemini or model context.
+        this.savePending(userId,this.dialogueKey(plan.projectId),
+          CHATGPT_SUBMITTED_PREFIX+JSON.stringify(submittedChatGPTState),
+          'ChatGPT ko prompt bhejne ki koshish hui. Jawab dekhne ke liye "Jawab batao" bolein; read ke liye alag approval hogi.',
+          30*60_000);
+      }
+      if(readChatGPTState){
+        // Only owner-validated metadata, NEVER the private response body.
+        // The visible answer itself remains in the private command result UI.
+        this.savePending(userId,this.dialogueKey(plan.projectId),
+          CHATGPT_VISIBLE_PREFIX+JSON.stringify(readChatGPTState),
+          'ChatGPT ka visible jawab HUKM Task History mein hai. Usi thread mein "Usko detail mein samjhao" jaisa follow-up keh sakte hain.',
+          30*60_000);
       }
       if(draftedChatGPT){
         // The laptop reported a typed prompt, not a delivered ChatGPT answer.
