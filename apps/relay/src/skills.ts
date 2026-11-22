@@ -81,7 +81,7 @@ export class Skills{
   demonstrations(userId:string,projectId:unknown){
     const p=projectScope(this.db,userId,projectId);
     const rows=all(this.db,`SELECT r.id,r.updated_at FROM operator_runs r JOIN operator_plans p ON p.id=r.plan_id
-      WHERE r.user_id=? AND p.user_id=? AND p.project_id IS ? AND r.status IN ('completed','unverified')
+      WHERE r.user_id=? AND p.user_id=? AND p.project_id IS ? AND r.status = 'completed'
       ORDER BY r.updated_at DESC LIMIT 40`,userId,userId,p);
     const output:{id:string;updatedAt:string;steps:Step[]}[]=[];
     for(const row of rows){
@@ -94,8 +94,8 @@ export class Skills{
     if(typeof id!=='string'||id.length>120)throw new HttpError(400,'TEACH_RUN','Select a demonstrated task');
     const row=one(this.db,`SELECT r.*,p.steps FROM operator_runs r JOIN operator_plans p ON p.id=r.plan_id
       WHERE r.id=? AND r.user_id=? AND p.user_id=? AND p.project_id IS ?`,id,userId,userId,p);
-    if(!row||!['completed','unverified'].includes(row.status))
-      throw new HttpError(422,'TEACH_RUN','Only finished tasks in the selected workspace are eligible');
+    if(!row||row.status!=='completed')
+      throw new HttpError(422,'TEACH_RUN','Only verified completed tasks in the selected workspace are eligible');
     const steps=reusableSteps(parseJson(row.steps,null));
     const ids=parseJson<unknown>(row.command_ids,null);
     if(!Array.isArray(ids)||ids.length!==steps.length||row.current_step!==steps.length||row.total_steps!==steps.length||new Set(ids).size!==ids.length)
