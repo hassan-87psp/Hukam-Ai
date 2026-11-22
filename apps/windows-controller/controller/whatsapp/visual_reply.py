@@ -38,7 +38,13 @@ def _capture_band(hwnd, zone, cancel=None):
     width=right-left;height=bottom-top
     if width<750 or height<540 or left-rect[0]>24 or top-rect[1]>24:
         raise VisualReplyUnavailable("WhatsApp must be visible on one monitor; no input attempted")
-    x=left+round(width*.33);w=max(10,min(right-x-20,round(width*.63)))
+    # Right chat header/composer text often begins just after a ~520px
+    # sidebar on a 1920px monitor. A .33 screen crop would cut off the first
+    # letters of names and the "Type a message" placeholder. Message-body
+    # reads stay further right to avoid harvesting the left sidebar.
+    right_fraction=.33 if zone=="messages" else .25
+    x=left+round(width*right_fraction)
+    w=max(10,min(right-x-20,round(width*(.63 if zone=="messages" else .71))))
     if zone=="header":
         y=top+10;h=min(170,height//4)
     elif zone=="composer":
