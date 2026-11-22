@@ -629,6 +629,7 @@ def test_unread_scan_scrolls_list_only_and_returns_all_timestamp_verified_titles
     monkeypatch.setattr(vu,"_same_capture",lambda *_:True)
     monkeypatch.setattr(vu,"_capture_left",lambda *_:(second,0,0))
     monkeypatch.setattr(vu,"_ocr_words",lambda *a,**k:page2)
+    monkeypatch.setattr(vu,"_ocr_enlarged",lambda *a,**k:[])
     monkeypatch.setattr(win32gui,"WindowFromPoint",lambda *_:200)
     monkeypatch.setattr(win32gui,"GetAncestor",lambda *_:200)
     pos=[0,0]
@@ -663,6 +664,7 @@ def test_unread_scan_never_claims_full_coverage_when_badge_exceeds_verified_name
     monkeypatch.setattr(vu,"_same_capture",lambda *_:True)
     monkeypatch.setattr(vu,"_capture_left",lambda *_:(image,0,0))
     monkeypatch.setattr(vu,"_ocr_words",lambda *_a,**_kw:words)
+    monkeypatch.setattr(vu,"_ocr_enlarged",lambda *a,**k:[])
     monkeypatch.setattr(win32gui,"WindowFromPoint",lambda *_:200)
     monkeypatch.setattr(win32gui,"GetAncestor",lambda *_:200)
     monkeypatch.setattr(pointer_motion,"move_visible",lambda point,guard:(guard(),pos.__setitem__(slice(None),point)))
@@ -690,6 +692,7 @@ def test_unread_scrolling_stops_if_filter_header_is_lost(monkeypatch):
     monkeypatch.setattr(vu,"_same_capture",lambda *_:True)
     monkeypatch.setattr(vu,"_capture_left",lambda *_:(image,0,0))
     monkeypatch.setattr(vu,"_ocr_words",lambda *_a,**_kw:[])
+    monkeypatch.setattr(vu,"_ocr_enlarged",lambda *a,**k:[])
     monkeypatch.setattr(win32gui,"WindowFromPoint",lambda *_:200)
     monkeypatch.setattr(win32gui,"GetAncestor",lambda *_:200)
     monkeypatch.setattr(pointer_motion,"move_visible",lambda point,guard:(guard(),pos.__setitem__(slice(None),point)))
@@ -700,3 +703,24 @@ def test_unread_scrolling_stops_if_filter_header_is_lost(monkeypatch):
     assert out["senders"]==["One"]
     assert out["allBadgeChatsMatched"] is False
     assert out["scanStopped"]=="filter_not_verified"
+
+
+def test_scanned_page_recovers_small_timestamp_and_title_via_enhanced_local_ocr(monkeypatch):
+    from PIL import Image
+    chip=vu.Word("Unread",168,182,55,12)
+    header=[vu.Word("Chats",97,69,62,19),vu.Word("Search",150,133,49,12),
+            vu.Word("All",110,185,19,12),chip,
+            vu.Word("Favourites",277,185,75,12)]
+    first=header+[vu.Word("First",155,370,42,15),
+                  vu.Word("Yesterday",401,370,78,13)]
+    # Alternative OCR recovers a second tiny timestamp from SAME image.
+    extra=[vu.Word("First",155,370,42,15),vu.Word("Yesterday",401,370,78,13),
+           vu.Word("Second",155,446,55,15),vu.Word("6:42",427,446,39,12)]
+    image=Image.new("RGB",(520,920),(20,20,20))
+    monkeypatch.setattr(vu,"_safe_foreground",lambda *_:None)
+    monkeypatch.setattr(vu,"_same_capture",lambda *_:True)
+    monkeypatch.setattr(vu,"_ocr_enlarged",lambda *_a,**_kw:extra)
+    data=vu._collect_unread_pages(200,image,0,0,first,chip,2,None)
+    assert data["senders"]==["First","Second"]
+    assert data["allBadgeChatsMatched"] is True
+    assert data["scanPages"]==1

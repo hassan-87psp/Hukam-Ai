@@ -746,6 +746,23 @@ def _collect_unread_pages(hwnd, image, left, top, words, chip, badge, cancel):
                 break
         pages+=1
         names=_visible_titles_for_layout(words,image.width,chip)
+        if badge is None or len(found)+len(names)<badge:
+            # Independent full-sidebar preprocessing can recover tiny clock
+            # text lost by native OCR. Merge the independently verified header
+            # from the original screenshot, never a guessed OCR filter.
+            _ensure_not_cancelled(cancel)
+            try:
+                improved=_ocr_enlarged(image,cancel)
+            except VisualUnreadUnavailable:
+                _ensure_not_cancelled(cancel)
+                improved=[]
+            if improved:
+                threshold=chip.cy+chip.height+35
+                stable_header=[w for w in words if w.cy<threshold]
+                better_rows=[w for w in improved if w.cy>=threshold]
+                alternative=_visible_titles_for_layout(stable_header+better_rows,
+                                                       image.width,chip)
+                names=list(dict.fromkeys([*names,*alternative]))
         if not names and index==0 and _explicit_empty_unread(words,chip,image.width):
             return {"senders":[],"visibleChatCount":0,"scanPages":pages,
                     "allBadgeChatsMatched":badge==0,"scanStopped":"explicit_empty",
