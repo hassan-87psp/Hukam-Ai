@@ -322,7 +322,7 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       if(typeof a.role!=='string'||!roles.includes(a.role))
         return fail('Select an exact visible control role');
       const safe=(value:string)=>{
-        const words=value.normalize('NFKC').toLowerCase().match(/[\\p{L}\\p{N}_]+/gu)??[];
+        const words=value.normalize('NFKC').toLowerCase().match(/[\p{L}\p{N}_]+/gu)??[];
         const banned=new Set(['send','sending','delete','remove','pay','payment','purchase','buy',
           'checkout','submit','confirm','approve','authorize','publish','share','transfer',
           'withdraw','deposit','invite','report','block','unblock','call','join','upload',
