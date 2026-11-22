@@ -2,7 +2,7 @@
 ; Purpose: remove the need to manually unpack the inner controller ZIP.
 ; IMPORTANT: currently unsigned. Distribute only after real Windows testing
 ; and code signing. No silent autostart or uncontrolled auto-update.
-#define HUKM_VERSION "1.9.4"
+#define HUKM_VERSION "1.9.5"
 
 [Setup]
 AppId=HUKM.AI.Personal.WindowsController
