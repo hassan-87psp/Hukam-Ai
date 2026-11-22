@@ -336,16 +336,45 @@ export class Operator {
       ? recentCalendarContext(this.db,userId,project?.id??null):null;
     const provider=newCalendarRequest
       ? explicitCalendarProvider(answer)??recentCalendar?.provider??null:null;
-    if((newCalendarRequest && provider) ||
+    const providerMarker='HUKM_CALENDAR_PROVIDER:';
+    const providerQuestion=last && Date.parse(last.expires_at)>=Date.now() &&
+      String(last.request).startsWith(providerMarker) && !newCalendarRequest && !freshTask(answer);
+    const providerChoice=providerQuestion
+      ? explicitCalendarProvider(answer) ??
+        (/^google(?:\\s+calendar)?$/i.test(answer)?'google':
+         /^outlook(?:\\s+calendar)?$/i.test(answer)?'outlook':null)
+      : null;
+    if(newCalendarRequest&&!provider){
+      const question='Meeting Google Calendar mein banani hai ya Outlook Calendar mein?';
+      this.savePending(userId,key,providerMarker+answer,question,12*60*60_000);
+      return {kind:'clarify',topic:'operator-followup',question};
+    }
+    if(providerQuestion&&!providerChoice){
+      return {kind:'clarify',topic:'operator-followup',
+        question:'Google Calendar ya Outlook Calendar? Sirf provider ka naam batayein.'};
+    }
+    if((newCalendarRequest && provider) || providerChoice ||
        (savedCalendar && !newCalendarRequest && !freshTask(answer))){
+      const original=providerChoice
+        ? String(last!.request).slice(providerMarker.length):'';
       const initial=newCalendarRequest && provider
         ? blankCalendarSlots(provider,project?.chromeProfile||recentCalendar?.profile||null)
-        : savedCalendar!;
+        : providerChoice
+          ? advanceCalendarSlots(blankCalendarSlots(providerChoice,project?.chromeProfile||null),original).slots
+          : savedCalendar!;
       // Follow-up slots live in owner+workspace SQLite, not the model prompt.
-      // Project profile is authoritative whenever a Project is selected.
-      if(project)initial.profile=project.chromeProfile;
+      // A Project profile is authoritative; an unconfigured Project must be
+      // configured explicitly before an event is drafted in its identity.
+      if(project)initial.profile=/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile)
+        ? project.chromeProfile:null;
       const advanced=advanceCalendarSlots(initial,answer,
         newCalendarRequest?'':String(last?.question??''));
+      if(project && !/^(?:Default|Profile [1-9][0-9]?)$/.test(project.chromeProfile)){
+        const question='Is HUKM Project ki Settings mein exact Chrome profile (Default ya Profile N) save karein. Phir meeting continue karein.';
+        this.savePending(userId,key,CALENDAR_SLOT_PREFIX+JSON.stringify({...advanced.slots,profile:null}),
+          question,12*60*60_000);
+        return {kind:'clarify',topic:'operator-followup',question};
+      }
       if(advanced.question){
         this.savePending(userId,key,CALENDAR_SLOT_PREFIX+JSON.stringify(advanced.slots),
           advanced.question,12*60*60_000);
