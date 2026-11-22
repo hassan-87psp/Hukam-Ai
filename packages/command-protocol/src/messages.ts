@@ -268,7 +268,7 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
   }
 }
 
-export function failureMessage(error: CommandError | null): Localized {
+export function failureMessage(error: CommandError | null, action?: ActionName): Localized {
   const msg = error?.message ?? 'unknown error';
   switch (error?.code) {
     case 'DEVICE_OFFLINE':
