@@ -107,6 +107,13 @@ def test_without_timestamp_do_not_guess_names():
     assert vu.visible_sender_titles(x,520,202)==[]
 
 
+def fixture_scanned_names(names):
+    return {"senders":names,"visibleChatCount":len(names),
+            "scanPages":1,"allBadgeChatsMatched":False,
+            "scanStopped":"synthetic_fixture","conversations":[
+                {"name":name,"unreadMessages":None} for name in names]}
+
+
 def test_unread_visual_scan_requires_verified_native_foreground(monkeypatch):
     import win32api
     import win32con
@@ -134,6 +141,10 @@ def test_unread_visual_scan_requires_verified_native_foreground(monkeypatch):
     monkeypatch.setattr(win32api,"SetCursorPos",move)
     monkeypatch.setattr(win32api,"mouse_event",lambda kind,*args:mouse.append(("mouse",kind)))
     monkeypatch.setattr(vu.time,"sleep",lambda sec:None)
+    # This older test isolates the verified first click; page-walk has
+    # separate full regression tests and must not consume extra screenshots.
+    monkeypatch.setattr(vu,"_collect_unread_pages",lambda *a:
+        fixture_scanned_names(["Bhabi HQ Bina Forever","Saeed Umar"]))
 
     result=vu.visual_scan_unread(120)
     assert result["senders"]==["Bhabi HQ Bina Forever","Saeed Umar"]
@@ -309,6 +320,8 @@ def test_existing_unread_selection_does_not_click(monkeypatch):
     monkeypatch.setattr(vu,"_ocr_words",lambda image,cancel=None:x)
     monkeypatch.setattr(vu,"_safe_foreground",lambda hwnd:None)
     monkeypatch.setattr(vu,"_visible_titles_for_layout",lambda *a:["Synthetic contact"])
+    monkeypatch.setattr(vu,"_collect_unread_pages",lambda *a:
+        fixture_scanned_names(["Synthetic contact"]))
     monkeypatch.setattr(win32api,"mouse_event",lambda *a:pytest.fail("already selected: no click"))
     result=vu.visual_scan_unread(120)
     assert result["filterSelectedVerified"] is True
@@ -588,6 +601,8 @@ def test_owner_post_click_enhanced_ocr_reads_verified_chat_without_second_click(
     monkeypatch.setattr(win32api,"mouse_event",lambda *args:seen.append(args))
     monkeypatch.setattr(pointer_motion,"move_visible",lambda point,guard:guard())
     monkeypatch.setattr(vu.time,"sleep",lambda *_:None)
+    monkeypatch.setattr(vu,"_collect_unread_pages",lambda *a:
+        fixture_scanned_names(["Ayesha Family"]))
     result=vu.visual_scan_unread(100)
     assert result["senders"]==["Ayesha Family"]
     assert result["filterClickAttempted"] is True
