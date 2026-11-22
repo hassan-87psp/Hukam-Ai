@@ -253,7 +253,7 @@ export class Relay {
     const enabled=parseJson<Capability[]>(row.capabilities_enabled,[]);
     const reported=parseJson<Capability[]>(row.capabilities_reported,[]);
     if(row.paused||!enabled.includes('screen')||!reported.includes('screen')||
-       config.screenCapture!==true || !this.isOnline(rawDevice))
+       config.screenCapture!==true || config.liveScreenPreview!==true || !this.isOnline(rawDevice))
       throw new HttpError(409,'LIVE_UNAVAILABLE','Laptop offline, paused or screen permission disabled');
     if(this.liveViews.has(rawDevice))
       throw new HttpError(409,'LIVE_BUSY','A live screen preview is already active for this laptop');
