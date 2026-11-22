@@ -66,6 +66,8 @@ export type ActionName =
   | 'calendar.save_reviewed'
   | 'chatgpt.prompt_draft'
   | 'chatgpt.submit_prompt'
+  | 'chatgpt.read_response'
+  | 'chatgpt.followup_draft'
   | 'chatgpt.download_visible'
   | 'whatsapp.select_chat'
   | 'whatsapp.read_selected'
