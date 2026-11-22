@@ -504,7 +504,7 @@ export class Relay {
         // an older Controller doesn't report the newer coverage flag.
         const explicitZero = result.filterSelectedVerified === true &&
           result.unreadCountVerified === true && badge === 0 &&
-          unreadNames.length === 0 && result.source === 'Explicit WhatsApp Unread zero badge';
+          unreadNames.length === 0 && (result.source === 'Explicit WhatsApp Unread zero badge' || result.source === 'Explicit WhatsApp empty Unread-filter list');
         const fullUnread = cleanNames && uniqueNames && (explicitZero ||
           (result.filterSelectedVerified === true && result.unreadCountVerified === true &&
            result.allBadgeChatsMatched === true && badgeValid && unreadNames.length === badge &&
