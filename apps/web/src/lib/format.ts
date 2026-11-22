@@ -74,7 +74,7 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
       if (Array.isArray(r.senders) && r.senders.length===0 &&
           r.totalUnreadChats===0 && r.unreadCountVerified===true &&
           r.filterSelectedVerified===true &&
-          r.source==='Explicit WhatsApp Unread zero badge') return false;
+          (r.source==='Explicit WhatsApp Unread zero badge' || r.source==='Explicit WhatsApp empty Unread-filter list')) return false;
       if (!Array.isArray(r.senders) || r.filterSelectedVerified!==true ||
           r.unreadCountVerified!==true || r.allBadgeChatsMatched!==true ||
           !Number.isInteger(r.totalUnreadChats) || (r.totalUnreadChats as number)<0 ||
