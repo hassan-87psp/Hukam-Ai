@@ -1,9 +1,22 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
-## Development candidate — v1.9.0 (not released)
+## Current source candidate — v1.9.7 (owner acceptance required)
 
-The stabilization candidate includes the 15-phase implementation and audit. Production remains on v1.8.4 until all release gates are met. See [release readiness](docs/step15-release-readiness.md) for the outstanding real-device and data-recovery checks.
+The tested source includes the newer Personal WhatsApp unread fixes, consented
+Windows Live Screen preview (select physical Monitor 1–N), and supervised
+observe → click → verify navigation with a mandatory stop on uncertain results.
+These are **not proof of successful real user laptop execution**.
+
+As checked on 23 Nov 2026, the connected Render relay's last confirmed live
+deployment was still **v1.9.5**, while GitHub `main` had newer passing code.
+See [v1.9.7 acceptance instructions](docs/hukm-v197-live-vision-acceptance.md)
+and [Render deployment blocker](https://github.com/hassan-87psp/Hukam-Ai/issues/58).
+Do **not** assume GitHub Actions success means the website, paired Windows
+Controller, signed-in Chrome or Personal WhatsApp are updated.
+
+Older development notes below remain historical and should not override the
+current deployment or release status.
 
 ## Previous development release — v1.8.4 (21 Nov 2026)
 
