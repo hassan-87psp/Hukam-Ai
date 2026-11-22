@@ -158,7 +158,13 @@ def _visible_region(rect, monitor):
     width, height = right - left, bottom - top
     x, y = max(left, ml), max(top, mt)
     capture_width = min(520, int(width * .57))
-    capture_height = min(920, bottom - y - 12, mb - y)
+    # The previous unconditional 920px crop hid every chat below that
+    # boundary on 1440p displays, even when WhatsApp showed all of them.
+    # Preserve the fast 920px capture on <=1080p monitors. On taller
+    # monitors include the visible chat list (bounded at 1600px so WinRT
+    # OCR remains practical); never capture outside this monitor/window.
+    height_cap = 1600 if (mb - mt) > 1080 else 920
+    capture_height = min(height_cap, bottom - y - 12, mb - y)
     if (width < 690 or height < 530 or capture_height < 400
             or x - left > 24 or y - top > 24
             or x + capture_width > min(right, mr)):
