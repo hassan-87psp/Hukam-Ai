@@ -10,7 +10,7 @@ export function parseChatGPTAsk(input:string):ChatGPTAsk|null {
     .replace(/^(?:(?:hey|hello)\s+)?(?:hukm|hukam)\s*[,!:-]?\s*/i,'')
     .replace(/\s+/g,' ').trim();
   const patterns=[
-    /^(?:chat\s*gpt|ai)\s+(?:se|ko|par|pe|mein|me)\s+(?:(?:zara|jara|please|ye|yeh|aik\s+sawal)\s+)?(?:pooch(?:ho|h)?|puch(?:ho|h)?|poch(?:ho|h)?|puchna|pocho|pucho|ask|sawal\s+karo|bolo|kaho|keh\s+do)\s*(?:ke|ki|:|-)?\s*(.*)$/i,
+    /^(?:chat\s*gpt|ai)\s+(?:se|ko|par|pe|mein|me)\s+(?:(?:zara|jara|please|ye|yeh|aik\s+sawal)\s+)?(?:pocho|pucho|pooch(?:ho|h)?|puch(?:ho|h)?|poch(?:ho|h)?|puchna|ask|sawal\s+karo|bolo|kaho|keh\s+do)\b\s*(?:ke|ki|:|-)?\s*(.*)$/i,
     /^(?:ask|pocho|pucho|pochho|poochho)\s+(?:chat\s*gpt|ai)\s*(?::|-|se)?\s*(.*)$/i,
   ];
   for(const pattern of patterns){
