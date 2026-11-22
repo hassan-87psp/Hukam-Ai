@@ -342,6 +342,17 @@ class Executor:
         except accessibility.AccessibilityError as exc:
             raise ActionError("WINDOW_CHANGED", str(exc)) from exc
 
+    def do_ui_navigate_verified(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "Navigation cancelled before observation")
+        if ("screen" not in self.cfg.capabilities or "screen" not in self.enabled_caps()
+                or not self.cfg.screen_capture):
+            raise ActionError("CAPABILITY_DISABLED", "Visible screen inspection is disabled")
+        try:
+            return accessibility.navigate_verified(a, cancel=cancel)
+        except accessibility.AccessibilityError as exc:
+            raise ActionError("NAVIGATION_REFUSED", str(exc)) from exc
+
     def do_desktop_control(self, a, cancel):
         if cancel.is_set():
             raise ActionError("CANCELLED", "Desktop input cancelled before execution")
