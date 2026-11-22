@@ -9,10 +9,10 @@ import {Projects} from '../src/projects';
 import {parseCommand,routeIntent} from '../../../packages/command-protocol/src/index';
 
 describe('Step 11 curated skills and explicit teaching',()=>{
-  it('validates all 30 recipe plans without high impact final sends or arbitrary code',()=>{
+  it('validates all 34 recipe plans without high impact final sends or arbitrary code',()=>{
     const recipes=starterSkills();
-    expect(recipes).toHaveLength(30);
-    expect(new Set(recipes.map(x=>x.id)).size).toBe(30);
+    expect(recipes).toHaveLength(34);
+    expect(new Set(recipes.map(x=>x.id)).size).toBe(34);
     for(const r of recipes){
       expect(validatePlanShape({summary:r.title,steps:r.steps}).steps).toHaveLength(r.steps.length);
       expect(r.steps.every(s=>!['whatsapp.send_reviewed','whatsapp.send_attachment_reviewed','calendar.save_reviewed','chatgpt.submit_prompt','desktop.control','controller.update'].includes(s.action))).toBe(true);
