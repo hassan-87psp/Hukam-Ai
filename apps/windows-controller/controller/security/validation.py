@@ -25,7 +25,7 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "controller.update", "app.open", "app.close", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.activate_observed", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.read_response", "chatgpt.followup_draft", "chatgpt.download_visible",
+    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.activate_observed", "ui.navigate_verified", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.read_response", "chatgpt.followup_draft", "chatgpt.download_visible",
     "whatsapp.select_chat", "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
