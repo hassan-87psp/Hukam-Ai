@@ -119,6 +119,12 @@ interface DeviceConn {
 export class Relay {
   private devices = new Map<string, DeviceConn>();
   private clients = new Map<string, Set<WebSocket>>(); // userId → sockets
+  // Ephemeral live screen sessions: never persist frames or replay after disconnect.
+  // One viewer per device, one monitor, 90 seconds maximum with local Windows consent.
+  private liveViews = new Map<string, {
+    userId:string; viewer:WebSocket; sessionId:string; deviceId:string;
+    expiresAt:number; ready:boolean; lastFrame:number;
+  }>();
   private timer: NodeJS.Timeout | null = null;
   private lastMaintenance = 0;
   private lastScheduleTick = 0;
@@ -183,6 +189,7 @@ export class Relay {
   }
   stop() {
     if (this.timer) clearInterval(this.timer);
+    for (const id of [...this.liveViews.keys()]) this.endLiveView(id,'relay_stopped');
     for (const c of this.devices.values()) c.ws.close(1001, 'server shutting down');
     for (const set of this.clients.values()) for (const ws of set) ws.close(1001, 'server shutting down');
   }
@@ -198,7 +205,30 @@ export class Relay {
     let set = this.clients.get(userId);
     if (!set) this.clients.set(userId, (set = new Set()));
     set.add(ws);
-    ws.on('close', () => set!.delete(ws));
+    ws.on('close', () => {
+      set!.delete(ws);
+      for(const [deviceId,session] of this.liveViews){
+        if(session.viewer===ws)this.endLiveView(deviceId,'viewer_disconnected');
+      }
+    });
+    ws.on('message',(data)=>{
+      // Web client websocket is authenticated by /ws/client; never accept
+      // device-origin frames or model-provided remote-control commands here.
+      const raw=data.toString();
+      if(raw.length>1200)return;
+      let m:unknown;
+      try{m=JSON.parse(raw);}catch{return;}
+      if(!m||typeof m!=='object'||Array.isArray(m))return;
+      const v=m as Record<string,unknown>;
+      if(v.type==='live_screen.subscribe'){
+        try{this.startLiveView(userId,ws,v.deviceId,v.monitor);}
+        catch(e){this.sendClient(ws,{type:'live_screen.status',deviceId:String(v.deviceId??'').slice(0,120),sessionId:'',status:'error',reason:e instanceof Error?e.message:'Live view unavailable'});}
+      }else if(v.type==='live_screen.unsubscribe'){
+        for(const [deviceId,session] of this.liveViews){
+          if(session.viewer===ws)this.endLiveView(deviceId,'viewer_stopped');
+        }
+      }
+    });
     this.sendClient(ws, { type: 'hello', userId });
   }
   private sendClient(ws: WebSocket, m: ServerToClient) {
@@ -212,6 +242,82 @@ export class Relay {
   }
   clientCount(userId: string) {
     return this.clients.get(userId)?.size ?? 0;
+  }
+
+  // ---- owner-approved ephemeral screen preview ------------------------
+  private startLiveView(userId:string,viewer:WebSocket,rawDevice:unknown,rawMonitor:unknown) {
+    if(typeof rawDevice!=='string'||!rawDevice||rawDevice.length>120||
+       rawMonitor!==1)throw new HttpError(400,'LIVE_ARGUMENTS','Choose monitor 1 on a paired laptop');
+    const row=this.getDeviceRow(userId,rawDevice);
+    const config=parseJson<Record<string,unknown>>(row.controller_config,{});
+    const enabled=parseJson<Capability[]>(row.capabilities_enabled,[]);
+    const reported=parseJson<Capability[]>(row.capabilities_reported,[]);
+    if(row.paused||!enabled.includes('screen')||!reported.includes('screen')||
+       config.screenCapture!==true || config.liveScreenPreview!==true || !this.isOnline(rawDevice))
+      throw new HttpError(409,'LIVE_UNAVAILABLE','Laptop offline, paused or screen permission disabled');
+    if(this.liveViews.has(rawDevice))
+      throw new HttpError(409,'LIVE_BUSY','A live screen preview is already active for this laptop');
+    for(const [id,session] of this.liveViews){
+      if(session.viewer===viewer)this.endLiveView(id,'viewer_switched');
+    }
+    const sessionId=newId('live_');
+    const session={userId,viewer,sessionId,deviceId:rawDevice,
+      expiresAt:Date.now()+90_000,ready:false,lastFrame:0};
+    this.liveViews.set(rawDevice,session);
+    if(!this.sendDevice(rawDevice,{type:'live_screen.start',sessionId,monitor:1,durationSeconds:90})){
+      this.liveViews.delete(rawDevice);
+      throw new HttpError(409,'LIVE_OFFLINE','Laptop disconnected before live approval');
+    }
+    this.audit(userId,'user','live_screen.requested',{monitor:1},rawDevice);
+    this.sendClient(viewer,{type:'live_screen.status',deviceId:rawDevice,
+      sessionId,status:'awaiting_local_approval'});
+  }
+
+  private endLiveView(deviceId:string,reason:string,sendStop=true){
+    const s=this.liveViews.get(deviceId);
+    if(!s)return;
+    this.liveViews.delete(deviceId);
+    if(sendStop)this.sendDevice(deviceId,{type:'live_screen.stop',sessionId:s.sessionId});
+    this.sendClient(s.viewer,{type:'live_screen.status',deviceId,
+      sessionId:s.sessionId,status:'ended',reason});
+    this.audit(s.userId,'system','live_screen.ended',{reason},deviceId);
+  }
+
+  private onLiveDeviceMessage(conn:DeviceConn,msg:DeviceToServer) {
+    const session=this.liveViews.get(conn.deviceId);
+    if(!session||!('sessionId' in msg)||msg.sessionId!==session.sessionId)return;
+    if(Date.now()>=session.expiresAt){this.endLiveView(conn.deviceId,'time_limit');return;}
+    if(msg.type==='live_screen.denied'||msg.type==='live_screen.ended'){
+      const status=msg.type==='live_screen.denied'?'denied':'ended';
+      this.liveViews.delete(conn.deviceId);
+      this.sendClient(session.viewer,{type:'live_screen.status',deviceId:conn.deviceId,
+        sessionId:session.sessionId,status,reason:String(msg.reason??'stopped').slice(0,100)});
+      return;
+    }
+    if(msg.type==='live_screen.ready'){
+      session.ready=true;
+      this.sendClient(session.viewer,{type:'live_screen.status',deviceId:conn.deviceId,
+        sessionId:session.sessionId,status:'live'});
+      return;
+    }
+    if(msg.type!=='live_screen.frame'||!session.ready)return;
+    // Never write a live frame to screenshots, logs, audit, database or Gemini.
+    // Reject oversized or malformed traffic; don't allow backpressure buildup.
+    if(msg.mime!=='image/jpeg'||typeof msg.dataBase64!=='string'||
+       msg.dataBase64.length>400_000||msg.dataBase64.length<100||
+       !/^[A-Za-z0-9+/]+={0,2}$/.test(msg.dataBase64)||
+       !Number.isInteger(msg.width)||!Number.isInteger(msg.height)||
+       msg.width<1||msg.height<1||msg.width>1280||msg.height>1280){
+      this.endLiveView(conn.deviceId,'invalid_frame');return;
+    }
+    if(Date.now()-session.lastFrame<650)return; // bounded <= about 1 fps
+    session.lastFrame=Date.now();
+    if(session.viewer.readyState!==1||session.viewer.bufferedAmount>500_000){
+      this.endLiveView(conn.deviceId,'viewer_unavailable');return;
+    }
+    this.sendClient(session.viewer,{type:'live_screen.frame',deviceId:conn.deviceId,
+      sessionId:session.sessionId,mime:'image/jpeg',
+      dataBase64:msg.dataBase64,width:msg.width,height:msg.height});
   }
 
   // ---- settings -------------------------------------------------------
@@ -299,6 +405,7 @@ export class Relay {
         const cap=ACTIONS[c.action as ActionName]?.capability;
         if(cap&&!caps.includes(cap))this.finish(c.id,'cancelled',null,{code:'CAPABILITY_REVOKED',message:'Permission revoked. Previously delivered input may still have occurred.'});
       }
+      if(!caps.includes('screen'))this.endLiveView(deviceId,'screen_permission_revoked');
       this.sendDevice(deviceId, { type: 'capabilities', enabledCapabilities: caps });
     }
     this.pushDevice(deviceId);
@@ -311,6 +418,7 @@ export class Relay {
     this.connEvent(deviceId, paused ? 'paused' : 'resumed');
     this.audit(userId, 'user', paused ? 'device.paused' : 'device.resumed', { reason }, deviceId);
     if (paused) {
+      this.endLiveView(deviceId,'emergency_pause');
       const open = all(this.db, "SELECT id FROM commands WHERE device_id = ? AND status IN ('pending','awaiting_approval','running')", deviceId);
       for (const c of open) this.finish(c.id, 'cancelled', null, { code: 'EMERGENCY_STOP', message: reason });
       this.sendDevice(deviceId, { type: 'pause' });
@@ -334,6 +442,7 @@ export class Relay {
     this.getDeviceRow(userId, deviceId);
     const open = all(this.db, "SELECT id FROM commands WHERE device_id = ? AND status IN ('pending','awaiting_approval','running')", deviceId);
     for (const c of open) this.finish(c.id, 'cancelled', null, { code: 'DEVICE_REMOVED', message: 'device was unpaired' });
+    this.endLiveView(deviceId,'device_unpaired');
     run(this.db, "UPDATE devices SET status = 'revoked', paused = 1 WHERE id = ?", deviceId);
     this.connEvent(deviceId, 'unpaired');
     this.audit(userId, 'user', 'device.unpaired', null, deviceId);
@@ -361,7 +470,7 @@ export class Relay {
 
   attachDevice(row: Row, ws: WebSocket, ip: string | null) {
     const existing = this.devices.get(row.id);
-    if (existing) existing.ws.close(4000, 'replaced by a newer connection');
+    if (existing){this.endLiveView(row.id,'device_reconnected');existing.ws.close(4000, 'replaced by a newer connection');}
     const conn: DeviceConn = { ws, deviceId: row.id, userId: row.user_id, lastMsg: Date.now(), ip, welcomed:false };
     this.devices.set(row.id, conn);
     run(this.db, 'UPDATE devices SET last_seen = ? WHERE id = ?', nowIso(), row.id);
@@ -390,6 +499,7 @@ export class Relay {
     });
     ws.on('close', () => {
       if (this.devices.get(row.id) === conn) {
+        this.endLiveView(row.id,'device_disconnected',false);
         this.devices.delete(row.id);
         run(this.db, 'UPDATE devices SET last_seen = ? WHERE id = ?', nowIso(), row.id);
         this.connEvent(row.id, 'disconnected', ip);
@@ -404,6 +514,12 @@ export class Relay {
     if(!msg||typeof msg!=='object'||(!conn.welcomed&&msg.type!=='hello'))return;
     if(conn.welcomed&&msg.type==='hello')return;
     switch (msg.type) {
+      case 'live_screen.ready':
+      case 'live_screen.denied':
+      case 'live_screen.ended':
+      case 'live_screen.frame':
+        if(conn.welcomed)this.onLiveDeviceMessage(conn,msg);
+        break;
       case 'hello': {
         const r = one(this.db, 'SELECT * FROM devices WHERE id = ?', deviceId)!;
         const reported = (Array.isArray(msg.capabilities) ? msg.capabilities : []).filter((c) => ALL_CAPABILITIES.includes(c));
@@ -836,6 +952,8 @@ export class Relay {
         if (now - queuedSince > this.config.queueTtlMs) this.finish(c.id, 'timed_out', null, { code: 'DEVICE_OFFLINE', message: 'device stayed offline' });
       }
     }
+    // Expire live preview independently of viewer/device activity.
+    for(const [id,s] of this.liveViews){if(now>=s.expiresAt)this.endLiveView(id,'time_limit');}
     // heartbeat watchdog
     for (const [id, conn] of this.devices) {
       if (now - conn.lastMsg > this.config.heartbeatTimeoutMs) {

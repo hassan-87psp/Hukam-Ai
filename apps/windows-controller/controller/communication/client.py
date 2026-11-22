@@ -50,6 +50,10 @@ class ControllerClient:
         self.ws = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self.stop_event = asyncio.Event()
+        # Live preview never writes frames to the screenshot folder/outbox.
+        # It requires a fresh native Windows approval on every 90s session.
+        self.live_task: asyncio.Task | None = None
+        self.live_session: str | None = None
 
     def cancel_active(self, reason: str) -> None:
         """Best-effort stop; actions already delivered to Windows cannot be undone.
@@ -67,8 +71,78 @@ class ControllerClient:
         """Invalidate every command from the old socket on the event-loop thread."""
         self.connection_epoch += 1
         self.cancel_active(reason)
+        self._stop_live()
         from ..whatsapp.desktop_ops import invalidate_attachment
         invalidate_attachment()
+
+    def _stop_live(self, session_id: str | None = None) -> None:
+        if session_id is not None and session_id != self.live_session:
+            return
+        if self.live_task is not None and not self.live_task.done():
+            self.live_task.cancel()
+        self.live_session = None
+
+    @staticmethod
+    def _local_live_permission() -> bool:
+        """Actual owner-facing approval; never bypassed by a remote API call."""
+        from ..config import IS_WINDOWS
+        from ..system import launcher
+        if not IS_WINDOWS or launcher.SIMULATE:
+            return False
+        import ctypes
+        flags = 0x0001 | 0x0100 | 0x00040000 | 0x00000020  # OK/Cancel, topmost, foreground, warning
+        accepted = ctypes.windll.user32.MessageBoxW(
+            0, "Allow HUKM to show Monitor 1 LIVE in your signed-in web app for up to 90 seconds?\\n\\n"
+               "The screen may include private information. No frame is saved or sent to Gemini.\\n"
+               "Choose Cancel to deny. Use Stop on the website or Emergency Stop anytime.",
+            "HUKM — Approve Live Screen", flags)
+        return accepted == 1
+
+    async def _run_live(self, session_id: str, epoch: int) -> None:
+        reason = 'stopped'
+        try:
+            allowed = await asyncio.to_thread(self._local_live_permission)
+            if not allowed:
+                await self.send({'type':'live_screen.denied','sessionId':session_id,'reason':'local_owner_denied'})
+                return
+            if (self.live_session != session_id or self.connection_epoch != epoch or
+                    self.paused or 'screen' not in self.enabled_caps or
+                    not self.cfg.screen_capture):
+                return
+            if not await self.send({'type':'live_screen.ready','sessionId':session_id}):
+                return
+            from ..screen import capture as screen_capture
+            deadline = time.monotonic() + 90
+            while (time.monotonic() < deadline and self.live_session == session_id and
+                   self.connection_epoch == epoch and not self.paused and
+                   'screen' in self.enabled_caps and self.cfg.screen_capture and
+                   not self.stop_event.is_set()):
+                # 1 fps preview; compressed JPEG in RAM, no disk, no OCR/AI upload.
+                frame = await asyncio.to_thread(screen_capture.capture,720,30,monitor=1)
+                if frame.get('simulated') or frame.get('mime') != 'image/jpeg':
+                    reason='invalid_capture';break
+                if len(frame['dataBase64'])>400_000:
+                    reason='frame_too_large';break
+                ok = await self.send({'type':'live_screen.frame','sessionId':session_id,
+                    'mime':'image/jpeg','dataBase64':frame['dataBase64'],
+                    'width':frame['width'],'height':frame['height']})
+                if not ok:
+                    reason='disconnected';break
+                await asyncio.sleep(1)
+            else:
+                reason='time_limit' if time.monotonic() >= deadline else 'stopped'
+        except asyncio.CancelledError:
+            reason='cancelled'
+        except Exception:
+            log.exception('live screen preview ended: capture failed (no image data logged)')
+            reason='capture_failed'
+        finally:
+            if self.live_session == session_id:
+                self.live_session = None
+            if self.connection_epoch == epoch:
+                await self.send({'type':'live_screen.ended','sessionId':session_id,'reason':reason})
+            if self.live_task is asyncio.current_task():
+                self.live_task = None
 
     # ---- protocol ---------------------------------------------------
     def hello(self) -> dict:
@@ -85,6 +159,7 @@ class ControllerClient:
                 "allowedDirs": [{"key": k, "path": str(p)} for k, p in roots],
                 "apps": self.cfg.apps,
                 "screenCapture": self.cfg.screen_capture,
+                "liveScreenPreview": self.cfg.screen_capture,
                 "browser": self.cfg.browser,
             },
         }
@@ -110,6 +185,21 @@ class ControllerClient:
                 await self.send(m)
         elif t == "command":
             await self.on_command(msg["command"])
+        elif t == "live_screen.start":
+            session_id = msg.get('sessionId')
+            if (not isinstance(session_id,str) or len(session_id)>100 or
+                    not session_id.startswith('live_') or msg.get('monitor') != 1 or
+                    msg.get('durationSeconds') != 90 or self.paused or
+                    'screen' not in self.enabled_caps or not self.cfg.screen_capture or
+                    self.live_task is not None):
+                if isinstance(session_id,str):
+                    await self.send({'type':'live_screen.denied','sessionId':session_id,
+                                     'reason':'capability_disabled_or_busy'})
+            else:
+                self.live_session=session_id
+                self.live_task=asyncio.create_task(self._run_live(session_id,self.connection_epoch))
+        elif t == "live_screen.stop":
+            self._stop_live(msg.get('sessionId'))
         elif t == "cancel":
             cid = str(msg.get("commandId", ""))
             ev = self.cancels.get(cid)
@@ -127,6 +217,7 @@ class ControllerClient:
             self._drop_result(str(msg.get("commandId", "")))
         elif t == "pause":
             self.paused = True
+            self._stop_live()
             self.cancel_active("emergency pause")
             from ..whatsapp.desktop_ops import invalidate_attachment
             invalidate_attachment()
@@ -140,6 +231,8 @@ class ControllerClient:
             previous = set(self.enabled_caps)
             self.enabled_caps = [c for c in msg.get("enabledCapabilities", []) if c in self.cfg.capabilities]
             if previous.difference(self.enabled_caps):
+                if 'screen' not in self.enabled_caps:
+                    self._stop_live()
                 self.cancel_active("permissions narrowed")
                 from ..whatsapp.desktop_ops import invalidate_attachment
                 invalidate_attachment()

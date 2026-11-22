@@ -143,6 +143,7 @@ export interface ControllerConfigSummary {
   allowedDirs: { key: string; path: string }[];
   apps: string[];
   screenCapture: boolean;
+  liveScreenPreview?: boolean;
   browser: string;
 }
 
@@ -234,6 +235,10 @@ export type DeviceToServer =
       config: ControllerConfigSummary;
     }
   | { type: 'heartbeat'; stats?: Device['stats'] }
+  | { type: 'live_screen.ready'; sessionId: string }
+  | { type: 'live_screen.denied'; sessionId: string; reason: string }
+  | { type: 'live_screen.ended'; sessionId: string; reason: string }
+  | { type: 'live_screen.frame'; sessionId: string; mime: 'image/jpeg'; dataBase64: string; width: number; height: number }
   | { type: 'ack'; commandId: string }
   | { type: 'started'; commandId: string }
   | {
@@ -248,6 +253,8 @@ export type DeviceToServer =
 
 export type ServerToDevice =
   | { type: 'welcome'; deviceId: string; paused: boolean; enabledCapabilities: Capability[] }
+  | { type: 'live_screen.start'; sessionId: string; monitor: 1; durationSeconds: 90 }
+  | { type: 'live_screen.stop'; sessionId: string }
   | {
       type: 'command';
       command: { id: string; action: ActionName; args: Record<string, unknown>; createdAt: string; timeoutMs: number };
@@ -262,6 +269,8 @@ export type ServerToDevice =
 
 export type ServerToClient =
   | { type: 'hello'; userId: string }
+  | { type: 'live_screen.status'; deviceId: string; sessionId: string; status: 'awaiting_local_approval' | 'live' | 'ended' | 'denied' | 'error'; reason?: string }
+  | { type: 'live_screen.frame'; deviceId: string; sessionId: string; mime: 'image/jpeg'; dataBase64: string; width: number; height: number }
   | { type: 'command.updated'; command: Command }
   | { type: 'device.updated'; device: Device }
   | { type: 'device.removed'; deviceId: string }
