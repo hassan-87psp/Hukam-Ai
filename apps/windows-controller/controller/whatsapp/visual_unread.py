@@ -450,9 +450,12 @@ def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
 
 
 def _visible_titles_for_layout(words, width, chip):
-    # Keep established full-size row recognition. Compact font layouts use
-    # scale-normalized geometry; require corroborated header and a distinct
-    # right timestamp column with at least two matching rows.
+    """First try native row geometry, then a bounded compact-font transform.
+
+    A filtered list with a *single* visible chat must also be supported;
+    demanding two aligned timestamps silently rejected that valid case.
+    No names are reported without a corroborating right-column timestamp.
+    """
     regular=visible_sender_titles(words,width,chip.y+chip.height)
     if regular or not _search_header(words,chip):
         return regular
@@ -460,19 +463,28 @@ def _visible_titles_for_layout(words, width, chip):
     if factor<=1.12 or factor>2.8:
         return []
     scaled=[Word(w.text,w.x*factor,w.y*factor,w.width*factor,w.height*factor) for w in words]
-    moments=[w for w in scaled if w.cy>(chip.y+chip.height)*factor+65 and
-             w.cx>=max(chip.x+chip.width+chip.height*5, width*.32)*factor and _DATE.fullmatch(w.text.strip())]
-    # Right edge rather than timestamp length: "Yesterday" and clock times
-    # differ in width but share the same right-aligned chat column.
-    clusters=[[v for v in moments if abs((v.x+v.width)-(w.x+w.width))<=24] for w in moments]
-    usable=[group for group in clusters if len(group)>=2]
-    if not usable:
+    # The user has a 520px WhatsApp sidebar, but compact fonts shrink the
+    # visible timestamp column. Infer its right edge from actual date labels,
+    # never a fixed 355px name boundary. Reject ambiguous competing columns.
+    moments=[w for w in words
+             if w.cy>chip.y+chip.height+35 and
+             w.cx>=max(chip.x+chip.width+3*chip.height,width*.31) and
+             _DATE.fullmatch(w.text.strip())]
+    if not moments:
         return []
-    group=max(usable,key=len)
-    if any(len(g)==len(group) and g!=group for g in usable):
+    clusters=[[v for v in moments
+               if abs((v.x+v.width)-(w.x+w.width))<=max(16,chip.height*2.5)]
+              for w in moments]
+    group=max(clusters,key=len)
+    if len(group)>1 and any(len(g)==len(group) and g!=group for g in clusters):
+        return []
+    if len(group)==1 and len(moments)>1:
+        # Multiple unaligned apparent timestamp columns are ambiguous.
         return []
     edge=max(w.x+w.width for w in group)
-    return visible_sender_titles(scaled,min(round(width*factor),round(edge+20)),(chip.y+chip.height)*factor)
+    inferred_width=min(round(width*factor),round((edge+22)*factor))
+    return visible_sender_titles(scaled,inferred_width,(chip.y+chip.height)*factor)
+
 
 _SKIP = {
     "all", "unread", "favourites", "favorites", "chats", "archived",
@@ -483,52 +495,88 @@ _PROMO = re.compile(
     r"(?:reach more customers|business broadcast|create a business|"
     r"update payment|start a new chat|get started|search or start)", re.I)
 _DATE = re.compile(
-    r"^(?:yesterday|today|mon|tue|wed|thu|fri|sat|sun|"
-    r"\d{1,2}:\d{2}(?:\s*[ap]m)?|"
-    r"\d{1,2}/\d{1,2}/\d{2,4})$", re.I)
+    r"^(?:yesterday|today|mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|"
+    r"thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?|"
+    r"\d{1,2}[:.]\d{2}(?:\s*[ap]\.?m\.?)?|"
+    r"\d{1,2}[-/]\d{1,2}(?:[-/]\d{2,4})?|"
+    r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)\s+\d{1,2})$",re.I)
 
 
 def visible_sender_titles(words: list[Word], width: int, chip_bottom: float) -> list[str]:
-    """Return only title-looking OCR lines supported by a nearby date/time.
+    """Extract only timestamp-aligned chat headings, never their preview lines.
 
-    The WhatsApp chat previews below titles are *not* returned. If OCR can't
-    pair a name with a row timestamp we don't invent a sender.
+    The former fixed x=120..355 cutoff dropped compact and multi-word chat
+    titles. Derive text bounds from the *actual timestamp* on that row.
+    WhatsApp may OCR '6:25' and 'PM' as two words; the clock alone anchors it.
     """
-    rows = [w for w in words
-            if chip_bottom + 65 < w.cy < 900
-            and 120 <= w.x < min(355, width - 130)
-            and 10 <= w.height <= 33
-            and len(w.text) <= 65
-            and w.text.strip().casefold() not in _SKIP
-            and not _PROMO.search(w.text)
-            and not _DATE.fullmatch(w.text.strip())]
-    times = [w for w in words
-             if chip_bottom + 65 < w.cy < 900
-             and w.cx >= width * .67
-             and _DATE.fullmatch(w.text.strip())]
-    result: list[str] = []
-    for moment in sorted(times, key=lambda t: t.y):
-        # Windows OCR returns *words*, not entire sender names. Build one
-        # single-line title from adjacent word rectangles, stopping well
-        # before the separate right-hand timestamp column.
-        candidates = sorted(
-            (w for w in rows if w.x + w.width < moment.x - 16
-             and abs(w.cy - moment.cy) <= 15), key=lambda w: w.x)
-        if not candidates:
+    row_top=chip_bottom+max(34,min(60,chip_bottom*.22))
+    times=sorted((w for w in words if row_top<w.cy<min(920,chip_bottom+850)
+                  and w.cx>=width*.60 and _DATE.fullmatch(w.text.strip())),
+                 key=lambda w:(w.cy,w.x))
+    names=[]
+    for moment in times:
+        minimum=max(82,width*.17)
+        cutoff=min(width*.86,moment.x-max(9,moment.height*.7))
+        # The timestamp is on the heading line; a lower preview line does
+        # not qualify even if it contains a tempting contact-like string.
+        tolerance=max(13,1.35*moment.height)
+        possible=[w for w in words
+                  if row_top<w.cy<min(920,chip_bottom+850)
+                  and minimum<=w.x<cutoff and w.x+w.width<=cutoff
+                  and 7<=w.height<=40 and len(w.text)<=65
+                  and abs(w.cy-moment.cy)<=tolerance
+                  and w.text.strip().casefold() not in _SKIP
+                  and not _PROMO.search(w.text)
+                  and not _DATE.fullmatch(w.text.strip())
+                  and w.text.strip() not in ("AM","PM","am","pm")]
+        if not possible:
             continue
-        parts = [candidates[0]]
-        for word in candidates[1:]:
-            prev = parts[-1]
-            if word.x - (prev.x + prev.width) > 21:
+        nearest=min(possible,key=lambda w:(abs(w.cy-moment.cy),w.x))
+        line=sorted((w for w in possible
+                     if abs(w.cy-nearest.cy)<=max(4,.72*max(nearest.height,w.height))),
+                    key=lambda w:w.x)
+        if not line:
+            continue
+        parts=[line[0]]
+        for word in line[1:]:
+            previous=parts[-1]
+            if word.x-(previous.x+previous.width)>max(17,1.45*max(word.height,previous.height)):
                 break
             parts.append(word)
-        title = " ".join(part.text for part in parts).strip()
-        if len(title) < 2 or len(title) > 65 or title.casefold() in _SKIP:
-            continue
-        if title not in result:
-            result.append(title)
-    return result[:12]
+        title=" ".join(w.text.strip() for w in parts).strip()
+        if 2<=len(title)<=65 and title.casefold() not in _SKIP and title not in names:
+            names.append(title)
+    return names[:12]
 
+
+def _row_geometry_diagnostics(words,image,chip,stage):
+    """Privacy-safe telemetry: geometry/counts only, NEVER names or previews."""
+    row=[w for w in words if chip.y+chip.height+30<w.cy<image.height]
+    dates=[w for w in row if _DATE.fullmatch(w.text.strip())]
+    right=[w for w in dates if w.cx>=image.width*.60]
+    log.info("WhatsApp row recognition stage=%s crop=%dx%d words=%d row_words=%d "
+             "date_tokens=%d right_date_tokens=%d timestamp_geometry=%s",
+             stage,image.width,image.height,len(words),len(row),len(dates),
+             len(right),[(round(w.x),round(w.y),round(w.width),round(w.height))
+                         for w in right[:8]])
+
+
+def _explicit_empty_unread(words,chip,width):
+    """Require the explicit empty-list wording; missing rows are NOT zero."""
+    content=[w for w in words if chip.y+chip.height+48<w.cy<900
+             and 0<=w.x<w.x+w.width<=width]
+    for anchor in content:
+        if anchor.text.strip().casefold() not in ("no","you"):
+            continue
+        nearby=sorted((w for w in content
+                       if abs(w.cy-anchor.cy)<=max(7,anchor.height*.8)
+                       and anchor.x<=w.x<=anchor.x+300),key=lambda w:w.x)
+        sentence=" ".join(w.text.strip().casefold() for w in nearby)
+        if sentence in ("no unread chats","no unread messages",
+                        "no unread conversations","you have no unread chats",
+                        "you have no unread messages"):
+            return True
+    return False
 
 def _chip_background(image, chip: Word) -> int:
     """Sample empty area just before 'Unread' text, avoiding its glyphs."""
@@ -781,11 +829,50 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
             "Unread filter appears to have switched off; no unread sender names reported."
         )
 
+    _row_geometry_diagnostics(second_words,after_image,selected_chip,"post-click-original")
     senders = _visible_titles_for_layout(second_words,after_image.width,selected_chip)
     if not senders:
+        # Different OCR preprocessing on the SAME verified screenshot.
+        # No repeat click, no chat opening, no screenshot retention/upload.
+        _ensure_not_cancelled(cancel)
+        log.info("WhatsApp unread visual stage=enhanced_post_click_ocr")
+        try:
+            enhanced=_ocr_enlarged(after_image,cancel)
+        except VisualUnreadUnavailable:
+            _ensure_not_cancelled(cancel)
+            enhanced=[]
+        if enhanced:
+            # A second OCR transform may lose tiny filter labels yet read the
+            # larger chat rows correctly. The original filter was independently
+            # verified on this SAME captured image; reuse its trusted header.
+            cutoff=selected_chip.y+selected_chip.height+35
+            header_words=[w for w in second_words if w.cy<cutoff]
+            row_words=[w for w in enhanced if w.cy>=cutoff]
+            merged=header_words+row_words
+            _row_geometry_diagnostics(merged,after_image,selected_chip,"post-click-enhanced")
+            senders=_visible_titles_for_layout(merged,after_image.width,selected_chip)
+            if senders or _explicit_empty_unread(merged,selected_chip,after_image.width):
+                second_words=merged
+    if not senders:
+        # Only an explicitly observed empty state can establish zero. The
+        # absence of OCR-recognized rows does NOT establish an empty inbox.
+        empty=(selection_verified and (
+            _explicit_empty_unread(second_words,selected_chip,after_image.width)))
+        if empty:
+            return {"supported":True,"senders":[],"visibleChatCount":0,
+                    "totalUnreadChats":0,"unreadCountVerified":True,
+                    "totalUnreadMessages":0,"visibleOnly":False,
+                    "messagesRead":False,"filterClickAttempted":True,
+                    "filterSelectedVerified":True,
+                    "source":"Explicit WhatsApp empty Unread-filter list"}
         raise VisualUnreadUnavailable(
-            "Unread filter was clicked but local OCR could not confirm any "
-            "sender titles alongside their chat timestamps. No names guessed."
+            "Unread filter clicked, but sender rows/timestamps not verified. "
+            "No names or zero count guessed. See privacy-safe row geometry logs."
+        )
+    if not selection_verified:
+        raise VisualUnreadUnavailable(
+            "Sender rows recognized, but Unread filter selection was not verified; "
+            "no unverified unread names reported."
         )
     _ensure_not_cancelled(cancel)
     return {
