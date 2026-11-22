@@ -7,7 +7,7 @@ describe('native agent tool registry', () => {
   it('advertises exactly the registered actions, with no duplicates or unknown commands', () => {
     const names = agentToolNames();
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(39);
+    expect(names.length).toBe(40);
     for (const name of names) {
       expect(ACTIONS[name]).toBeDefined();
       expect(isAgentTool(name)).toBe(true);
