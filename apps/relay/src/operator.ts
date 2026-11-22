@@ -302,6 +302,35 @@ export class Operator {
     const project=projectId==null?null:this.projects.get(userId,String(projectId));
     const savedCalendar=last && Date.parse(last.expires_at)>=Date.now()
       ? decodeCalendarSlots(last.request):null;
+    const calendarDraftPrefix='HUKM_OPENED_CALENDAR_DRAFT:';
+    let reviewedCalendar:Record<string,unknown>|null=null;
+    if(last && Date.parse(last.expires_at)>=Date.now() &&
+       String(last.request).startsWith(calendarDraftPrefix)){
+      try{
+        const candidate=JSON.parse(String(last.request).slice(calendarDraftPrefix.length)) as unknown;
+        if(candidate && typeof candidate==='object' && !Array.isArray(candidate)){
+          const validation=validateCommand('calendar.save_reviewed',candidate as Record<string,unknown>);
+          if(validation.ok)reviewedCalendar=validation.args;
+        }
+      }catch { /* No unverified saved draft may trigger a Calendar Save */ }
+    }
+    if(reviewedCalendar && !freshTask(answer)){
+      // This is intentionally a SECOND explicit instruction after a real,
+      // non-simulated event editor was launched. The laptop independently
+      // verifies the exact URL, title, owner and visible Save control.
+      if(!/^(?:(?:haan|han|yes|okay|ok)\s+)?(?:save|save karo|save kar do|event save karo|confirm save|confirm karo)$/i.test(answer)){
+        return {kind:'clarify',topic:'operator-followup',
+          question:'Calendar draft open hua tha. Puri details check karke "Save karo" bolein, ya "Cancel".'};
+      }
+      const result=validatePlanShape({
+        summary:'Owner-requested final Calendar Save attempt for '+String(reviewedCalendar.title)+
+          ' (on-device confirmation and separate approval; delivery not guaranteed)',
+        steps:[{action:'calendar.save_reviewed',args:reviewedCalendar}],
+      });
+      const plan=this.persistPlan(userId,project?.id??null,answer,result);
+      this.clearPending(userId,key);
+      return plan;
+    }
     const newCalendarRequest=calendarSchedulingIntent(answer);
     const recentCalendar=newCalendarRequest
       ? recentCalendarContext(this.db,userId,project?.id??null):null;
@@ -630,6 +659,7 @@ export class Operator {
     let visibleUnreadSendersReviewed=false;
     let verifiedContactRead:string|null=null;
     let verifiedDraft:{contact:string;message:string}|null=null;
+    let openedCalendarDraft:Record<string,unknown>|null=null;
     try{
       for(let i=0;i<plan.steps.length;i++){
         if(this.getRun(userId,taskId).status==='cancelled')return;
@@ -662,11 +692,24 @@ export class Operator {
           typeof step.args.contact==='string' && typeof step.args.message==='string'){
           verifiedDraft={contact:String(step.args.contact),message:String(step.args.message)};
         }
+        if(i===plan.steps.length-1 && data.simulated!==true &&
+           step.action==='calendar.event_draft' &&
+           data.eventDraftOpened===true && data.eventSaved===false){
+          // Store approved input metadata only, never browser screenshots,
+          // sessions, attendees or provider credentials.
+          openedCalendarDraft={...step.args};
+        }
         if(data.verified!==true)unverified=true;
       }
       this.update(taskId,unverified?'unverified':'completed',unverified?
         'Actions reported success, but their final on-screen outcome was not independently verified.':null,
         plan.steps.length,ids);
+      if(openedCalendarDraft){
+        this.savePending(userId,this.dialogueKey(plan.projectId),
+          'HUKM_OPENED_CALENDAR_DRAFT:'+JSON.stringify(openedCalendarDraft),
+          'Calendar draft open hua hai. Date, time, title aur sahi account check karein. Final Save ke liye "Save karo" bolein ya "Cancel".',
+          10*60_000);
+      }
       if(verifiedDraft){
         // Explicit send has a ten-minute owner-scoped confirmation window.
         // Draft body is already stored in authenticated command history; do
