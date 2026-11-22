@@ -20,7 +20,7 @@ import time
 from ..config import IS_WINDOWS
 from ..system import launcher, windows
 from .reader import visible_texts
-from . import locator
+from . import locator, visual_reply
 
 PROCESSES = {"whatsapp.exe", "whatsappdesktop.exe", "msedgewebview2.exe", "applicationframehost.exe"}
 # Volatile, process-local authorization chain. No chat bodies or file data stored.
@@ -174,6 +174,9 @@ def select_chat(expected_contact: str, cancel=None) -> dict:
     """
     invalidate_attachment()
     _check_cancel(cancel)
+    searched=False
+    clicked=False
+    matches=[]
     if launcher.SIMULATE:
         launcher._record("whatsapp.select_chat", "contact (redacted)")
         return {"chatSelected": True, "recipientVerified": True,
@@ -231,6 +234,7 @@ def select_chat(expected_contact: str, cancel=None) -> dict:
             raise DesktopWhatsAppError("Chat selection cancelled before clicking")
         if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
             raise DesktopWhatsAppError("WhatsApp lost foreground; no chat selected")
+        clicked=True
         matches[0].Click()
         # UIA may return from Click before React/WebView updates its chat header.
         for _ in range(8):
@@ -252,10 +256,20 @@ def select_chat(expected_contact: str, cancel=None) -> dict:
         raise DesktopWhatsAppError(
             "Clicked a chat result but could not verify its exact contact header. "
             "Do not read or send until the contact is confirmed")
-    except DesktopWhatsAppError:
-        raise
+    except DesktopWhatsAppError as exc:
+        if clicked or searched or len(matches)>1:
+            raise
+        try:
+            return visual_reply.select_chat_visual(expected_contact,cancel)
+        except visual_reply.VisualReplyUnavailable as other:
+            raise DesktopWhatsAppError(str(exc)+"; local visual selection: "+str(other)) from other
     except Exception as exc:
-        raise DesktopWhatsAppError("WhatsApp native chat selection is unavailable on this app version") from exc
+        if clicked or searched:
+            raise DesktopWhatsAppError("WhatsApp selection uncertain; inspect manually before retry") from exc
+        try:
+            return visual_reply.select_chat_visual(expected_contact,cancel)
+        except visual_reply.VisualReplyUnavailable as other:
+            raise DesktopWhatsAppError("Exact visual chat selection unavailable: "+str(other)) from other
 
 
 def read_selected(expected_contact: str | None = None, cancel=None) -> dict:
@@ -278,11 +292,26 @@ def read_selected(expected_contact: str | None = None, cancel=None) -> dict:
                 "WhatsApp window changed while reading. Private message text discarded")
         if expected_contact:
             _check_selected_contact(fresh_root, fresh_rect, expected_contact)
-    except DesktopWhatsAppError:
-        raise
+    except DesktopWhatsAppError as exc:
+        if not expected_contact:
+            raise
+        try:
+            return visual_reply.read_selected_visual(expected_contact,cancel)
+        except visual_reply.VisualReplyUnavailable as other:
+            raise DesktopWhatsAppError(str(exc)+"; visual read: "+str(other)) from other
     except Exception as exc:
-        raise DesktopWhatsAppError("WhatsApp Desktop accessibility text is unavailable") from exc
+        if not expected_contact:
+            raise DesktopWhatsAppError("WhatsApp UI Automation text unavailable") from exc
+        try:
+            return visual_reply.read_selected_visual(expected_contact,cancel)
+        except visual_reply.VisualReplyUnavailable as other:
+            raise DesktopWhatsAppError("Local OCR chat read unavailable: "+str(other)) from other
     if not messages:
+        if expected_contact:
+            try:
+                return visual_reply.read_selected_visual(expected_contact,cancel)
+            except visual_reply.VisualReplyUnavailable as exc:
+                raise DesktopWhatsAppError("No verified visible messages: "+str(exc)) from exc
         raise DesktopWhatsAppError("No readable messages in the selected, visible chat")
     # Whitelisted visible chat-pane text only. May include on-screen UI text;
     # do not pretend it represents the complete conversation.
@@ -296,6 +325,7 @@ def read_selected(expected_contact: str | None = None, cancel=None) -> dict:
 def draft_reply(expected_contact: str, message: str, cancel=None) -> dict:
     invalidate_attachment()
     _check_cancel(cancel)
+    typing_started=False
     if launcher.SIMULATE:
         launcher._record("whatsapp.draft_reply", "message (redacted)")
         return {"recipientVerified": True, "draftEntered": True,
@@ -317,6 +347,7 @@ def draft_reply(expected_contact: str, message: str, cancel=None) -> dict:
         composer.SetFocus()
         _same_window(active, cancel)
         _check_selected_contact(root, rect, expected_contact)
+        typing_started=True
         _type_guarded(composer, message, lambda: _same_window(active, cancel), cancel)
         after, fresh_root, fresh_rect = _active_root()
         if after.hwnd != active.hwnd or after.pid != active.pid:
@@ -327,10 +358,20 @@ def draft_reply(expected_contact: str, message: str, cancel=None) -> dict:
         return {"recipientVerified": True, "draftEntered": True,
                 "sent": False, "verified": False, "contact": expected_contact,
                 "note": "Text entered in the selected WhatsApp chat. Review on laptop; it has NOT been sent."}
-    except DesktopWhatsAppError:
-        raise
+    except DesktopWhatsAppError as exc:
+        if typing_started:
+            raise  # Potential partial input: never type the same draft again
+        try:
+            return visual_reply.draft_reply_visual(expected_contact,message,cancel)
+        except visual_reply.VisualReplyUnavailable as other:
+            raise DesktopWhatsAppError(str(exc)+"; visual draft: "+str(other)) from other
     except Exception as exc:
-        raise DesktopWhatsAppError("WhatsApp composer input failed on this Desktop version") from exc
+        if typing_started:
+            raise DesktopWhatsAppError("Draft input uncertain; inspect WhatsApp before retry") from exc
+        try:
+            return visual_reply.draft_reply_visual(expected_contact,message,cancel)
+        except visual_reply.VisualReplyUnavailable as other:
+            raise DesktopWhatsAppError("UIA and visual composer unavailable: "+str(other)) from other
 
 
 def _file_fingerprint(path: str, cancel=None) -> tuple[int, str]:

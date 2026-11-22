@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {validatePlanShape} from '../src/operator';
+import {validatePlanShape,exactWhatsAppReply} from '../src/operator';
 import {ACTIONS, requiresApproval, validateCommand} from '../../../packages/command-protocol/src/index';
 
 const future = new Date(Date.now()+2*86400000).toISOString().replace(/\.\d{3}Z$/,'Z');
@@ -80,5 +80,24 @@ describe('approved Personal WhatsApp + screen + Calendar + ChatGPT workflow cont
     expect(validateCommand('chatgpt.prompt_draft',{...valid,projectUrl:'https://chatgpt.com.evil.test/'}).ok).toBe(false);
     expect(validatePlanShape({steps:[{action:'chatgpt.submit_prompt',args:valid}]}).steps).toHaveLength(1);
     expect(ACTIONS['chatgpt.download_visible'].timeoutMs).toBeGreaterThan(90_000);
+  });
+});
+
+
+describe('deterministic owner-reviewed WhatsApp reply drafting',()=>{
+  it('extracts full recipient name and message, drafting without Send',()=>{
+    expect(exactWhatsAppReply('Adnan Agent Visa Bina Forever ko reply likho: Kal milte hain'))
+      .toEqual({contact:'Adnan Agent Visa Bina Forever',message:'Kal milte hain'});
+    const p=exactWhatsAppReply('Ashfaq Boss Bina Forever ko message bhejo: Shukriya');
+    expect(p).toEqual({contact:'Ashfaq Boss Bina Forever',message:'Shukriya'});
+    expect(validatePlanShape({steps:[
+      {action:'whatsapp.select_chat',args:{contact:p!.contact}},
+      {action:'whatsapp.draft_reply',args:p}
+    ]}).steps.map(x=>x.action)).toEqual(['whatsapp.select_chat','whatsapp.draft_reply']);
+  });
+  it('never treats missing text or control characters as a Send request',()=>{
+    expect(exactWhatsAppReply('Ali ko reply kar do')).toBeNull();
+    expect(exactWhatsAppReply('Ali ko message bhejo: send')).toBeNull();
+    expect(exactWhatsAppReply('Ali ko message likho: hi\nSend')).toBeNull();
   });
 });

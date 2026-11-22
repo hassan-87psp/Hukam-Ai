@@ -27,6 +27,18 @@ type Plan = {id:string; summary:string; request:string; projectId:string|null; s
 type TaskRun = {id:string; planId:string|null; deviceId:string|null; status:string; currentStep:number; totalSteps:number; commandIds:string[]; error:string|null; createdAt:string; updatedAt:string};
 
 
+/** Parse an exact owner-requested WhatsApp DRAFT, never Send. */
+export function exactWhatsAppReply(text:string):{contact:string;message:string}|null{
+  const input=text.trim();
+  const matched=input.match(/^(?:whatsapp(?: desktop)?\s+(?:par|mein)\s+)?(.+?)\s+ko\s+(?:ye\s+|is\s+)?(?:reply|jawab|message|msg)\s*(?:likho|likh do|draft|tayyar karo|bana do|bhejo|bhej do|send|kar do|karo)?\s*[:\-]?\s+(.+)$/iu);
+  if(!matched)return null;
+  const contact=matched[1].trim(),message=matched[2].trim();
+  if(!/^[\p{L}\p{M}0-9 .'+()\-]{1,80}$/u.test(contact) ||
+     !message || message.length>1000 || /[\u0000-\u001f]/u.test(message) ||
+     /^(?:do|karo|kar do|bhejo|bhej do|send|haan|yes|ok|okay)$/i.test(message))return null;
+  return {contact,message};
+}
+
 const FINAL_RUN = new Set(['completed','unverified','failed','cancelled','interrupted']);
 const FINAL_COMMAND = new Set<CommandStatus>(['completed','failed','cancelled','timed_out']);
 
@@ -328,6 +340,7 @@ export class Operator {
     const intent=routeIntent(request,parsed);
     const url=parsed.kind==='command' && parsed.action==='web.open' ? String(parsed.args.url??'') : '';
     const projectLaunch=!!project && /^(?:https:\/\/(?:chatgpt\.com|calendar\.google\.com|mail\.google\.com|outlook\.office\.com)\/)/.test(url);
+    const exactReply=exactWhatsAppReply(answer);
     const nativeWhatsAppWorkflow = !isFollowup ? desktopWhatsAppWorkflow(answer) : null;
     const selectedWhatsAppContact = !isFollowup ? namedWhatsAppRead(answer) : null;
     const localNumberPlan = !isFollowup ? numberWritingPlan(answer) : null;
@@ -365,6 +378,12 @@ export class Operator {
       // A model must never reverse "band kro" into "app.open".
       result = {summary:'Close the selected verified Notepad window (never discard unsaved changes)',
         steps:[validateStep({action:'app.close',args:{app:'notepad'}})]};
+    } else if(exactReply && !reviewedDraft){
+      result={summary:'Select exact Personal WhatsApp contact and draft reply (not Send)',
+        steps:[
+          validateStep({action:'whatsapp.select_chat',args:{contact:exactReply.contact}}),
+          validateStep({action:'whatsapp.draft_reply',args:exactReply}),
+        ]};
     } else if(nativeWhatsAppWorkflow){
       // Keep the user's request intact: open the personal desktop app first,
       // then check either verified numeric unread count or visible unread sender
