@@ -37,9 +37,9 @@ describe('Phase 6: read-only production relay preflight',()=>{
 
   it('accepts real relay JSON, version and properly gated private runtime status',async()=>{
     const {stdout}=await execute(process.execPath,[cli,'--url',relay.url,
-      '--expected-version','1.8.4'],{timeout:30_000});
+      '--expected-version','1.9.3'],{timeout:30_000});
     expect(stdout).toContain('HUKM relay preflight PASS');
-    expect(stdout).toContain('"version": "1.8.4"');
+    expect(stdout).toContain('"version": "1.9.3"');
     expect(stdout).toContain('"anonymousRuntimeProtected": true');
     expect(stdout).toContain('"liveApplicationActionsVerified": false');
   });
