@@ -10,7 +10,7 @@ from typing import Callable
 from ..browser import web
 from ..browser import operator as browser_operator
 from ..browser import profiles as browser_profiles
-from ..browser import calendar_draft, chatgpt, email_draft
+from ..browser import calendar_draft, chatgpt, chatgpt_reply, email_draft
 from ..config import Config
 from ..files import search as files
 from ..screen import capture as screen
@@ -404,7 +404,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "ChatGPT visible read cancelled")
         try:
-            return chatgpt.read_visible_response(a["projectUrl"], a["prompt"], cancel)
+            return chatgpt_reply.read_visible_response(a["projectUrl"], a["prompt"], cancel)
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_RESPONSE_NOT_VERIFIED", str(exc)) from exc
 
@@ -412,7 +412,7 @@ class Executor:
         if cancel.is_set():
             raise ActionError("CANCELLED", "ChatGPT follow-up draft cancelled")
         try:
-            return chatgpt.draft_followup(
+            return chatgpt_reply.draft_followup(
                 a["projectUrl"], a["previousPrompt"], a["prompt"], cancel)
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_THREAD_NOT_VERIFIED", str(exc)) from exc
