@@ -58,6 +58,7 @@ export type ActionName =
   | 'ui.inspect'
   | 'ui.activate'
   | 'ui.activate_observed'
+  | 'ui.navigate_verified'
   | 'ui.scroll'
   | 'desktop.control'
   | 'email.inbox_open'

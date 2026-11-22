@@ -5,7 +5,7 @@ import type { ActionName } from '../../../packages/shared-types/src/index';
 
 const FAMILIES = {
   system: ['device.status', 'apps.list', 'diagnostics.probe'],
-  desktop: ['app.open', 'app.close', 'window.active', 'window.focus', 'notepad.type', 'ui.inspect', 'ui.scroll'],
+  desktop: ['app.open', 'app.close', 'window.active', 'window.focus', 'notepad.type', 'ui.inspect', 'ui.scroll', 'ui.navigate_verified'],
   files: ['folder.open', 'folder.list', 'file.search', 'file.open', 'file.reveal'],
   browser: ['web.open', 'web.search', 'youtube.search', 'youtube.play', 'browser.control', 'browser.profile_open'],
   whatsapp: ['whatsapp.open', 'whatsapp.check', 'whatsapp.unread_senders', 'whatsapp.select_chat', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed', 'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed'],

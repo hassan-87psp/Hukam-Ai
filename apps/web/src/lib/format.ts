@@ -61,6 +61,7 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
         typeof r.fileName === 'string' && !!r.fileName &&
         typeof r.sizeBytes === 'number' && r.sizeBytes > 0);
     case 'ui.activate_observed':
+    case 'ui.navigate_verified':
       return r.verified !== true;
     case 'desktop.control':
       return r.verified !== true;
@@ -136,6 +137,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'ui.inspect': 'Inspect visible controls',
   'ui.activate': 'Activate visible control',
   'ui.activate_observed': 'Activate inspected button (approved)',
+  'ui.navigate_verified': 'Observe → click → verify safe UI control',
   'ui.scroll': 'Scroll active app (approved)',
   'desktop.control': 'Desktop mouse/keyboard (approved)',
   'email.inbox_open': 'Open email inbox (approval)',
@@ -206,6 +208,7 @@ export function describeArgs(action: ActionName, args: Record<string, unknown>):
         : a.kind==='key' ? `press ${a.key}`
         : 'type ('+String(a.text??'').length+' characters)';
     case 'ui.activate_observed': return String(a.role ?? '') + ': ' + String(a.label ?? '');
+    case 'ui.navigate_verified': return String(a.process??'')+' · '+String(a.label??'')+(a.expectLabel?' → '+String(a.expectLabel):' · unverified expected outcome');
     case 'browser.control': return a.kind === 'click' ? `click (${a.x}, ${a.y})` : a.kind === 'scroll' ? `scroll ${a.steps}` : a.kind === 'key' ? `press ${a.key}` : 'type into browser';
     default: return '';
   }

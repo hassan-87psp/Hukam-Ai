@@ -25,7 +25,7 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "controller.update", "app.open", "app.close", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.activate_observed", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.read_response", "chatgpt.followup_draft", "chatgpt.download_visible",
+    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.activate_observed", "ui.navigate_verified", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.read_response", "chatgpt.followup_draft", "chatgpt.download_visible",
     "whatsapp.select_chat", "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
@@ -34,7 +34,7 @@ CAPABILITY_OF = {
     "controller.update": "system", "app.open": "apps", "app.close": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
-    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.activate_observed": "input", "ui.scroll": "input", "desktop.control": "input",
+    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.activate_observed": "input", "ui.navigate_verified": "input", "ui.scroll": "input", "desktop.control": "input",
     "email.inbox_open": "browser", "email.compose_draft": "browser", "calendar.event_draft": "browser", "calendar.save_reviewed": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
     "chatgpt.read_response": "browser", "chatgpt.followup_draft": "browser",
     "chatgpt.download_visible": "browser", "whatsapp.select_chat": "whatsapp", "whatsapp.read_selected": "whatsapp",
@@ -221,6 +221,25 @@ def validate(action: str, args: dict) -> dict:
         return {"steps": steps}
     if action == "ui.activate":
         raise ValidationError("Inspect visible controls first; legacy unbound clicks are disabled")
+    if action == "ui.navigate_verified":
+        from ..screen.accessibility import ROLES, safe_control_label, CLICK_PROCESSES
+        process = a.get("process")
+        if type(process) is not str or process not in CLICK_PROCESSES:
+            raise ValidationError("Exact approved foreground app process is required")
+        role = a.get("role")
+        label = _str(a.get("label"), "label", 100)
+        if role not in ROLES or not safe_control_label(label):
+            raise ValidationError("Target must be an exact safe visible control")
+        extra = {}
+        if "expectLabel" in a:
+            expected = _str(a.get("expectLabel"), "expectLabel", 100)
+            expected_role = a.get("expectRole")
+            if expected_role not in ROLES or not safe_control_label(expected):
+                raise ValidationError("Expected outcome must be an exact safe visible control")
+            extra = {"expectLabel": expected, "expectRole": expected_role}
+        elif "expectRole" in a:
+            raise ValidationError("Expected role requires an expected control label")
+        return {"process": process, "label": label, "role": role, **extra}
     if action == "ui.activate_observed":
         from ..screen.accessibility import ROLES, safe_control_label
         label = _str(a.get("label"), "label", 100)
