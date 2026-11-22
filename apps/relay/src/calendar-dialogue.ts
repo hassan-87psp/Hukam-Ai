@@ -100,7 +100,8 @@ function durationMention(input:string):number|null{
 }
 function titleMention(input:string,asked:string):string|null{
   const explicit=input.match(/(?:^|\b)(?:title|subject|meeting name|meeting naam)\s*(?::|-|hai|is)?\s+([^\n]{2,100})/i);
-  let value=explicit?.[1]?.trim();
+  let value=explicit?.[1]?.trim()
+    .replace(/\\s+\\d{1,3}\\s*(?:minutes?|mins?|ghant[ae]|hours?|hr)\\s*$/i,'').trim();
   if(!value&&/title|meeting ka naam/i.test(asked)){
     const trimmed=input.trim();
     // Reply "Team Sync" is a title. Not "kal" or a time/duration/profile
