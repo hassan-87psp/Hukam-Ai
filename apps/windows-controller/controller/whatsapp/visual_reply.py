@@ -273,8 +273,17 @@ def _composer_placeholder(words,image):
     return None
 
 
-def _exact_draft(words,message):
-    return len(_phrase_hits(words,message))==1
+def _exact_draft(words,message,image=None):
+    matches=_phrase_hits(words,message)
+    if len(matches)!=1:
+        return False
+    if image is None:
+        return True
+    # The OCR band contains the composer PLUS part of the chat above it.
+    # Never treat an old visible message bubble as a verified new draft.
+    start,end=matches[0]
+    return (image.height*.48<=start.cy<=image.height*.97 and
+            start.x>=0 and end.x+end.width<image.width*.95)
 
 
 def verified_visual_draft(hwnd, expected, message, cancel=None):
@@ -285,8 +294,8 @@ def verified_visual_draft(hwnd, expected, message, cancel=None):
     """
     if not exact_header(hwnd,expected,cancel):
         return False
-    _image,words,_x,_y=_composer_words(hwnd,cancel)
-    if not _exact_draft(words,message):
+    image,words,_x,_y=_composer_words(hwnd,cancel)
+    if not _exact_draft(words,message,image):
         return False
     return exact_header(hwnd,expected,cancel)
 
@@ -317,8 +326,8 @@ def draft_reply_visual(expected,message,cancel=None):
     _same(active.hwnd,cancel)
     if not exact_header(active.hwnd,expected,cancel):
         raise VisualReplyUnavailable("Recipient changed during draft; inspect WhatsApp manually. No Send attempted.")
-    _,after,_,_=_composer_words(active.hwnd,cancel)
-    if not _exact_draft(after,message):
+    after_image,after,_,_=_composer_words(active.hwnd,cancel)
+    if not _exact_draft(after,message,after_image):
         raise VisualReplyUnavailable(
             "Draft text could not be reverified from local WhatsApp OCR. It MAY be present; inspect manually before retry.")
     return {"recipientVerified":True,"draftEntered":True,"sent":False,
