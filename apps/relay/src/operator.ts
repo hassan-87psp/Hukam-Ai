@@ -341,8 +341,8 @@ export class Operator {
       String(last.request).startsWith(providerMarker) && !newCalendarRequest && !freshTask(answer);
     const providerChoice=providerQuestion
       ? explicitCalendarProvider(answer) ??
-        (/^google(?:\\s+calendar)?$/i.test(answer)?'google':
-         /^outlook(?:\\s+calendar)?$/i.test(answer)?'outlook':null)
+        (/^google(?:\s+calendar)?$/i.test(answer)?'google':
+         /^outlook(?:\s+calendar)?$/i.test(answer)?'outlook':null)
       : null;
     if(newCalendarRequest&&!provider){
       const question='Meeting Google Calendar mein banani hai ya Outlook Calendar mein?';
