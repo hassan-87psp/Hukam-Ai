@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: hukm-ci-${{ github.ref }}
+  group: hukm-ci-v195-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
