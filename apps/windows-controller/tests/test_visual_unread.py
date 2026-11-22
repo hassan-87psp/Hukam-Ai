@@ -472,3 +472,78 @@ def test_raw_header_ocr_recovers_actual_compact_chip_without_enlarging(monkeypat
     assert calls==[(520,312)]
     assert result[4]==data[3]
     assert (result[1]+round(result[4].cx),result[2]+round(result[4].cy))==(2075,154)
+
+
+# Real HUKM v1.9.2 capture reached Unread successfully but could not
+# correlate timestamp and sender OCR; these cases guard that regression.
+def test_owner_post_click_timestamps_and_multiword_titles():
+    chip=vu.Word("Unread",168,182,55,12)
+    header=[vu.Word("Chats",97,69,62,19),
+            vu.Word("Search",150,133,49,12),
+            vu.Word("All",110,185,19,12),chip,
+            vu.Word("Favourites",277,185,75,12),
+            vu.Word("Groups",389,185,52,12)]
+    # Compact Windows OCR may split the clock and its meridiem.
+    conversations=[
+        vu.Word("Ayesha",155,277,57,12),vu.Word("Family",219,277,43,12),
+        vu.Word("6:25",425,277,33,12),vu.Word("PM",462,277,16,12),
+        vu.Word("Hi",155,304,12,12),  # preview: must never become a title
+        vu.Word("Office",155,365,41,12),vu.Word("Team",201,365,38,12),
+        vu.Word("Yesterday",412,365,75,12),
+        vu.Word("Meeting",155,389,47,12)]
+    assert vu.locate_unread(header,520,920)==chip
+    assert vu._visible_titles_for_layout(header+conversations,520,chip)==[
+        "Ayesha Family","Office Team"]
+    assert vu.visible_sender_titles(conversations,520,chip.y+chip.height)==[
+        "Ayesha Family","Office Team"]
+
+
+def test_compact_single_unread_chat_does_not_require_two_timestamps():
+    chip=vu.locate_unread(compact_words(),520,920)
+    assert chip is not None
+    data=compact_words()+[
+        vu.Word("Sample",69,156,40,11),
+        vu.Word("Single",113,156,36,11),
+        vu.Word("Yesterday",185,156,45,10),
+        vu.Word("Preview",69,178,42,10)]
+    assert vu._visible_titles_for_layout(data,520,chip)==["Sample Single"]
+
+
+def test_name_words_after_original_355px_cap_are_preserved():
+    chip=vu.Word("Unread",165,185,58,12)
+    rows=[vu.Word("The",165,315,26,14),
+          vu.Word("Official",199,315,63,14),
+          vu.Word("Support",270,315,64,14),
+          vu.Word("Team",341,315,39,14),
+          vu.Word("6:35",431,315,37,12)]
+    assert vu.visible_sender_titles(rows,520,chip.y+chip.height)==[
+        "The Official Support Team"]
+
+
+def test_unread_preview_is_never_mistaken_for_title_without_right_timestamp():
+    no_time=[vu.Word("Support",160,310,63,14),
+             vu.Word("Hi",160,335,18,12),
+             vu.Word("10:23",165,335,36,12)]
+    assert vu.visible_sender_titles(no_time,520,198)==[]
+
+
+def test_empty_list_needs_explicit_text_not_an_absent_sender():
+    chip=vu.Word("Unread",168,182,55,12)
+    words=[vu.Word("No",171,400,17,13),
+           vu.Word("unread",194,400,48,13),
+           vu.Word("chats",248,400,35,13)]
+    assert vu._explicit_empty_unread(words,chip,520)
+    assert not vu._explicit_empty_unread([],chip,520)
+    assert not vu._explicit_empty_unread([
+        vu.Word("No",171,400,17,13),
+        vu.Word("unread",194,430,48,13),
+        vu.Word("chats",248,460,35,13)],chip,520)
+
+
+def test_extended_timestamp_formats():
+    for value in ("Sunday","11/22","22-11-2026","6:25","6:25 PM",
+                  "Nov 22","10.45","Yesterday"):
+        assert vu._DATE.fullmatch(value)
+    for value in ("hello","9","waiting","invoice","0"):
+        assert vu._DATE.fullmatch(value) is None
+
