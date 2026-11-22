@@ -4,6 +4,7 @@
  * or an unreviewed browser click.
  */
 import type { ParseResult } from './parser';
+import {parseChatGPTAsk} from './chatgpt-intent';
 
 export type IntentRoute = 'command' | 'plan' | 'chat';
 
@@ -80,6 +81,9 @@ export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorR
     return 'plan';
   }
   if(!t || GREETING.test(t) || ASIDE_QUESTION.test(t))return 'chat';
+  // "AI se pocho" means the signed-in ChatGPT browser on the paired laptop.
+  // It MUST NOT fall through to the normal Gemini conversation endpoint.
+  if(parseChatGPTAsk(t))return 'plan';
   // A complete single read request already has a vetted read-only path.
   // The persisted relay permission determines whether per-read approval is
   // required; do not add a separate model planning/Run step.
