@@ -126,6 +126,7 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
   const [updateBusy,setUpdateBusy] = useState(false);
   const [liveOpen,setLiveOpen] = useState(false);
   const liveAllowed=d.online&&!d.paused&&d.controllerConfig?.screenCapture===true&&
+    d.controllerConfig?.liveScreenPreview===true&&
     d.capabilitiesReported.includes('screen')&&d.capabilitiesEnabled.includes('screen');
   useEffect(()=>{if(!liveAllowed)setLiveOpen(false);},[liveAllowed]);
   // Keep the approval and download status on the Devices page. Previously
