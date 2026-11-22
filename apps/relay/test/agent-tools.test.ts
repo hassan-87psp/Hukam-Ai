@@ -21,6 +21,26 @@ describe('native agent tool registry', () => {
       expect(() => validatePlanShape({steps:[{action:name,args:{}}]})).toThrow();
     }
   });
+  it('plans safe screen-grounded navigation with local verification and a separate approval',()=>{
+    const args={process:'chrome.exe',role:'ButtonControl',label:'Settings',
+      expectRole:'TabItemControl',expectLabel:'Privacy'};
+    expect(isAgentTool('ui.navigate_verified')).toBe(true);
+    expect(requiresApproval('ui.navigate_verified')).toBe(true);
+    expect(validatePlanShape({summary:'Open Settings',steps:[
+      {action:'ui.navigate_verified',args}]}).steps).toEqual([{action:'ui.navigate_verified',args}]);
+    for(const bad of [
+      {...args,process:'whatsapp.exe'},
+      {...args,process:'cmd.exe'},
+      {...args,label:'Send payment'},
+      {...args,label:'Delete Account'},
+      {...args,expectLabel:'Save'},
+      {...args,expectRole:'DocumentControl'},
+      {...args,expectLabel:''},
+      {...args,expectLabel:undefined},
+    ])expect(()=>validatePlanShape({steps:[{action:'ui.navigate_verified',args:bad}]})).toThrow();
+    expect(validatePlanShape({steps:[{action:'ui.navigate_verified',
+      args:{process:'chrome.exe',role:'ButtonControl',label:'Search'}}]}).steps).toHaveLength(1);
+  });
   it('does not bypass existing command validation or approval', () => {
     expect(requiresApproval('whatsapp.send_reviewed')).toBe(true);
     expect(requiresApproval('chatgpt.submit_prompt')).toBe(true);
