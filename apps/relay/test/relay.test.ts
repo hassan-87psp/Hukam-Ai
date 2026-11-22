@@ -512,6 +512,43 @@ describe('commands', () => {
     const finished=await waitStatus(r.data.command.id,['failed']);
     expect(finished.error.code).toBe('UNVERIFIABLE');
   });
+  it('does not mark 2/10 unread chats Completed and preserves the two verified names',async()=>{
+    device.auto=()=>({ok:true,result:{
+      senders:['First Person','Second Person'],totalUnreadChats:10,
+      unreadCountVerified:true,filterSelectedVerified:true,
+      allBadgeChatsMatched:false,scanPages:3,scanStopped:'end_of_list',
+    }});
+    const r=await api('POST','/api/commands',{action:'whatsapp.unread_senders',args:{}});
+    expect(r.status).toBe(200);
+    await api('POST',`/api/commands/${r.data.command.id}/approve`);
+    const finished=await waitStatus(r.data.command.id,['failed']);
+    expect(finished.error.code).toBe('PARTIAL_UNREAD_SCAN');
+    expect(finished.error.message).toContain('2');
+    expect(finished.error.message).toContain('10');
+    expect(finished.result.senders).toEqual(['First Person','Second Person']);
+  });
+  it('accepts full 2/2 unread scan only with selected filter and complete badge proof',async()=>{
+    device.auto=()=>({ok:true,result:{
+      senders:['First Person','Second Person'],totalUnreadChats:2,
+      unreadCountVerified:true,filterSelectedVerified:true,
+      allBadgeChatsMatched:true,scanPages:2,scanStopped:'badge_matched',
+    }});
+    const r=await api('POST','/api/commands',{action:'whatsapp.unread_senders',args:{}});
+    await api('POST',`/api/commands/${r.data.command.id}/approve`);
+    const finished=await waitStatus(r.data.command.id,['completed']);
+    expect(finished.result.senders).toHaveLength(2);
+  });
+  it('rejects alleged full coverage when actual badge total is unknown',async()=>{
+    device.auto=()=>({ok:true,result:{
+      senders:['Only Person'],totalUnreadChats:null,
+      unreadCountVerified:false,filterSelectedVerified:true,
+      allBadgeChatsMatched:true,scanStopped:'end_of_list',
+    }});
+    const r=await api('POST','/api/commands',{action:'whatsapp.unread_senders',args:{}});
+    await api('POST',`/api/commands/${r.data.command.id}/approve`);
+    const finished=await waitStatus(r.data.command.id,['failed']);
+    expect(finished.error.code).toBe('PARTIAL_UNREAD_SCAN');
+  });
   it('saved manual unread permission is explicit and zero requires positive evidence',async()=>{
     await api('PUT','/api/settings',{whatsappUnreadTrusted:true});
     try{
