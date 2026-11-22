@@ -83,7 +83,20 @@ class ControllerClient:
         self.live_session = None
 
     @staticmethod
-    def _local_live_permission() -> bool:
+    def _monitor_count() -> int:
+        """Physical displays, never virtual desktop index 0."""
+        from ..config import IS_WINDOWS
+        if not IS_WINDOWS:
+            return 1  # synthetic/no-Windows CI compatibility
+        try:
+            import mss
+            with mss.mss() as sct:
+                return min(16,max(1,len(sct.monitors)-1))
+        except Exception:
+            return 1  # uncertain devices cannot be selected until detected
+
+    @staticmethod
+    def _local_live_permission(monitor: int = 1) -> bool:
         """Actual owner-facing approval; never bypassed by a remote API call."""
         from ..config import IS_WINDOWS
         from ..system import launcher
@@ -92,16 +105,16 @@ class ControllerClient:
         import ctypes
         flags = 0x0001 | 0x0100 | 0x00040000 | 0x00000020  # OK/Cancel, topmost, foreground, warning
         accepted = ctypes.windll.user32.MessageBoxW(
-            0, "Allow HUKM to show Monitor 1 LIVE in your signed-in web app for up to 90 seconds?\\n\\n"
+            0, f"Allow HUKM to show Monitor {monitor} LIVE in your signed-in web app for up to 90 seconds?\\n\\n"
                "The screen may include private information. No frame is saved or sent to Gemini.\\n"
                "Choose Cancel to deny. Use Stop on the website or Emergency Stop anytime.",
             "HUKM — Approve Live Screen", flags)
         return accepted == 1
 
-    async def _run_live(self, session_id: str, epoch: int) -> None:
+    async def _run_live(self, session_id: str, epoch: int, monitor: int) -> None:
         reason = 'stopped'
         try:
-            allowed = await asyncio.to_thread(self._local_live_permission)
+            allowed = await asyncio.to_thread(self._local_live_permission,monitor)
             if not allowed:
                 await self.send({'type':'live_screen.denied','sessionId':session_id,'reason':'local_owner_denied'})
                 return
@@ -118,13 +131,13 @@ class ControllerClient:
                    'screen' in self.enabled_caps and self.cfg.screen_capture and
                    not self.stop_event.is_set()):
                 # 1 fps preview; compressed JPEG in RAM, no disk, no OCR/AI upload.
-                frame = await asyncio.to_thread(screen_capture.capture,720,30,monitor=1)
+                frame = await asyncio.to_thread(screen_capture.capture,720,30,monitor=monitor)
                 if frame.get('simulated') or frame.get('mime') != 'image/jpeg':
                     reason='invalid_capture';break
                 if len(frame['dataBase64'])>400_000:
                     reason='frame_too_large';break
                 ok = await self.send({'type':'live_screen.frame','sessionId':session_id,
-                    'mime':'image/jpeg','dataBase64':frame['dataBase64'],
+                    'monitor':monitor,'mime':'image/jpeg','dataBase64':frame['dataBase64'],
                     'width':frame['width'],'height':frame['height']})
                 if not ok:
                     reason='disconnected';break
@@ -160,6 +173,7 @@ class ControllerClient:
                 "apps": self.cfg.apps,
                 "screenCapture": self.cfg.screen_capture,
                 "liveScreenPreview": self.cfg.screen_capture,
+                "monitorCount": self._monitor_count() if self.cfg.screen_capture else 0,
                 "browser": self.cfg.browser,
             },
         }
@@ -187,8 +201,10 @@ class ControllerClient:
             await self.on_command(msg["command"])
         elif t == "live_screen.start":
             session_id = msg.get('sessionId')
+            monitor = msg.get('monitor')
             if (not isinstance(session_id,str) or len(session_id)>100 or
-                    not session_id.startswith('live_') or msg.get('monitor') != 1 or
+                    not session_id.startswith('live_') or type(monitor) is not int or
+                    not 1 <= monitor <= self._monitor_count() or
                     msg.get('durationSeconds') != 90 or self.paused or
                     'screen' not in self.enabled_caps or not self.cfg.screen_capture or
                     self.live_task is not None):
@@ -197,7 +213,7 @@ class ControllerClient:
                                      'reason':'capability_disabled_or_busy'})
             else:
                 self.live_session=session_id
-                self.live_task=asyncio.create_task(self._run_live(session_id,self.connection_epoch))
+                self.live_task=asyncio.create_task(self._run_live(session_id,self.connection_epoch,monitor))
         elif t == "live_screen.stop":
             self._stop_live(msg.get('sessionId'))
         elif t == "cancel":
