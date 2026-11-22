@@ -308,6 +308,12 @@ export class Operator {
     const explicitChatGPTAsk=parseChatGPTAsk(answer);
     const unfinishedChatGPT=decodeChatGPTAsk(freshPending);
     const reviewedChatGPT=decodeReviewedChatGPT(freshPending);
+    // A stand-alone "haan bhej do" is NOT authorization to send anything.
+    // If no reviewed dialogue exists for this owner/workspace, ask rather
+    // than passing the bare confirmation to Gemini as a new task.
+    if(!freshPending && chatGPTSendApproval(answer))
+      return {kind:'clarify',topic:'operator-followup',
+        question:'Kis reviewed message ya ChatGPT sawal ko bhejna hai? Pehle exact task batayein.'};
     if(reviewedChatGPT && !explicitChatGPTAsk && !freshTask(answer)){
       // The drafted prompt, exact browser target and user identity are pinned
       // to this short-lived, owner-scoped dialogue. Never accept a model's
