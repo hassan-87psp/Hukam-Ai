@@ -433,6 +433,29 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return draft.ok ? ok({projectUrl:draft.args.projectUrl, prompt:draft.args.prompt}) : draft;
     },
   },
+  'chatgpt.read_response': {
+    name:'chatgpt.read_response', capability:'browser',
+    label:'Read visible ChatGPT response (owner-approved)',
+    timeoutMs:55000, alwaysApprove:true,
+    validate(a) {
+      const draft=ACTIONS['chatgpt.prompt_draft'].validate(a);
+      return draft.ok?ok({projectUrl:draft.args.projectUrl,prompt:draft.args.prompt}):draft;
+    },
+  },
+  'chatgpt.followup_draft': {
+    name:'chatgpt.followup_draft', capability:'browser',
+    label:'Draft a follow-up in the verified ChatGPT conversation',
+    timeoutMs:30000, alwaysApprove:true,
+    validate(a){
+      const draft=ACTIONS['chatgpt.prompt_draft'].validate(a);
+      if(!draft.ok)return draft;
+      const prior=a.previousPrompt;
+      if(typeof prior!=='string'||!prior.trim()||prior.length>1800||
+         /[\u0000-\u0008\u000b-\u001f]/.test(prior))
+        return fail('Exact previous ChatGPT question is required');
+      return ok({projectUrl:draft.args.projectUrl,prompt:draft.args.prompt,previousPrompt:prior});
+    },
+  },
   'chatgpt.download_visible': {
     name:'chatgpt.download_visible', capability:'browser', label:'Wait for and download ChatGPT result',
     timeoutMs:150000, alwaysApprove:true,
