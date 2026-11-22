@@ -45,7 +45,7 @@ class Word:
         return self.y + self.height / 2
 
 
-def _ocr_words(image) -> list[Word]:
+def _ocr_words_native(image) -> list[Word]:
     """Direct Windows.Media.Ocr word rectangles, no model/cloud/wrapper.
 
     The WinRT APIs are an on-device last resort when WhatsApp UIAutomation
@@ -106,6 +106,12 @@ def _ocr_words(image) -> list[Word]:
             "WhatsApp chat pane. Check local Windows OCR language support."
         ) from exc
 
+def _ocr_words(image, cancel=None) -> list[Word]:
+    # Native asynchronous WinRT calls can hang beyond asyncio cancellation.
+    # A read-only child process is disposable, unlike the serial input worker.
+    from ..screen.ocr_process import recognize_isolated
+    return recognize_isolated(image, cancel=cancel)
+
 def _safe_foreground(hwnd: int) -> None:
     import win32gui
     current = windows.active_window()
@@ -118,33 +124,83 @@ def _safe_foreground(hwnd: int) -> None:
         )
 
 
+def _check_capture_owner(hwnd,left,top,width,height):
+    """Reject sampled regions obscured by another top-level window."""
+    import win32gui
+    for dx,dy in ((25,30),(width//2,30),(width-25,30),
+                  (25,height//2),(width//2,height//2),(width-25,height//2)):
+        hit=win32gui.WindowFromPoint((left+dx,top+dy))
+        if not hit or win32gui.GetAncestor(hit,2)!=hwnd:
+            raise VisualUnreadUnavailable("WhatsApp capture area is overlapped by another window")
+
+
+def _is_maximized(hwnd):
+    # pywin32's win32gui does not export IsZoomed on supported builds.
+    # GetWindowPlacement is supported and showCmd uses SW_SHOWMAXIMIZED.
+    import win32gui
+    import win32con
+    return win32gui.GetWindowPlacement(hwnd)[1] == win32con.SW_SHOWMAXIMIZED
+
+
+def _monitor_rect(hwnd):
+    import win32api
+    return tuple(win32api.GetMonitorInfo(win32api.MonitorFromWindow(hwnd, 2))["Monitor"])
+
+
+def _visible_region(rect, monitor):
+    """Keep maximized invisible frame margins out of the physical OCR crop.
+
+    Coordinates remain signed virtual desktop pixels on either monitor.
+    Refuse large clipping instead of guessing the position of the sidebar.
+    """
+    left, top, right, bottom = rect
+    ml, mt, mr, mb = monitor
+    width, height = right - left, bottom - top
+    x, y = max(left, ml), max(top, mt)
+    capture_width = min(520, int(width * .57))
+    capture_height = min(920, bottom - y - 12, mb - y)
+    if (width < 690 or height < 530 or capture_height < 400
+            or x - left > 24 or y - top > 24
+            or x + capture_width > min(right, mr)):
+        raise VisualUnreadUnavailable(
+            "WhatsApp window is too small or sidebar clipped; maximize on one monitor.")
+    return x, y, capture_width, capture_height
+
+
+def _same_capture(hwnd, image, left, top):
+    import win32gui
+    return _visible_region(win32gui.GetWindowRect(hwnd), _monitor_rect(hwnd)) == (
+        left, top, image.width, image.height)
+
+
 def _capture_left(hwnd: int):
     """Return screenshot of ONLY native WhatsApp's left chat/sidebar pane."""
     import win32gui
     import mss
     from PIL import Image
 
-    _safe_foreground(hwnd)
-    left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-    window_width = right - left
-    window_height = bottom - top
-    if window_width < 690 or window_height < 530:
-        raise VisualUnreadUnavailable(
-            "WhatsApp Desktop window is too small for safe visual scanning; maximize it."
-        )
-    # Never capture right-hand chat bubbles, images, or message bodies.
-    width = min(520, int(window_width * 0.57))
-    height = min(920, window_height - 12)
+    # Initialize MSS BEFORE sampling any coordinates. On Windows its first
+    # initialization may change process DPI awareness. Sampling a logical
+    # window rectangle first and then grabbing physical pixels can produce
+    # mismatched origins on multi-display setups.
     with mss.mss() as screen:
+        _safe_foreground(hwnd)
+        rect = win32gui.GetWindowRect(hwnd)
+        monitor = _monitor_rect(hwnd)
+        left, top, width, height = _visible_region(rect, monitor)
+        _check_capture_owner(hwnd,left,top,width,height)
         raw = screen.grab({"left": left, "top": top,
                            "width": width, "height": height})
+        _safe_foreground(hwnd)
+        if win32gui.GetWindowRect(hwnd) != rect or _monitor_rect(hwnd) != monitor:
+            raise VisualUnreadUnavailable("WhatsApp moved during capture.")
+        _check_capture_owner(hwnd,left,top,width,height)
         image = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-    _safe_foreground(hwnd)
     return image, left, top
 
 
-def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
-    """Require a visual Unread *between* the All and Favourites chips."""
+def _legacy_unread(words: list[Word], width: int, height: int) -> Word | None:
+    """Locate a uniquely supported chip; fail closed on conflicting anchors."""
     def text(w: Word) -> str:
         return re.sub(r"\s+", " ", w.text.strip()).casefold()
 
@@ -157,19 +213,266 @@ def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
     all_chips = [w for w in header if text(w) == "all"]
     favorites = [w for w in header
                  if text(w) in ("favourites", "favorites")]
-    if len(unread) != 1 or len(all_chips) != 1 or len(favorites) != 1:
+    if len(unread) != 1 or len(all_chips) != 1 or len(favorites) > 1:
         return None
     candidate = unread[0]
     left = all_chips[0]
-    right = favorites[0]
-    if (not (left.cx + 22 < candidate.cx < right.cx - 22) or
-            max(abs(left.cy - candidate.cy),
-                abs(right.cy - candidate.cy)) > 23):
+    if not (28 <= candidate.width <= 150 and
+            22 < candidate.cx - left.cx <= 160 and
+            0 <= candidate.x - (left.x + left.width) <= 95 and
+            abs(left.cy - candidate.cy) <= 18):
         return None
-    if candidate.width < 28 or candidate.width > 150:
+
+    if favorites:
+        right = favorites[0]
+        if not (candidate.cx + 22 < right.cx and
+                abs(right.cy - candidate.cy) <= 23):
+            return None
+        return candidate
+
+    # Favourites may be clipped or omitted by OCR. Require a distinct Chats
+    # heading above the adjacent All/Unread pair as an independent anchor.
+    # This is deliberately narrower than accepting an isolated Unread word.
+    headings = [w for w in words if text(w) == "chats"
+                and 30 <= w.cy <= candidate.cy - 40
+                and 40 <= candidate.cy - w.cy <= 180
+                and 35 <= w.x <= left.x + 25
+                and 10 <= w.height <= 45]
+    if len(headings) != 1:
+        return None
+    # A recognized Groups chip must not contradict the inferred ordering.
+    groups = [w for w in header if text(w) == "groups"]
+    if groups and (len(groups) != 1 or
+                   groups[0].cx <= candidate.cx + 22 or
+                   abs(groups[0].cy - candidate.cy) > 23):
         return None
     return candidate
 
+
+def _text(w: Word) -> str:
+    return " ".join(w.text.casefold().split())
+
+
+def _search_header(words, chip):
+    """Read only known search-placeholder anchors above the actual chip row."""
+    row = [w for w in words if chip.cy - max(100,chip.height*8) <= w.cy < chip.cy-chip.height
+           and 0 <= w.x < chip.x+chip.height*7]
+    for anchor in row:
+        if not _text(anchor).startswith("search"):
+            continue
+        nearby=sorted((w for w in row if w.x >= anchor.x and
+                       abs(w.cy-anchor.cy) <= max(4,anchor.height*.45)),key=lambda w:w.x)
+        phrase=" ".join(_text(w) for w in nearby)
+        if phrase in ("search unread chats","search all chats","search or start a new chat","search chats","search"):
+            return phrase
+    return None
+
+
+def _compact_unread(words,width,height):
+    # Proportional geometry, plus independent Chats and search anchors.
+    # No click on an isolated Unread label or arbitrary chat row.
+    header=[w for w in words if 0<=w.x and w.x+w.width<=width and
+            18<=w.cy<=min(300,height*.34) and 7<=w.height<=48]
+    hits=[]
+    for chip in header:
+        if not re.fullmatch(r"unread(?:\s*\d{1,3})?",_text(chip)):
+            continue
+        h=chip.height
+        if not 2*h <= chip.width <= 10*h or not _search_header(words,chip):
+            continue
+        aligned=[w for w in header if abs(w.cy-chip.cy)<=max(5,.55*h)]
+        alls=[w for w in aligned if _text(w)=="all" and
+              h*.3<=w.width<=4*h and
+              0<=chip.x-(w.x+w.width)<=5*h]
+        right=[w for w in aligned if _text(w) in ("favourites","favorites") and
+               0<=w.x-(chip.x+chip.width)<=10*h]
+        # The Chats title can start at the very top of a compact window.
+        # Chip-row bounds must not also exclude that independent heading.
+        headings=[w for w in words if _text(w)=="chats" and
+                  0<=w.y and 7<=w.height<=48 and w.x+w.width<=width and
+                  2*h<=chip.cy-w.cy<=18*h and w.x<=chip.x and
+                  w.x>=max(0,chip.x-12*h)]
+        if len(alls)==len(right)==len(headings)==1:
+            hits.append(chip)
+    return hits[0] if len(hits)==1 else None
+
+
+
+def _adaptive_unread(words,width,height):
+    """Resolve local sibling geometry, not a fixed set of five exact labels."""
+    candidates=[]
+    for chip in words:
+        if not re.fullmatch(r"unread(?:\s*[:(]?\d{1,3}\)?)?",_text(chip)):
+            continue
+        h=chip.height
+        if not (6<=h<=65 and 1.8*h<=chip.width<=13*h and
+                0<=chip.x<width-chip.width and 10<=chip.cy<=min(height*.42,420)):
+            continue
+        # Require an actual Chats heading and a separate Search anchor ABOVE
+        # the candidate. The Unread word inside a Search placeholder is not
+        # itself a filter. Nearby row labels use scale-relative spacing.
+        heads=[w for w in words if _text(w)=="chats" and
+               1.8*h<=chip.cy-w.cy<=22*h and 0<=w.x<=chip.x+2*h]
+        searches=[w for w in words if re.fullmatch(r"search(?:\s+.*)?",_text(w)) and
+                  .9*h<=chip.cy-w.cy<=14*h and 0<=w.x<=chip.x+4*h]
+        heads=[w for w in heads if any(w.cy+0.4*h<q.cy for q in searches)]
+        if len(heads)!=1:
+            continue
+        aligned=[w for w in words if abs(w.cy-chip.cy)<=max(4,.5*h)]
+        left=[w for w in aligned if _text(w)=="all" and
+              -h*.15<=chip.x-w.x-w.width<=7*h]
+        right=[w for w in aligned if _text(w) in ("favourites","favorites","groups") and
+               -h*.15<=w.x-chip.x-chip.width<=13*h]
+        # At least one adjacent known filter plus independent top-of-pane
+        # anchors. Never accept an isolated word or two distinct targets.
+        if len(left)>1 or not (len(left)==1 or right):
+            continue
+        candidates.append(chip)
+    return candidates[0] if len(candidates)==1 else None
+
+
+def _header_diagnostics(words,image,stage):
+    # Redact all names, previews, timestamps and arbitrary OCR text. Only
+    # allowlisted UI labels and positions appear in the diagnostic log.
+    labels=[]
+    for w in words:
+        name=_text(w)
+        if name in ("chats","all","unread","favourites","favorites","groups","search","search chats","search unread chats","search all chats") or re.fullmatch(r"unread\s+\d{1,3}",name):
+            if w.cy<=min(image.height*.45,440):
+                labels.append((re.sub(r"\d+","#",name),round(w.x),round(w.y),round(w.width),round(w.height)))
+    log.info("WhatsApp recognition stage=%s crop=%dx%d words=%d known_header_geometry=%s",
+             stage,image.width,image.height,len(words),labels[:24])
+
+
+def _ocr_enlarged(image,cancel):
+    # Different image preprocessing, not a repeated identical attempt.
+    from PIL import Image, ImageOps
+    factor=min(2.5,2560/max(image.size))
+    if factor<1.15:
+        factor=1.0
+    contrast=ImageOps.autocontrast(image.convert("L")).convert("RGB")
+    if factor!=1:
+        contrast=contrast.resize((round(image.width*factor),round(image.height*factor)),Image.Resampling.LANCZOS)
+    return [Word(w.text,w.x/factor,w.y/factor,w.width/factor,w.height/factor)
+            for w in _ocr_words(contrast,cancel=cancel)]
+
+
+def _probe_native(hwnd,cancel):
+    from .uia_probe import probe
+    _ensure_not_cancelled(cancel)
+    return probe(hwnd,cancel=cancel)
+
+
+def _chip_from_probe(probe,left,top,image):
+    box=probe.get("bounds")
+    if not isinstance(box,list) or len(box)!=4:
+        return None
+    x,y,r,b=box
+    x-=left;r-=left;y-=top;b-=top
+    if not (0<=x<r<=image.width and 0<=y<b<=image.height and
+            b-y>=8 and r-x>=12):
+        return None
+    return Word("Unread",x,y,r-x,b-y)
+
+
+def _recover_before_click(hwnd,image,left,top,words,cancel):
+    """One native probe and one different, fresh local OCR attempt, no click."""
+    _header_diagnostics(words,image,"initial-miss")
+    native=_probe_native(hwnd,cancel)
+    import win32gui
+    current=win32gui.GetWindowRect(hwnd)
+    if native.get("windowRect")!=list(current) or not _same_capture(hwnd,image,left,top):
+        native={}
+    chip=_chip_from_probe(native,left,top,image)
+    if chip is not None:
+        log.info("WhatsApp recognition path=bounded-native-accessibility")
+        return image,left,top,words,chip,native
+    _ensure_not_cancelled(cancel)
+    _safe_foreground(hwnd)
+    import win32con
+    if not _is_maximized(hwnd):
+        # An owner-approved read can restore/maximize its verified app.
+        # Never move another application; no mouse click on unknown pixels.
+        win32gui.ShowWindow(hwnd,win32con.SW_MAXIMIZE)
+        time.sleep(.35)
+    _ensure_not_cancelled(cancel)
+    image,left,top=_capture_left(hwnd)
+    # Use the same top-header geometry that succeeded in the owner's
+    # Windows diagnostic; keep the full screenshot only for later row reading.
+    header_height=min(image.height, max(240, min(400, round(image.width*.6))))
+    header=image.crop((0,0,image.width,header_height))
+    try:
+        words=_ocr_words(header,cancel=cancel)
+    except VisualUnreadUnavailable:
+        _ensure_not_cancelled(cancel)
+        words=[]
+    _ensure_not_cancelled(cancel)
+    _header_diagnostics(words,image,"native-header-retry")
+    chip=locate_unread(words,image.width,image.height)
+    if chip is None:
+        # A different local OCR preprocessing pass, only if raw header failed.
+        words=_ocr_enlarged(header,cancel)
+        _ensure_not_cancelled(cancel)
+        _header_diagnostics(words,image,"enlarged-header-retry")
+        chip=locate_unread(words,image.width,image.height)
+    if chip is not None and _search_header(words,chip)=="search unread chats":
+        # Already selected: need fresh full-row OCR, not header-only names.
+        _ensure_not_cancelled(cancel)
+        row_words=_ocr_words(image,cancel=cancel)
+        split=chip.cy+chip.height*2
+        words=[w for w in words if w.cy<=split]+[w for w in row_words if w.cy>split]
+    return image,left,top,words,chip,{}
+
+
+def _verified_badge_count(words,chip):
+    combined=re.fullmatch(r"unread\s*[:(]?\s*(\d{1,3})\)?",_text(chip))
+    if combined:
+        return int(combined.group(1))
+    if _text(chip)!="unread":
+        return None
+    digits=[w for w in words if re.fullmatch(r"\d{1,3}",_text(w)) and
+            abs(w.cy-chip.cy)<=max(3,chip.height*.5) and
+            0<=w.x-chip.x-chip.width<=chip.height*1.5]
+    return int(_text(digits[0])) if len(digits)==1 else None
+
+def locate_unread(words: list[Word], width: int, height: int) -> Word | None:
+    matches=[w for w in (_legacy_unread(words,width,height),
+                         _compact_unread(words,width,height),
+                         _adaptive_unread(words,width,height)) if w is not None]
+    if not matches or any(w!=matches[0] for w in matches[1:]):
+        return None
+    # A second same-row Unread candidate remains ambiguous, even if another
+    # method selected only one. Ignore labels in separate Search rows.
+    target=matches[0]
+    peers=[w for w in words if re.fullmatch(r"unread(?:\s*[:(]?\d{1,3}\)?)?",_text(w))
+           and abs(w.cy-target.cy)<=max(4,target.height*.5)]
+    return target if len(peers)==1 else None
+
+
+def _visible_titles_for_layout(words, width, chip):
+    # Keep established full-size row recognition. Compact font layouts use
+    # scale-normalized geometry; require corroborated header and a distinct
+    # right timestamp column with at least two matching rows.
+    regular=visible_sender_titles(words,width,chip.y+chip.height)
+    if regular or not _search_header(words,chip):
+        return regular
+    factor=19/max(7,chip.height)
+    if factor<=1.12 or factor>2.8:
+        return []
+    scaled=[Word(w.text,w.x*factor,w.y*factor,w.width*factor,w.height*factor) for w in words]
+    moments=[w for w in scaled if w.cy>(chip.y+chip.height)*factor+65 and
+             w.cx>=max(chip.x+chip.width+chip.height*5, width*.32)*factor and _DATE.fullmatch(w.text.strip())]
+    # Right edge rather than timestamp length: "Yesterday" and clock times
+    # differ in width but share the same right-aligned chat column.
+    clusters=[[v for v in moments if abs((v.x+v.width)-(w.x+w.width))<=24] for w in moments]
+    usable=[group for group in clusters if len(group)>=2]
+    if not usable:
+        return []
+    group=max(usable,key=len)
+    if any(len(g)==len(group) and g!=group for g in usable):
+        return []
+    edge=max(w.x+w.width for w in group)
+    return visible_sender_titles(scaled,min(round(width*factor),round(edge+20)),(chip.y+chip.height)*factor)
 
 _SKIP = {
     "all", "unread", "favourites", "favorites", "chats", "archived",
@@ -245,6 +548,109 @@ def _ensure_not_cancelled(cancel) -> None:
         )
 
 
+
+def _capture_for_scan(hwnd,cancel):
+    """Resize the verified app once if it is truly too small to inspect."""
+    try:
+        return _capture_left(hwnd)
+    except VisualUnreadUnavailable as exc:
+        if "too small" not in str(exc):
+            # One pre-click recovery of the SAME native window. Never retry
+            # a click or accept a newly selected unrelated app.
+            if not any(reason in str(exc) for reason in ("overlapped","foreground","moved during capture")):
+                raise
+            _ensure_not_cancelled(cancel)
+            recovered=locator.focus_whatsapp()
+            if recovered is None or recovered.hwnd!=hwnd:
+                raise
+            _ensure_not_cancelled(cancel)
+            return _capture_left(hwnd)
+    _ensure_not_cancelled(cancel)
+    _safe_foreground(hwnd)
+    import win32gui
+    import win32con
+    if _is_maximized(hwnd):
+        raise VisualUnreadUnavailable("WhatsApp client is too small even when maximized")
+    win32gui.ShowWindow(hwnd,win32con.SW_MAXIMIZE)
+    time.sleep(.35)
+    _ensure_not_cancelled(cancel)
+    return _capture_left(hwnd)
+
+
+def visual_read_count(hwnd,cancel=None):
+    """Read a count without clicking any control or opening any conversation."""
+    _ensure_not_cancelled(cancel)
+    image,left,top=_capture_for_scan(hwnd,cancel)
+    try:
+        words=_ocr_words(image,cancel=cancel)
+    except VisualUnreadUnavailable:
+        _ensure_not_cancelled(cancel)
+        words=[]
+    chip=locate_unread(words,image.width,image.height)
+    if chip is not None:
+        count=_verified_badge_count(words,chip)
+        if count is not None:
+            _safe_foreground(hwnd)
+            _ensure_not_cancelled(cancel)
+            return count
+    image,left,top,words,chip,native=_recover_before_click(hwnd,image,left,top,words,cancel)
+    count=native.get("count")
+    if count is None and chip is not None and not native:
+        count=_verified_badge_count(words,chip)
+    _safe_foreground(hwnd)
+    _ensure_not_cancelled(cancel)
+    return count
+
+
+def _green_badge(image,w):
+    """Color evidence corroborates an OCR numeral; never count colored blobs."""
+    pad=max(3,round(w.height*.65))
+    box=(max(0,int(w.x-pad)),max(0,int(w.y-pad)),
+         min(image.width,int(w.x+w.width+pad)),min(image.height,int(w.y+w.height+pad)))
+    if box[2]<=box[0] or box[3]<=box[1]:
+        return False
+    patch=image.crop(box).convert("RGB")
+    pixels=list(patch.getdata())
+    return bool(pixels) and sum(g>=95 and g-r>=32 and g-b>=18 for r,g,b in pixels)/len(pixels)>=.24
+
+
+def _conversation_counts(image,words,names,chip):
+    """Only associate an explicit green numeric badge with a unique title/time row."""
+    h=max(8,min(chip.height,26))
+    counts={}
+    for name in names:
+        matches=[]
+        for moment in words:
+            if not _DATE.fullmatch(moment.text.strip()) or moment.cy<=chip.cy+3*h:
+                continue
+            row=sorted((w for w in words if w.x+w.width<moment.x-h*.45 and
+                w.x>=max(0,chip.x-5*h) and abs(w.cy-moment.cy)<=max(4,.5*h) and
+                not _DATE.fullmatch(w.text.strip())),key=lambda w:w.x)
+            if not row:
+                continue
+            # Require the exact already-recognized sender title on that row.
+            if " ".join(w.text.strip() for w in row).casefold()!=name.casefold():
+                continue
+            badges=[w for w in words if re.fullmatch(r"[1-9]\d{0,3}",w.text.strip()) and
+                    .45*h<=w.cy-moment.cy<=3.5*h and
+                    abs(w.cx-(moment.x+moment.width))<=2.2*h and _green_badge(image,w)]
+            if len(badges)==1:
+                matches.append(int(badges[0].text.strip()))
+        if len(matches)==1:
+            counts[name]=matches[0]
+    return [{"name":name,"unreadMessages":counts.get(name)} for name in names]
+
+
+def _result_counts(image,words,senders,chip,count,verified):
+    rows=_conversation_counts(image,words,senders,chip) if verified else [
+        {"name":name,"unreadMessages":None} for name in senders]
+    # Matching visible unique rows to an explicit app badge is still not
+    # a provider API proof of complete coverage. Do not certify a total
+    # unread-message count from a partial OCR viewport.
+    return {"conversations":rows,"totalUnreadMessages":None,
+            "totalUnreadChats":count if verified else None,
+            "unreadCountVerified":count is not None and verified}
+
 def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     """Approved, foreground-only local OCR + real mouse click + verified list."""
     import win32api
@@ -254,19 +660,47 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     started = time.monotonic()
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_capture")
-    image, left, top = _capture_left(active_hwnd)
+    image, left, top = _capture_for_scan(active_hwnd,cancel)
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_ocr")
-    words = _ocr_words(image)
+    try:
+        words = _ocr_words(image, cancel=cancel)
+    except VisualUnreadUnavailable:
+        _ensure_not_cancelled(cancel)
+        words=[]
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=first_ocr_complete elapsed=%.1fs",
              time.monotonic() - started)
     chip = locate_unread(words, image.width, image.height)
+    native={}
+    if chip is None:
+        image,left,top,words,chip,native=_recover_before_click(active_hwnd,image,left,top,words,cancel)
     if chip is None:
         raise VisualUnreadUnavailable(
-            "Windows UIA and local visual OCR could not uniquely identify "
-            "the All / Unread / Favourites row. No mouse click was attempted."
+            "Unread filter not identified after bounded local OCR, native UIA and enlarged OCR recovery. "
+            "No mouse click was attempted; see privacy-safe header geometry in controller logs."
         )
+    badge=native.get("count") if native.get("count") is not None else (_verified_badge_count(words,chip) if not native else None)
+    if badge==0:
+        # Explicit observed badge, not a missing label or an empty OCR result.
+        _safe_foreground(active_hwnd)
+        _ensure_not_cancelled(cancel)
+        return {"supported":True,"senders":[],"visibleChatCount":0,
+                "totalUnreadChats":0,"unreadCountVerified":True,"totalUnreadMessages":0,
+                "visibleOnly":False,"messagesRead":False,"filterClickAttempted":False,
+                "filterSelectedVerified":True,"source":"Explicit WhatsApp Unread zero badge"}
+
+    if native.get("selected") is True or _search_header(words,chip)=="search unread chats":
+        senders=_visible_titles_for_layout(words,image.width,chip)
+        _ensure_not_cancelled(cancel)
+        _safe_foreground(active_hwnd)
+        if not senders:
+            raise VisualUnreadUnavailable("Unread filter is visible but sender rows could not be verified. No names guessed.")
+        return {"supported":True,"senders":senders,"visibleChatCount":len(senders),
+                **_result_counts(image,words,senders,chip,badge,True),"visibleOnly":True,"messagesRead":False,
+                "filterClickAttempted":False,"filterSelectedVerified":True,
+                "source":"Local Windows visual OCR of existing Personal WhatsApp Unread filter",
+                "note":"Existing Unread search placeholder confirms the visible filter; no additional click."}
 
     x, y = left + round(chip.cx), top + round(chip.cy)
     # Client-area/foreground check, not a guessed screen coordinate.
@@ -279,50 +713,75 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     before = _chip_background(image, chip)
     _ensure_not_cancelled(cancel)
     _safe_foreground(active_hwnd)
-    previous_cursor = win32api.GetCursorPos()
-    try:
-        win32api.SetCursorPos((x, y))
+    # Revalidate the exact capture geometry and foreground hit target
+    # before moving, throughout visible motion, and just before clicking.
+    from ..system.pointer_motion import move_visible, PointerInterrupted
+    def guard():
         _ensure_not_cancelled(cancel)
         _safe_foreground(active_hwnd)
-        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
-        win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
-    finally:
-        try:
-            win32api.SetCursorPos(previous_cursor)
-        except Exception:
-            pass
+        if not _same_capture(active_hwnd,image,left,top):
+            raise VisualUnreadUnavailable("WhatsApp moved or resized before click; no mouse click attempted.")
+        client = win32gui.GetClientRect(active_hwnd)
+        a,b=win32gui.ClientToScreen(active_hwnd,(client[0],client[1]))
+        c,d=win32gui.ClientToScreen(active_hwnd,(client[2],client[3]))
+        if not (a+20<x<c-20 and b+20<y<d-20):
+            raise VisualUnreadUnavailable("Unread target is outside the current WhatsApp client")
+        hit=win32gui.WindowFromPoint((x,y))
+        if not hit or win32gui.GetAncestor(hit,2)!=active_hwnd:
+            raise VisualUnreadUnavailable("Unread control is obscured by another window; no click attempted.")
+    try:
+        move_visible((x,y),guard)
+    except PointerInterrupted as exc:
+        raise VisualUnreadUnavailable(str(exc)) from exc
+    guard()
+    if tuple(win32api.GetCursorPos())!=(x,y):
+        raise VisualUnreadUnavailable("Pointer changed before click; no names reported.")
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+    win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+    # Leave the pointer at the actual clicked control, not its old position.
     log.info("WhatsApp unread visual stage=clicked elapsed=%.1fs",
              time.monotonic() - started)
     _ensure_not_cancelled(cancel)
     time.sleep(.4)
     _ensure_not_cancelled(cancel)
     after_image, new_left, new_top = _capture_left(active_hwnd)
-    if (left, top) != (new_left, new_top):
+    if (left, top) != (new_left, new_top) or after_image.size != image.size:
         raise VisualUnreadUnavailable(
-            "WhatsApp window moved while scanning Unread; no names reported."
+            "WhatsApp window moved while scanning Unread; no names reported. Maximize WhatsApp on one monitor, select All, then retry without moving the window."
         )
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=second_ocr")
-    second_words = _ocr_words(after_image)
+    second_words = _ocr_words(after_image, cancel=cancel)
     _ensure_not_cancelled(cancel)
     log.info("WhatsApp unread visual stage=second_ocr_complete elapsed=%.1fs",
              time.monotonic() - started)
     selected_chip = locate_unread(second_words, after_image.width, after_image.height)
+    native_after={}
+    if selected_chip is None or native:
+        native_after=_probe_native(active_hwnd,cancel)
+        if native_after.get("windowRect")!=list(win32gui.GetWindowRect(active_hwnd)):
+            native_after={}
+        selected_chip=selected_chip or _chip_from_probe(native_after,left,top,after_image)
     if selected_chip is None:
         raise VisualUnreadUnavailable(
-            "Unread was clicked but the filter row could not be reverified visually."
+            "Unread click attempted but filter could not be independently reverified; no repeat click."
         )
     after = _chip_background(after_image, selected_chip)
-    selection_verified = before >= 0 and after >= before + 7
+    selection_verified = (native_after.get("selected") is True or
+                          _search_header(second_words,selected_chip)=="search unread chats" or
+                          (not native and before >= 0 and after >= before + 7))
+    if native_after.get("selected") is False:
+        selection_verified=False
+    count_after=native_after.get("count") if native_after.get("count") is not None else (
+        _verified_badge_count(second_words,selected_chip) if not native_after else None)
     # If the chip already appeared selected, a click could have changed it.
     # Never label names 'verified unread' without positive visual evidence.
-    if after >= 0 and before >= 0 and after + 7 < before:
+    if native_after.get("selected") is False or (native_after.get("selected") is not True and _search_header(second_words,selected_chip)!="search unread chats" and after >= 0 and before >= 0 and after + 7 < before):
         raise VisualUnreadUnavailable(
             "Unread filter appears to have switched off; no unread sender names reported."
         )
 
-    senders = visible_sender_titles(second_words, after_image.width,
-                                   selected_chip.y + selected_chip.height)
+    senders = _visible_titles_for_layout(second_words,after_image.width,selected_chip)
     if not senders:
         raise VisualUnreadUnavailable(
             "Unread filter was clicked but local OCR could not confirm any "
@@ -333,7 +792,7 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
         "supported": True,
         "senders": senders,
         "visibleChatCount": len(senders),
-        "totalUnreadChats": None,
+        **_result_counts(after_image,second_words,senders,selected_chip,count_after,selection_verified),
         "visibleOnly": True, "messagesRead": False,
         "filterClickAttempted": True,
         "filterSelectedVerified": selection_verified,

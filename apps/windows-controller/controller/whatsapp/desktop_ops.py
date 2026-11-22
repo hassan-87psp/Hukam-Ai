@@ -31,6 +31,36 @@ class DesktopWhatsAppError(Exception):
     pass
 
 
+def invalidate_attachment() -> None:
+    global _pending_attachment
+    _pending_attachment = None
+
+
+def _check_cancel(cancel):
+    if cancel is not None and cancel.is_set():
+        raise DesktopWhatsAppError("WhatsApp action cancelled; no further input")
+
+
+def _same_window(active, cancel=None):
+    _check_cancel(cancel)
+    current = windows.active_window()
+    if (not current or current.hwnd != active.hwnd or current.pid != active.pid
+            or not locator.matches_desktop_window(current)):
+        raise DesktopWhatsAppError("WhatsApp Desktop target changed; no further input")
+
+
+def _type_guarded(editor, text, check, cancel=None):
+    from ..browser.operator import _send_unicode
+    for character in text:
+        _check_cancel(cancel)
+        check()
+        if (not editor.HasKeyboardFocus or editor.IsOffscreen or not editor.IsEnabled
+                or getattr(editor, "IsPassword", None) is not False):
+            raise DesktopWhatsAppError("WhatsApp input field focus or safety changed")
+        _send_unicode(character)
+    _check_cancel(cancel)
+
+
 def _active_root():
     if not IS_WINDOWS:
         raise DesktopWhatsAppError("Personal WhatsApp Desktop needs Windows")
@@ -142,6 +172,8 @@ def select_chat(expected_contact: str, cancel=None) -> dict:
     This is an approved local UI action. It does not send anything, read
     message contents, scrape contacts, or switch to WhatsApp Web.
     """
+    invalidate_attachment()
+    _check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("whatsapp.select_chat", "contact (redacted)")
         return {"chatSelected": True, "recipientVerified": True,
@@ -178,8 +210,7 @@ def select_chat(expected_contact: str, cancel=None) -> dict:
             editor.SetFocus()
             if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
                 raise DesktopWhatsAppError("WhatsApp lost foreground before search")
-            from ..browser.operator import _send_unicode
-            _send_unicode(expected_contact)
+            _type_guarded(editor, expected_contact, lambda: _same_window(active, cancel), cancel)
             searched = True
             end = time.monotonic() + 3.0
             while time.monotonic() < end:
@@ -227,7 +258,8 @@ def select_chat(expected_contact: str, cancel=None) -> dict:
         raise DesktopWhatsAppError("WhatsApp native chat selection is unavailable on this app version") from exc
 
 
-def read_selected(expected_contact: str | None = None) -> dict:
+def read_selected(expected_contact: str | None = None, cancel=None) -> dict:
+    _check_cancel(cancel)
     if launcher.SIMULATE:
         return {"visibleMessages": ["Test message only"], "messagesRead": True,
                 "visibleOnly": True, "transferredToAccount": True, "simulated": True}
@@ -240,7 +272,8 @@ def read_selected(expected_contact: str | None = None) -> dict:
         # the SAME native app/window and, for named reads, the exact contact
         # again AFTER collecting text, before returning private content.
         after, fresh_root, fresh_rect = _active_root()
-        if after.hwnd != _active.hwnd:
+        _check_cancel(cancel)
+        if after.hwnd != _active.hwnd or after.pid != _active.pid:
             raise DesktopWhatsAppError(
                 "WhatsApp window changed while reading. Private message text discarded")
         if expected_contact:
@@ -260,7 +293,9 @@ def read_selected(expected_contact: str | None = None) -> dict:
     }
 
 
-def draft_reply(expected_contact: str, message: str) -> dict:
+def draft_reply(expected_contact: str, message: str, cancel=None) -> dict:
+    invalidate_attachment()
+    _check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("whatsapp.draft_reply", "message (redacted)")
         return {"recipientVerified": True, "draftEntered": True,
@@ -280,10 +315,15 @@ def draft_reply(expected_contact: str, message: str) -> dict:
         if value.strip():
             raise DesktopWhatsAppError("Composer already contains a draft; clear it manually before retrying")
         composer.SetFocus()
-        if windows.active_window().hwnd != active.hwnd:
-            raise DesktopWhatsAppError("Foreground window changed; no WhatsApp reply was typed")
-        from ..browser.operator import _send_unicode
-        _send_unicode(message)
+        _same_window(active, cancel)
+        _check_selected_contact(root, rect, expected_contact)
+        _type_guarded(composer, message, lambda: _same_window(active, cancel), cancel)
+        after, fresh_root, fresh_rect = _active_root()
+        if after.hwnd != active.hwnd or after.pid != active.pid:
+            raise DesktopWhatsAppError("WhatsApp changed after typing; inspect draft manually")
+        _check_selected_contact(fresh_root, fresh_rect, expected_contact)
+        if str(_composer(fresh_root, fresh_rect).GetValuePattern().Value or "") != message:
+            raise DesktopWhatsAppError("Entered draft did not match exact requested text. Review manually; no Send performed")
         return {"recipientVerified": True, "draftEntered": True,
                 "sent": False, "verified": False, "contact": expected_contact,
                 "note": "Text entered in the selected WhatsApp chat. Review on laptop; it has NOT been sent."}
@@ -293,25 +333,36 @@ def draft_reply(expected_contact: str, message: str) -> dict:
         raise DesktopWhatsAppError("WhatsApp composer input failed on this Desktop version") from exc
 
 
-def _file_fingerprint(path: str) -> tuple[int, str]:
+def _file_fingerprint(path: str, cancel=None) -> tuple[int, str]:
     """Limit approved attachment to 25MB and pin exact file bytes against swap."""
     from pathlib import Path
     import hashlib
     p = Path(path)
     if not p.is_file() or p.stat().st_size <= 0 or p.stat().st_size > 25 * 1024 * 1024:
         raise DesktopWhatsAppError("Attachment file must be 1 byte to 25 MB")
+    before = p.stat()
     sha = hashlib.sha256()
+    total = 0
     with p.open("rb") as file:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            _check_cancel(cancel)
+            total += len(chunk)
+            if total > 25 * 1024 * 1024:
+                raise DesktopWhatsAppError("Attachment exceeded size limit while reading")
             sha.update(chunk)
-    return p.stat().st_size, sha.hexdigest()
+    after = p.stat()
+    if (total != before.st_size or after.st_size != before.st_size
+            or after.st_mtime_ns != before.st_mtime_ns or after.st_ino != before.st_ino):
+        raise DesktopWhatsAppError("Attachment changed while being checked")
+    return total, sha.hexdigest()
 
 
-def attach_preview(expected_contact: str, path: str) -> dict:
+def attach_preview(expected_contact: str, path: str, cancel=None) -> dict:
     global _pending_attachment
     # A failed new preview must not leave the previous file authorized for
     # a later Send. Invalidate old state before touching any WhatsApp controls.
     _pending_attachment = None
+    _check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("whatsapp.attach_preview", "file (redacted)")
         return {"attachmentPreview": True, "sent": False, "verified": False, "simulated": True}
@@ -327,8 +378,12 @@ def attach_preview(expected_contact: str, path: str) -> dict:
         ]
         if len(buttons) != 1:
             raise DesktopWhatsAppError("WhatsApp attachment button is not accessible")
+        size_before, digest_before = _file_fingerprint(path, cancel)
+        _same_window(active, cancel)
+        _check_selected_contact(root, rect, expected_contact)
         buttons[0].Click()
         time.sleep(0.2)
+        _same_window(active, cancel)
         root = auto.ControlFromHandle(active.hwnd)
         options = [
             c for c, name, kind, _x, _y, _r, _b in _controls(root)
@@ -337,6 +392,8 @@ def attach_preview(expected_contact: str, path: str) -> dict:
         ]
         if len(options) != 1:
             raise DesktopWhatsAppError("WhatsApp's Document attachment menu is not accessible")
+        _same_window(active, cancel)
+        _check_selected_contact(root, rect, expected_contact)
         options[0].Click()
         time.sleep(0.35)
         picker = auto.WindowControl(ClassName="#32770", searchDepth=2)
@@ -348,16 +405,27 @@ def attach_preview(expected_contact: str, path: str) -> dict:
         if not edit.Exists(1):
             raise DesktopWhatsAppError("File picker filename field unavailable")
         import win32gui
-        if win32gui.GetForegroundWindow() != picker.NativeWindowHandle:
-            raise DesktopWhatsAppError("File picker is not the foreground dialog")
+        picker_hwnd = picker.NativeWindowHandle
+        def verify_picker():
+            _check_cancel(cancel)
+            if (win32gui.GetForegroundWindow() != picker_hwnd
+                    or win32gui.GetAncestor(picker_hwnd, 3) != active.hwnd):
+                raise DesktopWhatsAppError("File picker is not owned by the selected WhatsApp window")
+        verify_picker()
         edit.SetFocus()
-        from ..browser.operator import _send_unicode, _press_key
-        _send_unicode(path)
+        from ..browser.operator import _press_key
+        _type_guarded(edit, path, verify_picker, cancel)
+        if str(edit.GetValuePattern().Value or "") != path:
+            raise DesktopWhatsAppError("File picker filename does not match approved path")
+        verify_picker()
         _press_key("enter")
-        # Require the exact same local bytes for any subsequent reviewed Send.
-        size, digest = _file_fingerprint(path)
+        # Require unchanged bytes from before opening the dialog.
+        size, digest = _file_fingerprint(path, cancel)
+        if (size, digest) != (size_before, digest_before):
+            raise DesktopWhatsAppError("Attachment changed during preview; no Send authorized")
+        _check_cancel(cancel)
         _pending_attachment = {"contact": expected_contact, "path": path,
-            "hwnd": active.hwnd, "sha256": digest, "size": size,
+            "hwnd": active.hwnd, "pid": active.pid, "sha256": digest, "size": size,
             "createdAt": time.monotonic()}
         # This only requests attachment preview; user must verify recipient
         # and file before pressing Send.
@@ -377,6 +445,8 @@ def send_reviewed(expected_contact: str, expected_message: str, cancel=None) -> 
     authenticated the owner and displayed the exact recipient and message in a
     dedicated approval card. Never issue Enter or a generic app-level Send.
     """
+    invalidate_attachment()
+    _check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("whatsapp.send_reviewed", "recipient and text (redacted)")
         return {"sendAttempted": True, "sentUiConfirmed": True,
@@ -409,13 +479,16 @@ def send_reviewed(expected_contact: str, expected_message: str, cancel=None) -> 
             )
         # Double-check app focus and contact after locating the button, never
         # execute a stale UIA handle if user switches to a different chat/app.
-        if windows.active_window().hwnd != active.hwnd:
-            raise DesktopWhatsAppError("WhatsApp lost foreground focus; no Send attempted")
-        _check_selected_contact(root, rect, expected_contact)
-        if str(editor.GetValuePattern().Value or "") != expected_message:
+        _same_window(active, cancel)
+        fresh, fresh_root, fresh_rect = _active_root()
+        if fresh.hwnd != active.hwnd or fresh.pid != active.pid:
+            raise DesktopWhatsAppError("WhatsApp window changed; no Send attempted")
+        _check_selected_contact(fresh_root, fresh_rect, expected_contact)
+        if str(_composer(fresh_root, fresh_rect).GetValuePattern().Value or "") != expected_message:
             raise DesktopWhatsAppError("WhatsApp draft changed; no Send attempted")
         if cancel is not None and cancel.is_set():
             raise DesktopWhatsAppError("WhatsApp Send cancelled before clicking")
+        _same_window(active, cancel)
         # Never auto-retry after this click: the message may have actually sent.
         try:
             choices[0].Click(simulateMove=False)
@@ -467,6 +540,8 @@ def send_attachment_reviewed(expected_contact: str, path: str, cancel=None) -> d
                 "note": "SIMULATED attachment Send; no WhatsApp delivery occurred."}
     global _pending_attachment
     pending = _pending_attachment
+    _pending_attachment = None  # consume on any real attempt, even failure
+    _check_cancel(cancel)
     if not pending or pending["contact"] != expected_contact or pending["path"] != path:
         raise DesktopWhatsAppError(
             "No matching HUKM attachment preview in this session; choose the file again first"
@@ -475,9 +550,10 @@ def send_attachment_reviewed(expected_contact: str, path: str, cancel=None) -> d
         _pending_attachment = None
         raise DesktopWhatsAppError("Attachment preview expired; start a new approved preview")
     active, root, rect = _active_root()
-    if active.hwnd != pending["hwnd"]:
+    if active.hwnd != pending["hwnd"] or active.pid != pending.get("pid"):
         raise DesktopWhatsAppError("WhatsApp Desktop window changed; attachment Send blocked")
-    size, digest = _file_fingerprint(path)
+    _check_selected_contact(root, rect, expected_contact)
+    size, digest = _file_fingerprint(path, cancel)
     if size != pending["size"] or digest != pending["sha256"]:
         raise DesktopWhatsAppError("Attachment contents changed after preview; Send blocked")
     left, top, width, height = rect
@@ -502,10 +578,12 @@ def send_attachment_reviewed(expected_contact: str, path: str, cancel=None) -> d
         raise DesktopWhatsAppError("A unique Send button is not visible in the attachment preview")
     if cancel is not None and cancel.is_set():
         raise DesktopWhatsAppError("Attachment Send cancelled before clicking")
-    if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
-        raise DesktopWhatsAppError("WhatsApp Desktop lost foreground before Send")
-    # Erase authorization before click, even if UIA errors, to prevent repeats.
-    _pending_attachment = None
+    _same_window(active, cancel)
+    fresh, fresh_root, fresh_rect = _active_root()
+    if fresh.hwnd != active.hwnd or fresh.pid != active.pid:
+        raise DesktopWhatsAppError("WhatsApp Desktop window changed before Send")
+    _check_selected_contact(fresh_root, fresh_rect, expected_contact)
+    _same_window(active, cancel)
     try:
         sends[0].Click(simulateMove=False)
     except Exception:

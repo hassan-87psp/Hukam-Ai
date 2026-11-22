@@ -22,8 +22,12 @@ class ProfileError(Exception):
 def open_in_profile(url: str, profile: str) -> dict:
     if not isinstance(profile, str) or not re.fullmatch(r"(?:Default|Profile [1-9][0-9]?)", profile):
         raise ProfileError("Chrome profile must be Default or Profile 1 through Profile 99")
-    parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname not in (
+    try:
+        parsed = urlparse(url)
+        standard_port = parsed.port in (None, 443)
+    except (ValueError, TypeError) as exc:
+        raise ProfileError("Invalid provider URL") from exc
+    if not standard_port or parsed.scheme != "https" or parsed.hostname not in (
         "chatgpt.com", "calendar.google.com", "mail.google.com", "outlook.office.com"
     ) or parsed.username or parsed.password:
         raise ProfileError("Only configured ChatGPT/Google/Outlook HTTPS destinations are supported")
@@ -39,6 +43,11 @@ def open_in_profile(url: str, profile: str) -> dict:
     folder = Path(base) / "Google" / "Chrome" / "User Data" / profile
     if not folder.is_dir():
         raise ProfileError("Saved Chrome profile directory was not found on this laptop: " + profile)
+    try:
+        if folder.resolve(strict=True).parent != folder.parent.resolve(strict=True):
+            raise ProfileError("Chrome profile points outside the existing User Data directory")
+    except (OSError, RuntimeError) as exc:
+        raise ProfileError("Chrome profile directory cannot be verified") from exc
     exe = launcher._browser_exe("chrome")
     if not exe:
         raise ProfileError("Google Chrome executable is not installed")

@@ -12,6 +12,8 @@ import { PageFrame } from '../layouts/AppShell';
 import { clock, duration, STATUS_LABEL, timeAgo } from '../lib/format';
 import { useStore, type BrainState } from '../services/store';
 import { get } from '../services/api';
+import ControlCenter from '../components/ControlCenter';
+import { metric } from '../lib/control-center';
 
 const BrainOrb = lazy(() => import('../features/brain/BrainOrb'));
 
@@ -79,7 +81,7 @@ function ConnectedLaptop() {
               {d.os ?? 'Windows'} {d.osVersion?.split(' ')[0]} · {d.online ? 'Active now' : `Last seen ${timeAgo(d.lastSeen)}`}
             </p>
             {d.online && d.stats && (
-              <p className="mt-1 text-[11px] text-ink2">CPU {Math.round(d.stats.cpu ?? 0)}% · RAM {Math.round(d.stats.memory ?? 0)}%{d.stats.battery != null ? ` · 🔋 ${d.stats.battery}%` : ''}</p>
+              <p className="mt-1 text-[11px] text-ink2">CPU {metric(d.stats.cpu,'%',100)} · RAM {metric(d.stats.memory,'%',100)}{d.stats.battery != null ? ` · 🔋 ${d.stats.battery}%` : ''}</p>
             )}
           </div>
         </div>
@@ -111,10 +113,12 @@ function ThisSession() {
 }
 
 function ScreenPreview() {
-  const { commands, runAction, activeDevice } = useStore();
+  const { commands, runAction, activeDevice, realtime, submitting } = useStore();
   const [zoom, setZoom] = useState(false);
-  const last = commands.find((c) => c.action === 'screen.capture' && c.status === 'completed' && c.screenshotId);
-  const pending = commands.find((c) => c.action === 'screen.capture' && ['pending', 'running', 'awaiting_approval'].includes(c.status));
+  const [monitor,setMonitor]=useState(1);
+  useEffect(()=>{setZoom(false);setMonitor(1);},[activeDevice?.id]);
+  const last = commands.find((c) => activeDevice && c.deviceId === activeDevice.id && c.action === 'screen.capture' && c.status === 'completed' && c.screenshotId && Number(c.args.monitor??1)===monitor);
+  const pending = commands.find((c) => activeDevice && c.deviceId === activeDevice.id && c.action === 'screen.capture' && ['pending', 'running', 'awaiting_approval'].includes(c.status));
   return (
     <Card className="p-0">
       <CardHeader
@@ -125,7 +129,7 @@ function ScreenPreview() {
       <div className="px-5 pb-5 pt-3">
         {last ? (
           <button onClick={() => setZoom(true)} className="group relative block w-full overflow-hidden rounded-xl ring-1 ring-line/15">
-            <img src={`/api/screenshots/${last.screenshotId}`} alt="Latest authorised screenshot" className="aspect-video w-full object-cover" loading="lazy" />
+            <img src={`/api/screenshots/${last.screenshotId}`} alt="Stored authorised screenshot, not a live screen" className="aspect-video w-full object-contain bg-field/50" loading="lazy" />
             <span className="absolute bottom-2 right-2 rounded-lg bg-bg/70 p-1.5 opacity-80 group-hover:opacity-100"><Maximize2 className="h-4 w-4" /></span>
           </button>
         ) : (
@@ -133,10 +137,12 @@ function ScreenPreview() {
             <p className="px-4 text-xs text-ink2">No screenshot yet. Captures happen only when you ask — and need your approval.</p>
           </div>
         )}
+        <label className="mt-3 block text-xs text-ink2">Physical monitor<select className="field mt-1 w-full" value={monitor} onChange={e=>{setMonitor(Number(e.target.value));setZoom(false);}}>{Array.from({length:16},(_,i)=>i+1).map(n=><option key={n} value={n}>Monitor {n}</option>)}</select></label>
+        <p className="mt-1 text-xs text-ink2">Only installed monitors are available. Stored snapshot, never live video.</p>
         <button
           className="btn-ghost mt-3 w-full py-2"
-          disabled={!activeDevice?.online || !!pending}
-          onClick={() => runAction('screen.capture', {}, { label: 'Laptop ki screen dikhao', source: 'quick' })}
+          disabled={realtime!=='open'||!activeDevice?.online||activeDevice.paused||submitting||!!pending}
+          onClick={() => runAction('screen.capture', {monitor}, { label: 'Capture monitor '+monitor, source: 'quick',deviceId:activeDevice?.id })}
         >
           <Monitor className="h-4 w-4" /> {pending ? STATUS_LABEL[pending.status] : 'Capture screen'}
         </button>
@@ -402,19 +408,21 @@ export default function Dashboard() {
     return (
       <PageFrame className="pt-1">
         <div className="flex flex-col items-center text-center">
-          <Orb className="-mb-4 h-[230px] w-[min(100%,330px)]" />
+          <Orb className="-mb-4 h-[170px] w-[min(100%,280px)]" />
           <h1 className="font-display text-[22px] font-bold">How can I help you today?</h1>
           <p className="mt-1 text-sm text-ink2">Speak, type, or give a command in Urdu or English.</p>
           <p className="mt-1 text-[11px] font-medium uppercase tracking-widest text-ice/80">{BRAIN_CAPTION[brain]}</p>
           <div className="mt-4 w-full"><MobileMic /></div>
           <div className="mt-4 w-full"><CommandComposer compact placeholder="Type a command…" /></div>
         </div>
-        <div className="mt-5"><MobileQuick /></div>
+        <ControlCenter />
+        <div className="mt-4"><MobileQuick /></div>
         <ProjectWorkspaces />
         <div className="mt-4 space-y-4">
           <CommandStatusCard />
           <RecentCommands limit={4} />
           <ConnectedLaptop />
+          <ScreenPreview />
           <RelayReadiness />
         </div>
       </PageFrame>
@@ -423,7 +431,7 @@ export default function Dashboard() {
 
   return (
     <PageFrame className="pt-0">
-      <div className="grid grid-cols-[minmax(0,1fr)_340px] gap-6">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
         <section className="relative flex flex-col items-center pt-2 text-center">
           <Orb className="-mb-6 h-[350px] w-full max-w-[680px]" />
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-ice/80">{BRAIN_CAPTION[brain]}</p>
@@ -438,8 +446,9 @@ export default function Dashboard() {
         </section>
         <aside className="pt-2"><Timeline /></aside>
       </div>
+      <ControlCenter />
       <ProjectWorkspaces />
-      <div className="mt-6 grid grid-cols-3 gap-5">
+      <div className="mt-6 grid grid-cols-2 gap-4 xl:grid-cols-3 xl:gap-5">
         <ConnectedLaptop />
         <RelayReadiness />
         <ThisSession />

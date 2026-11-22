@@ -435,13 +435,20 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
   },
   'chatgpt.download_visible': {
     name:'chatgpt.download_visible', capability:'browser', label:'Wait for and download ChatGPT result',
-    timeoutMs:115000, alwaysApprove:true,
+    timeoutMs:150000, alwaysApprove:true,
     validate(a) {
       if(typeof a.projectUrl!=='string' || a.projectUrl.length>500) return fail('invalid project URL');
       let u: URL;
       try {u = new URL(a.projectUrl);}catch{return fail('invalid project URL');}
       if(u.protocol!=='https:' || u.hostname!=='chatgpt.com' || u.username||u.password||u.hash)
         return fail('ChatGPT Project URL must be https://chatgpt.com');
+      if(a.assetFolder!==undefined){
+        if(typeof a.assetFolder!=='string'||a.assetFolder.length>350||
+          !/^[A-Za-z]:[\\/][^\x00-\x1f<>:"|?*]+$/.test(a.assetFolder)||
+          a.assetFolder.slice(3).split(/[\\/]/).some(p=>!p||p==='.'||p==='..'||/[ .]$/.test(p)))
+          return fail('Asset folder must be an existing absolute Windows directory');
+        return ok({projectUrl:u.toString(),assetFolder:a.assetFolder});
+      }
       return ok({projectUrl:u.toString()});
     },
   },
@@ -510,8 +517,15 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
     },
   },
   'screen.capture': {
-    name: 'screen.capture', capability: 'screen', label: 'Capture screenshot', timeoutMs: 20000, defaultApprove: true,
-    validate: () => ok({}),
+    name: 'screen.capture', capability: 'screen', label: 'Capture screen or read visible text', timeoutMs: 40000, defaultApprove: true, alwaysApprove: true,
+    validate(a) {
+      if (!Object.keys(a).length) return ok({});
+      if (Object.keys(a).some(k=>!['monitor','textOnly'].includes(k)) || !Number.isInteger(a.monitor) ||
+          (a.monitor as number) < 1 || (a.monitor as number) > 16 ||
+          ('textOnly' in a && a.textOnly!==true))
+        return fail('Select one physical monitor numbered 1–16; optional textOnly must be true');
+      return ok({monitor:a.monitor,...(a.textOnly===true?{textOnly:true}:{})});
+    },
   },
   'browser.control': {
     name: 'browser.control', capability: 'input', label: 'Approved browser input',
@@ -539,7 +553,7 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
         return ok({ kind, steps: a.steps });
       }
       const allowedKeys = ['enter', 'tab', 'escape', 'backspace', 'home', 'end',
-        'arrowdown', 'arrowup', 'ctrl+l', 'ctrl+a'];
+        'arrowdown', 'arrowup', 'ctrl+l', 'ctrl+a', 'ctrl+t', 'ctrl+tab', 'ctrl+shift+tab', 'ctrl+j'];
       if (!allowedKeys.includes(String(a.key ?? ''))) return fail('key is not in the browser allowlist');
       return ok({ kind, key: a.key });
     },

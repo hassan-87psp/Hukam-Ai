@@ -67,7 +67,12 @@ def do_pair(server: str, code: str) -> int:
     except PairingError as e:
         print(f"✖ Pairing failed: {e}")
         return 1
-    credentials.save_device(server, r["deviceId"], r["deviceToken"], r.get("name", ""))
+    try:
+        credentials.save_device(server, r["deviceId"], r["deviceToken"], r.get("name", ""))
+    except (RuntimeError, OSError):
+        print("Pairing could not be stored securely. Existing local credentials were not replaced. "
+              "Remove the newly created device in the web app before trying again.")
+        return 1
     cfg = Config.load()
     cfg.server_url = server
     cfg.save()
@@ -131,6 +136,15 @@ def interactive_first_run() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Read-only private child entry point. No pairing, remote connection,
+    # filesystem access to user data, or desktop input is initiated here.
+    actual_args = sys.argv[1:] if argv is None else argv
+    if actual_args == ["--local-ocr-worker"]:
+        from .screen.ocr_process import worker_main
+        return worker_main()
+    if len(actual_args)==2 and actual_args[0]=="--whatsapp-uia-worker":
+        from .whatsapp.uia_probe import worker_main
+        return worker_main(actual_args[1])
     p = argparse.ArgumentParser(prog="hukm-controller", description="HUKM AI Windows controller")
     p.add_argument("--version", action="version", version=VERSION)
     sub = p.add_subparsers(dest="cmd")

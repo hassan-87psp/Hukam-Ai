@@ -1,0 +1,76 @@
+name: HUKM full dependency security review
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/dependency-review.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'apps/**/package.json'
+      - 'apps/windows-controller/requirements*.txt'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hukm-dependency-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  npm-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Inspect complete dependency advisory report
+        shell: bash
+        run: |
+          npm audit --json > "$RUNNER_TEMP/hukm-before.json" || true
+          node - "$RUNNER_TEMP/hukm-before.json" <<'NODE'
+          const r = require(process.argv[2]);
+          if (r.error || !r.metadata?.vulnerabilities || !r.vulnerabilities) throw Error('npm audit unavailable');
+          console.log(JSON.stringify({counts:r.metadata.vulnerabilities,findings:Object.entries(r.vulnerabilities).map(([name,v])=>({name, severity:v.severity,via:v.via,fixAvailable:v.fixAvailable}))}));
+          NODE
+      - name: Verify committed dependency lockfile
+        run: |
+          npm ci --include=dev
+          npm audit --audit-level=low
+          npm run typecheck
+          npm test
+          npm run build
+  python-review:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Resolve exact Windows dependency versions in isolation
+        shell: pwsh
+        run: |
+          python -m venv "$env:RUNNER_TEMP/hukm-runtime"
+          $runtime = "$env:RUNNER_TEMP/hukm-runtime/Scripts/python.exe"
+          & $runtime -m pip install -r apps/windows-controller/requirements-dev.txt
+          if ($LASTEXITCODE -ne 0) { throw "Dependency installation failed" }
+          & $runtime -m pip check
+          if ($LASTEXITCODE -ne 0) { throw "Dependency resolution conflict" }
+          & $runtime -m pip freeze | Set-Content -Encoding utf8 "$env:RUNNER_TEMP/hukm-resolved.txt"
+          Get-Content "$env:RUNNER_TEMP/hukm-resolved.txt"
+      - name: Audit resolved Python packages with separate free audit environment
+        shell: pwsh
+        run: |
+          python -m venv "$env:RUNNER_TEMP/hukm-auditor"
+          $audit = "$env:RUNNER_TEMP/hukm-auditor/Scripts/python.exe"
+          & $audit -m pip install pip-audit
+          if ($LASTEXITCODE -ne 0) { throw "Audit tool installation failed" }
+          & $audit -m pip_audit --disable-pip --no-deps -r "$env:RUNNER_TEMP/hukm-resolved.txt" --format json
+          if ($LASTEXITCODE -ne 0) { throw "Python dependency audit is not clean" }

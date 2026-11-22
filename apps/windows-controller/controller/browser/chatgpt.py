@@ -12,11 +12,14 @@ UIA controls vary with browser and ChatGPT versions; fail closed if unavailable.
 from __future__ import annotations
 
 import time
+import os
+import stat
 from pathlib import Path
 from urllib.parse import urlparse
 
 from ..config import IS_WINDOWS
-from ..system import launcher, windows
+from ..system import launcher, windows, desktop_input
+from .reviewed_input import check_window, click_reviewed
 
 
 class ChatGPTError(Exception):
@@ -27,11 +30,14 @@ def matches_project(active_url: str, expected_url: str) -> bool:
     try:
         actual = urlparse(active_url)
         expected = urlparse(expected_url)
+        return (actual.scheme == expected.scheme == "https"
+                and actual.hostname == expected.hostname == "chatgpt.com"
+                and actual.port in (None, 443) and expected.port in (None, 443)
+                and not (actual.username or actual.password or expected.username or expected.password)
+                and actual.path.rstrip("/") == expected.path.rstrip("/")
+                and actual.query == expected.query and not actual.fragment and not expected.fragment)
     except (ValueError, TypeError):
         return False
-    return (actual.scheme == expected.scheme == "https"
-            and actual.hostname == expected.hostname == "chatgpt.com"
-            and actual.path.rstrip("/") == expected.path.rstrip("/"))
 
 
 def _chrome_context(expected_url: str):
@@ -92,7 +98,8 @@ def _composer(root):
     raise ChatGPTError("ChatGPT composer was not uniquely accessible; no prompt was entered")
 
 
-def draft_prompt(expected_url: str, prompt: str) -> dict:
+def draft_prompt(expected_url: str, prompt: str, cancel=None) -> dict:
+    desktop_input._check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("chatgpt.prompt_draft", "prompt (redacted)")
         return {"promptDrafted": True, "submitted": False, "verified": False, "simulated": True}
@@ -106,10 +113,20 @@ def draft_prompt(expected_url: str, prompt: str) -> dict:
         if before.strip():
             raise ChatGPTError("ChatGPT composer contains an existing draft; clear it manually first")
         editor.SetFocus()
-        if windows.active_window().hwnd != active.hwnd:
-            raise ChatGPTError("Chrome focus changed before typing")
+        check_window(active, cancel)
         from .operator import _send_unicode
-        _send_unicode(prompt)
+        for character in prompt:
+            check_window(active, cancel)
+            if (not editor.HasKeyboardFocus or editor.IsOffscreen or not editor.IsEnabled
+                    or getattr(editor, "IsPassword", None) is not False):
+                raise ChatGPTError("Composer focus or safety changed; typing stopped")
+            _send_unicode(character)
+        check_window(active, cancel)
+        fresh, fresh_root = _chrome_context(expected_url)
+        if fresh.hwnd != active.hwnd or fresh.pid != active.pid:
+            raise ChatGPTError("Chrome changed during drafting; inspect the partial text manually")
+        if str(_composer(fresh_root).GetValuePattern().Value or "") != prompt:
+            raise ChatGPTError("Could not verify exact draft text; no submission attempted")
         return {"promptDrafted": True, "submitted": False, "verified": False,
                 "note": "Prompt typed in the configured ChatGPT Project. Review it and approve submission separately."}
     except ChatGPTError:
@@ -118,7 +135,8 @@ def draft_prompt(expected_url: str, prompt: str) -> dict:
         raise ChatGPTError("ChatGPT composer draft failed on this website version") from exc
 
 
-def submit_prompt(expected_url: str, expected_prompt: str) -> dict:
+def submit_prompt(expected_url: str, expected_prompt: str, cancel=None) -> dict:
+    desktop_input._check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("chatgpt.submit_prompt", "prompt (redacted)")
         return {"submitted": True, "responseVerified": False, "verified": False, "simulated": True}
@@ -134,7 +152,16 @@ def submit_prompt(expected_url: str, expected_prompt: str) -> dict:
         buttons = _interactive(root, "ButtonControl", ("send prompt", "send message", "send"))
         if len(buttons) != 1:
             raise ChatGPTError("ChatGPT Send button not uniquely accessible")
-        buttons[0].Click()
+        check_window(_active, cancel)
+        fresh, fresh_root = _chrome_context(expected_url)
+        if fresh.hwnd != _active.hwnd or fresh.pid != _active.pid:
+            raise ChatGPTError("Chrome target changed before submission")
+        if str(_composer(fresh_root).GetValuePattern().Value or "") != expected_prompt:
+            raise ChatGPTError("Reviewed draft changed before submission")
+        buttons = _interactive(fresh_root, "ButtonControl", ("send prompt", "send message", "send"))
+        if len(buttons) != 1:
+            raise ChatGPTError("Unique Send control unavailable")
+        click_reviewed(_active, buttons[0], cancel)
         return {"submitted": True, "responseVerified": False, "verified": False,
                 "note": "ChatGPT Send button clicked. Generated result has not yet been verified."}
     except ChatGPTError:
@@ -143,14 +170,42 @@ def submit_prompt(expected_url: str, expected_prompt: str) -> dict:
         raise ChatGPTError("Unable to submit ChatGPT prompt safely") from exc
 
 
-def _files(folder: Path) -> dict[str, tuple[float, int]]:
-    """Only completed-type files, with size to detect in-progress writes."""
+def _files(folder: Path, cancel=None) -> dict[str, tuple[int, int]]:
+    """Bounded completed-file snapshot; refuse incomplete scans, links and reparse entries."""
     allowed = {".png", ".jpg", ".jpeg", ".webp", ".pdf", ".txt", ".docx"}
+    result = {}
+    deadline = time.monotonic() + 3
     try:
-        return {p.name: (p.stat().st_mtime, p.stat().st_size) for p in folder.iterdir()
-                if p.is_file() and p.suffix.casefold() in allowed}
-    except OSError:
-        return {}
+        with os.scandir(folder) as entries:
+            for n, entry in enumerate(entries):
+                desktop_input._check_cancel(cancel)
+                if n >= 10000 or time.monotonic() >= deadline:
+                    raise ChatGPTError("Downloads folder scan incomplete; narrow or clean the folder manually")
+                if Path(entry.name).suffix.casefold() not in allowed:
+                    continue
+                meta = entry.stat(follow_symlinks=False)
+                if entry.is_symlink() or getattr(meta, "st_file_attributes", 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT:
+                    continue
+                if stat.S_ISREG(meta.st_mode):
+                    result[entry.name] = (meta.st_mtime_ns, meta.st_size)
+    except OSError as exc:
+        raise ChatGPTError("Cannot inspect complete Downloads folder safely") from exc
+    return result
+
+
+def _partial_download_exists(folder: Path, name: str, cancel=None) -> bool:
+    deadline = time.monotonic() + 3
+    try:
+        with os.scandir(folder) as entries:
+            for n, entry in enumerate(entries):
+                desktop_input._check_cancel(cancel)
+                if n >= 10000 or time.monotonic() >= deadline:
+                    raise ChatGPTError("Downloads partial-file scan incomplete")
+                if entry.name.casefold().startswith(name.casefold()) and Path(entry.name).suffix.casefold() in (".crdownload", ".tmp", ".partial", ".part", ".download"):
+                    return True
+    except OSError as exc:
+        raise ChatGPTError("Cannot inspect partial downloads safely") from exc
+    return False
 
 
 def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
@@ -159,10 +214,11 @@ def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
     This is allowed only in the exact user-configured ChatGPT Project tab.
     No blind click, no guessed URL, no Chrome profile switching.
     """
+    desktop_input._check_cancel(cancel)
     if launcher.SIMULATE:
         launcher._record("chatgpt.download_visible", "visible download")
-        return {"downloadVerified": True, "fileName": "test-image.png",
-                "simulated": True}
+        return {"downloadVerified": False, "candidateDetected": True, "fileName": "test-image.png",
+                "verified": False, "simulated": True}
     try:
         # ChatGPT image generation can take longer than the next model step;
         # do not immediately fail just because the Download button is absent.
@@ -186,16 +242,23 @@ def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
         active, button = chosen
         if not windows.active_window() or windows.active_window().hwnd != active.hwnd:
             raise ChatGPTError("Chrome focus changed, so Download was not clicked")
-        before = _files(downloads)
-        button.Click()
+        before = _files(downloads, cancel)
+        fresh, fresh_root = _chrome_context(expected_url)
+        if fresh.hwnd != active.hwnd or fresh.pid != active.pid:
+            raise ChatGPTError("Chrome changed before download")
+        buttons = _interactive(fresh_root, "ButtonControl", ("download", "download image", "save image"))
+        if len(buttons) != 1:
+            raise ChatGPTError("Download control changed before click")
+        click_reviewed(active, buttons[0], cancel)
         download_deadline = time.monotonic() + 22.0
         stable_name = None
         stable_size = -1
+        stable_mtime = -1
         stable_checks = 0
         while time.monotonic() < download_deadline:
             if cancel is not None and cancel.is_set():
                 raise ChatGPTError("Download monitoring stopped; file transfer may still continue in Chrome")
-            current = _files(downloads)
+            current = _files(downloads, cancel)
             new_files = sorted((x for x in current if x not in before), key=lambda x: current[x], reverse=True)
             if len(new_files) > 1:
                 raise ChatGPTError("Multiple new downloads appeared. Cannot safely identify the exact generated file.")
@@ -204,24 +267,23 @@ def download_visible(expected_url: str, downloads: Path, cancel=None) -> dict:
                 size = current[name][1]
                 # Chrome can expose the target file before writing finishes.
                 # Require a stable nonzero size for several independent polls.
-                try:
-                    partial = any(
-                        p.name.casefold().startswith(name.casefold()) and p.suffix.casefold() in (".crdownload", ".tmp")
-                        for p in downloads.iterdir()
-                    )
-                except OSError:
-                    partial = True
+                partial = _partial_download_exists(downloads, name, cancel)
                 if size > 0 and not partial:
-                    if name == stable_name and size == stable_size:
+                    if name == stable_name and size == stable_size and current[name][0] == stable_mtime:
                         stable_checks += 1
                     else:
                         stable_name, stable_size, stable_checks = name, size, 1
+                        stable_mtime = current[name][0]
                     if stable_checks >= 4:
-                        return {"downloadVerified": True, "fileName": name,
-                                "sizeBytes": size, "verified": True,
-                                "note": "One newly downloaded file remained stable across multiple checks in Downloads."}
+                        return {"downloadVerified": False, "candidateDetected": True, "fileName": name,
+                                "sizeBytes": size, "_candidateMtimeNs": stable_mtime, "verified": False,
+                                "note": "One new stable file appeared in Downloads. Its origin and association with the requested ChatGPT result are not independently verified; review it before saving or sharing."}
                 else:
                     stable_name, stable_size, stable_checks = None, -1, 0
+                    stable_mtime = -1
+            else:
+                stable_name, stable_size, stable_checks = None, -1, 0
+                stable_mtime = -1
             time.sleep(0.4)
         raise ChatGPTError(
             "Download button was clicked but no new finished image/document was detected. "

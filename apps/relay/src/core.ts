@@ -113,6 +113,7 @@ interface DeviceConn {
   userId: string;
   lastMsg: number;
   ip: string | null;
+  welcomed:boolean;
 }
 
 export class Relay {
@@ -173,6 +174,10 @@ export class Relay {
     // A process restart interrupts any in-memory automation runner. Do not
     // leave it falsely marked running and block future invocations.
     run(this.db, "UPDATE automations SET last_run_status = 'interrupted' WHERE last_run_status = 'running'");
+    // A prior dispatch may have reached Windows before relay restart. Never
+    // replay it or continue an orphan automation without a fresh owner action.
+    const interrupted = all(this.db, "SELECT id FROM commands WHERE status IN ('pending','running','awaiting_approval') AND (dispatched_at IS NOT NULL OR status='running' OR automation_run_id IS NOT NULL)");
+    for (const c of interrupted) this.finish(c.id,'cancelled',null,{code:'INTERRUPTED_UNVERIFIED',message:'Relay restarted; action may already have occurred. Inspect manually before requesting a new command.'});
     this.timer = setInterval(() => this.sweep(), 1000);
     this.timer.unref?.();
   }
@@ -226,7 +231,8 @@ export class Relay {
 
   // ---- devices --------------------------------------------------------
   isOnline(deviceId: string) {
-    return this.devices.has(deviceId);
+    const conn=this.devices.get(deviceId);
+    return !!conn?.welcomed && conn.ws.readyState===1;
   }
 
   deviceDto(r: Row): Device {
@@ -288,6 +294,11 @@ export class Relay {
       const caps = [...new Set(patch.capabilitiesEnabled as Capability[])];
       run(this.db, 'UPDATE devices SET capabilities_enabled = ? WHERE id = ?', JSON.stringify(caps), deviceId);
       this.audit(userId, 'user', 'device.capabilities', { enabled: caps }, deviceId);
+      const open = all(this.db, "SELECT id,action FROM commands WHERE device_id=? AND status IN ('pending','awaiting_approval','running')",deviceId);
+      for(const c of open){
+        const cap=ACTIONS[c.action as ActionName]?.capability;
+        if(cap&&!caps.includes(cap))this.finish(c.id,'cancelled',null,{code:'CAPABILITY_REVOKED',message:'Permission revoked. Previously delivered input may still have occurred.'});
+      }
       this.sendDevice(deviceId, { type: 'capabilities', enabledCapabilities: caps });
     }
     this.pushDevice(deviceId);
@@ -313,7 +324,9 @@ export class Relay {
     const devs = all(this.db, "SELECT id FROM devices WHERE user_id = ? AND status = 'paired'", userId);
     for (const d of devs) this.setPaused(userId, d.id, true, 'emergency stop');
     const open = all(this.db, "SELECT id FROM commands WHERE user_id = ? AND status IN ('pending','awaiting_approval','running')", userId);
-    for (const c of open) this.finish(c.id, 'cancelled', null, { code: 'EMERGENCY_STOP', message: 'emergency stop' });
+    for (const c of open) this.finish(c.id, 'cancelled', null, { code: 'EMERGENCY_STOP', message: 'emergency stop; delivered actions may already have occurred' });
+    this.clearPendingDialogue(userId);
+    run(this.db,'DELETE FROM operator_dialogues WHERE user_id=?',userId);
     return devs.length;
   }
 
@@ -337,14 +350,19 @@ export class Relay {
   sendDevice(deviceId: string, m: ServerToDevice): boolean {
     const c = this.devices.get(deviceId);
     if (!c || c.ws.readyState !== 1) return false;
-    c.ws.send(JSON.stringify(m));
-    return true;
+    try{
+      c.ws.send(JSON.stringify(m));
+      return true;
+    }catch{
+      try{c.ws.terminate();}catch{}
+      return false;
+    }
   }
 
   attachDevice(row: Row, ws: WebSocket, ip: string | null) {
     const existing = this.devices.get(row.id);
     if (existing) existing.ws.close(4000, 'replaced by a newer connection');
-    const conn: DeviceConn = { ws, deviceId: row.id, userId: row.user_id, lastMsg: Date.now(), ip };
+    const conn: DeviceConn = { ws, deviceId: row.id, userId: row.user_id, lastMsg: Date.now(), ip, welcomed:false };
     this.devices.set(row.id, conn);
     run(this.db, 'UPDATE devices SET last_seen = ? WHERE id = ?', nowIso(), row.id);
     this.connEvent(row.id, 'connected', ip);
@@ -383,6 +401,8 @@ export class Relay {
 
   private onDeviceMessage(conn: DeviceConn, msg: DeviceToServer) {
     const { deviceId, userId } = conn;
+    if(!msg||typeof msg!=='object'||(!conn.welcomed&&msg.type!=='hello'))return;
+    if(conn.welcomed&&msg.type==='hello')return;
     switch (msg.type) {
       case 'hello': {
         const r = one(this.db, 'SELECT * FROM devices WHERE id = ?', deviceId)!;
@@ -394,7 +414,8 @@ export class Relay {
           String(msg.os ?? '').slice(0, 40), String(msg.osVersion ?? '').slice(0, 80), String(msg.hostname ?? '').slice(0, 80),
           String(msg.controllerVersion ?? '').slice(0, 20), JSON.stringify(reported), JSON.stringify(enabled),
           JSON.stringify(msg.config ?? {}), nowIso(), deviceId);
-        this.sendDevice(deviceId, { type: 'welcome', deviceId, paused: !!r.paused, enabledCapabilities: enabled });
+        if(!this.sendDevice(deviceId, { type: 'welcome', deviceId, paused: !!r.paused, enabledCapabilities: enabled }))return;
+        conn.welcomed=true;
         this.pushDevice(deviceId);
         this.dispatchQueued(deviceId);
         break;
@@ -443,7 +464,16 @@ export class Relay {
         }
         let result = msg.result && typeof msg.result === 'object' ? { ...msg.result } : {};
         let screenshotId: string | null = null;
-        if (msg.ok && msg.screenshot?.dataBase64) {
+        const textOnly = c.action === 'screen.capture' && parseJson<Record<string,unknown>>(c.args,{}).textOnly===true;
+        if (textOnly) {
+          const monitor=parseJson<Record<string,unknown>>(c.args,{}).monitor;
+          if(msg.ok && (result.ocrRead!==true || typeof result.text!=='string' ||
+              result.text.length>6000 || result.monitor!==monitor || !!msg.screenshot)){
+            this.finish(c.id,'failed',null,{code:'SCREEN_OCR_UNVERIFIABLE',message:'Text-only result did not match the reviewed monitor or data mode'});
+            return;
+          }
+        }
+        if (msg.ok && !textOnly && msg.screenshot?.dataBase64) {
           screenshotId = this.storeScreenshot(userId, deviceId, c.id, msg.screenshot);
           result = { ...result, screenshotId };
         }
@@ -460,8 +490,10 @@ export class Relay {
            result.unreadChats >= 0 && result.unreadChats <= 999 &&
            (result.source === 'WhatsApp Desktop Unread filter' || result.source === 'window title'));
         const sendersVerified = c.action !== 'whatsapp.unread_senders' ||
-          (Array.isArray(result.senders) && result.senders.length > 0 &&
-           result.senders.every((s: unknown) => typeof s === 'string' && s.trim().length > 0));
+          (Array.isArray(result.senders) &&
+           ((result.senders.length > 0 && result.senders.every((s: unknown) => typeof s === 'string' && s.trim().length > 0)) ||
+            (result.senders.length===0 && result.totalUnreadChats===0 && result.unreadCountVerified===true &&
+             result.filterSelectedVerified===true && result.source==='Explicit WhatsApp Unread zero badge')));
         const resultVerified = countVerified && sendersVerified;
         const success = msg.ok === true && resultVerified;
         this.finish(c.id, success ? 'completed' : 'failed', safeResult, success ? null : {
@@ -649,7 +681,11 @@ export class Relay {
     const enabled = parseJson<Capability[]>(deviceRow.capabilities_enabled, []);
     const id = newId('c_');
     const now = nowIso();
-    const needsApproval = requiresApproval(action, settings.approvalRequired);
+    // Separate explicit consent. Legacy per-action false flags cannot grant
+    // new read access; unattended automations still require individual approval.
+    const trustedUnread=action==='whatsapp.unread_senders' && settings.whatsappUnreadTrusted===true &&
+      source!=='automation' && !input.automationRunId;
+    const needsApproval = !trustedUnread && requiresApproval(action, settings.approvalRequired);
     let status: CommandStatus = needsApproval ? 'awaiting_approval' : 'pending';
     let error: { code: string; message: string } | null = null;
     if (deviceRow.paused) {
@@ -727,15 +763,36 @@ export class Relay {
 
   private dispatchQueued(deviceId: string) {
     if (!this.isOnline(deviceId)) return;
-    const dev = one(this.db, 'SELECT paused FROM devices WHERE id = ?', deviceId);
+    const dev = one(this.db, 'SELECT paused,capabilities_enabled,capabilities_reported,controller_version FROM devices WHERE id = ? AND status=\'paired\'', deviceId);
     if (!dev || dev.paused) return;
-    const rows = all(this.db, "SELECT * FROM commands WHERE device_id = ? AND status = 'pending' AND delivered_at IS NULL ORDER BY created_at LIMIT 20", deviceId);
+    const enabled=parseJson<Capability[]>(dev.capabilities_enabled,[]);
+    const reported=parseJson<Capability[]>(dev.capabilities_reported,[]);
+    const rows = all(this.db, "SELECT * FROM commands WHERE device_id = ? AND status = 'pending' AND dispatched_at IS NULL AND delivered_at IS NULL ORDER BY created_at LIMIT 20", deviceId);
     for (const r of rows) {
+      const cap=ACTIONS[r.action as ActionName]?.capability;
+      if(cap&&(!enabled.includes(cap)||!reported.includes(cap))){
+        this.finish(r.id,'cancelled',null,{code:'CAPABILITY_DISABLED',message:'Required device permission unavailable at dispatch'});
+        continue;
+      }
+      if(r.requires_approval&&!r.approved_at)continue;
+      const args=parseJson<Record<string,unknown>>(r.args,{});
+      // Legacy controllers silently ignore these new fields. Never dispatch
+      // a request with altered target semantics to an older controller.
+      const version=String(dev.controller_version??'').match(/^(\d+)\.(\d+)\.(\d+)$/);
+      const supported=!!version&&(Number(version[1])>1||(Number(version[1])===1&&Number(version[2])>=9));
+      if(!supported&&((r.action==='screen.capture'&&(Number(args.monitor??1)>1||args.textOnly===true))||
+        (r.action==='chatgpt.download_visible'&&args.assetFolder!==undefined))){
+        this.finish(r.id,'cancelled',null,{code:'CONTROLLER_UPDATE_REQUIRED',message:'Update to HUKM v1.9.0 or later before using this target-specific action'});
+        continue;
+      }
+      // Persist dispatch intent BEFORE handing input to the socket. A crash
+      // between persistence and send sacrifices availability, not at-most-once safety.
+      run(this.db,'UPDATE commands SET dispatched_at=? WHERE id=?',nowIso(),r.id);
       const ok = this.sendDevice(deviceId, {
         type: 'command',
         command: { id: r.id, action: r.action, args: parseJson(r.args, {}), createdAt: r.created_at, timeoutMs: r.timeout_ms },
       });
-      if (ok) run(this.db, 'UPDATE commands SET dispatched_at = COALESCE(dispatched_at, ?) WHERE id = ?', nowIso(), r.id);
+      if(!ok)this.finish(r.id,'cancelled',null,{code:'INTERRUPTED_UNVERIFIED',message:'Socket delivery uncertain; inspect Windows manually, no automatic replay.'});
     }
   }
 
@@ -954,6 +1011,7 @@ export function sanitizeSettings(s: UserSettings): UserSettings {
     audioReactiveOrb: !!s.audioReactiveOrb,
     notifications: { toasts: s.notifications?.toasts !== false, browser: !!s.notifications?.browser },
     approvalRequired: approval,
+    whatsappUnreadTrusted: s.whatsappUnreadTrusted===true,
     screenshotRetentionHours: clamp(s.screenshotRetentionHours, 1, 24 * 30, 24),
     historyRetentionDays: clamp(s.historyRetentionDays, 1, 3650, 90),
     whatsappContacts: contacts,

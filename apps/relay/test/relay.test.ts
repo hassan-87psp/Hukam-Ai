@@ -512,6 +512,23 @@ describe('commands', () => {
     const finished=await waitStatus(r.data.command.id,['failed']);
     expect(finished.error.code).toBe('UNVERIFIABLE');
   });
+  it('saved manual unread permission is explicit and zero requires positive evidence',async()=>{
+    await api('PUT','/api/settings',{whatsappUnreadTrusted:true});
+    try{
+      device.auto=()=>({ok:true,result:{senders:[],visibleOnly:false,totalUnreadChats:0,
+        unreadCountVerified:true,filterSelectedVerified:true,source:'Explicit WhatsApp Unread zero badge'}});
+      const r=await api('POST','/api/commands',{action:'whatsapp.unread_senders',args:{}});
+      expect(r.status).toBe(200);
+      expect(r.data.command.requiresApproval).toBe(false);
+      const finished=await waitStatus(r.data.command.id,['completed']);
+      expect(finished.result.totalUnreadChats).toBe(0);
+      const draft=await api('POST','/api/commands',{action:'whatsapp.compose',args:{contact:'Synthetic',message:'test'}});
+      expect(draft.data.command.status).toBe('awaiting_approval');
+      await api('POST','/api/commands/'+draft.data.command.id+'/reject');
+    }finally{
+      await api('PUT','/api/settings',{whatsappUnreadTrusted:false});
+    }
+  });
   it('holds sensitive commands for approval, then executes after approval', async () => {
     device.auto = () => ({ ok: true, result: {}, screenshot: { mime: 'image/jpeg', dataBase64: Buffer.from('fakejpeg').toString('base64'), width: 10, height: 10 } });
     const r = await api('POST', '/api/commands', { text: 'screen dikhao' });
@@ -690,6 +707,15 @@ describe('permissions & emergency stop', () => {
     await device.waitFor((m) => m.type === 'capabilities');
     const r = await api('POST', '/api/commands', { text: 'invoice pdf search karo' });
     expect(r.data.command).toMatchObject({ status: 'failed', error: { code: 'CAPABILITY_DISABLED' } });
+  });
+  it('revocation cancels an outstanding screenshot approval',async()=>{
+    await api('PATCH',`/api/devices/${deviceId}`,{capabilitiesEnabled:['system','apps','folders','browser','screen']});
+    const created=await api('POST','/api/commands',{action:'screen.capture',args:{},deviceId});
+    expect(created.data.command.status).toBe('awaiting_approval');
+    const id=created.data.command.id;
+    await api('PATCH',`/api/devices/${deviceId}`,{capabilitiesEnabled:['system','apps','folders','browser']});
+    expect((await api('GET','/api/commands/'+id)).data).toMatchObject({status:'cancelled',error:{code:'CAPABILITY_REVOKED'}});
+    expect((await api('POST','/api/commands/'+id+'/approve',{})).status).toBe(409);
   });
   it('emergency stop pauses the device and fails new commands', async () => {
     await api('POST', '/api/emergency-stop');

@@ -1,3 +1,4 @@
+import { CloudBodyTooLarge, CloudLimitError, geminiRequest } from './cloud-transport';
 /** HUKM's Gemini chat-only adapter.
  * Only explicit chat text and a short chat history are sent to Google.
  * Never receives device tokens, WhatsApp chats, screenshots, or command results.
@@ -23,7 +24,9 @@ const SYSTEM_INSTRUCTION = [
   'You are HUKM AI, a friendly personal AI assistant inside a Windows companion web app.',
   'Speak naturally and conversationally in Roman Urdu mixed with clear English,',
   'unless the user requests another language. Keep most replies brief and useful.',
-  'If an actual detail is missing, ask one natural follow-up question like a chat assistant.',
+  'Answer the current request first. Use earlier supplied facts instead of asking again. Ask a single natural question only if an essential detail is missing.',
+  'Use everyday Pakistani Roman Urdu, short natural sentences and familiar English technical words. Avoid repetitive honorifics and unnecessary greetings.',
+  'Explain unsupported requests honestly; do not invent future work or present an unverified result as done.',
   'You are integrated with a SEPARATE paired Windows controller that can execute reviewed, approved laptop actions.',
   'Do NOT falsely say HUKM has no computer-control ability. Instead clarify that this Gemini text response',
   'does not itself click the PC; approved actions are handled through the HUKM operator workflow.',
@@ -85,7 +88,7 @@ export async function chatWithGemini(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 22000);
   try {
-    const response = await (options.fetcher ?? fetch)(
+    const response = await geminiRequest(
       'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent',
       {
         method: 'POST',
@@ -107,7 +110,7 @@ export async function chatWithGemini(
           },
         }),
         signal: controller.signal,
-      },
+      }, 160_000, options.fetcher,
     );
     if (!response.ok) {
       if (response.status === 429)
@@ -121,7 +124,7 @@ export async function chatWithGemini(
       throw new GeminiError(502, 'AI_UPSTREAM', 'Gemini is temporarily unavailable. Please retry.');
     }
     // Cap response size to limit memory use; never propagate raw upstream errors.
-    const raw = await response.text();
+    const raw = response.raw;
     if (raw.length > 160_000)
       throw new GeminiError(502, 'AI_RESPONSE', 'Gemini returned an oversized response.');
     let parsed: any;
@@ -152,6 +155,8 @@ export async function chatWithGemini(
       provider: 'gemini' };
   } catch (err) {
     if (err instanceof GeminiError) throw err;
+    if (err instanceof CloudLimitError) throw new GeminiError(429,err.code,err.message);
+    if (err instanceof CloudBodyTooLarge) throw new GeminiError(502,'AI_RESPONSE','Gemini returned an oversized response.');
     if (controller.signal.aborted)
       throw new GeminiError(504, 'AI_TIMEOUT', 'Gemini took too long to respond. Please try again.');
     throw new GeminiError(502, 'AI_CONNECTION', 'Could not connect to Gemini right now.');

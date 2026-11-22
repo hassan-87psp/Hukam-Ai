@@ -237,6 +237,20 @@ export function parseCommand(input: string): ParseResult {
       ? cmd('browser.control', { kind:'scroll',steps }, 'browser-scroll')
       : cmd('ui.scroll', { steps }, 'active-app-scroll');
   }
+  // Narrow, explicit browser navigation commands; never close a tab or submit a form by inference.
+  const tabCommand = t.match(/^(?:(?:chrome|browser)\s+)?(new tab|naya tab|next tab|previous tab|pichla tab|browser downloads|chrome downloads)(?:\s+(?:kholo|open|dikhao|karo|kar do))?$/);
+  if (tabCommand) {
+    const key = ['new tab','naya tab'].includes(tabCommand[1]) ? 'ctrl+t'
+      : tabCommand[1]==='next tab' ? 'ctrl+tab'
+      : ['previous tab','pichla tab'].includes(tabCommand[1]) ? 'ctrl+shift+tab' : 'ctrl+j';
+    return cmd('browser.control',{kind:'key',key},'browser-tab-navigation');
+  }
+  const profileOpen = t.match(/^(?:chrome\s+)?(default|profile [1-9][0-9]?)\s+(?:mein|me|in|par)\s+(chatgpt|gmail|google calendar|outlook)\s+(?:kholo|open|chalao)$/);
+  if (profileOpen) {
+    const sites: Record<string,string> = {'chatgpt':'https://chatgpt.com/','gmail':'https://mail.google.com/','google calendar':'https://calendar.google.com/','outlook':'https://outlook.office.com/'};
+    const profile = profileOpen[1]==='default' ? 'Default' : 'Profile '+profileOpen[1].split(' ')[1];
+    return cmd('browser.profile_open',{profile,url:sites[profileOpen[2]]},'explicit-chrome-profile');
+  }
   const press = t.match(/^(?:browser\s+)?press\s+(enter|tab|escape|backspace|home|end|arrowdown|arrowup|ctrl\+l|ctrl\+a)$/);
   if (press) return cmd('browser.control', { kind: 'key', key: press[1] }, 'browser-key');
 
@@ -251,11 +265,16 @@ export function parseCommand(input: string): ParseResult {
       /^(?:send|write|draft)\s+(?:a\s+)?(?:whatsapp\s+)?(?:message|msg|text)\s+to\s+[a-z\p{L}][a-z\p{L}\s'.-]{0,45}$/iu.test(t))
     return { kind: 'clarify', topic: 'message-body', normalized: t };
 
+  // A complete simple request already identifies a read-only operation.
+  // Compound instructions still go through reviewed planning.
+  if (/^(?:please\s+)?(?:mera\s+|mere\s+)?whatsapp(?:\s+desktop)?\s+(?:check|dekho|dekh|dakho)(?:\s+(?:karo|kar do))?$/.test(t))
+    return cmd('whatsapp.unread_senders', {}, 'whatsapp-direct-read');
+
   // Sender names need a separate, explicitly approved laptop read.
   // Do not mistake "kis ka message" for the simpler numeric unread check.
   if (/\b(whatsapp|messages?|msgs?|chats?)\b/.test(t) &&
-      /\b(kis kis|kis ka|kiska|kis ke|kon|kaun|who|sender|senders|naam|name)\b/.test(t) &&
-      /\b(msg|msgs|message|messages|chat|chats|unread|naye|nayi|aaya|aya)\b/.test(t))
+      /\b(kis kis|kis ka|kiska|kis ke|kinke|kin ke|kon|kaun|who|sender|senders|naam|name)\b/.test(t) &&
+      /\b(msg|msgs|message|messages|messaged|chat|chats|unread|naye|nayi|aaya|aya)\b/.test(t))
     return cmd('whatsapp.unread_senders', {}, 'whatsapp-unread-senders');
 
   // Explicitly reading the selected chat into the authenticated HUKM
@@ -272,6 +291,13 @@ export function parseCommand(input: string): ParseResult {
       /\b(read|parho|parh|parhke|parhkar|padho|pad|sunao|sunana)\b/.test(t) &&
       /\b(messages?|msgs?|chats?)\b/.test(t))
     return cmd('whatsapp.read_visible', {}, 'whatsapp-read-visible');
+
+  // Explicit inbox read requests, not names or message bodies, use the
+  // approved unread-list flow. Other count-only legacy inputs remain valid.
+  if (/\bwhatsapp\b/.test(t) && !/\b(?:whatsapp web|web whatsapp|selected|current|khuli|kitne|kitni|how many|count|total)\b/.test(t) &&
+      /\b(?:unread|new|naye|nayi)\b/.test(t) &&
+      /\b(?:check|batao|dikhao|show|list|tell)\b/.test(t))
+    return cmd('whatsapp.unread_senders', {}, 'whatsapp-inbox-read');
 
   // "<name> ke naye messages batao" — reads unread-chat counts only.
   if (/\b(unread|naye|nayi|new) (messages|message|chats)\b/.test(t)) return cmd('whatsapp.check', {}, 'whatsapp-unread');
@@ -314,9 +340,23 @@ export function parseCommand(input: string): ParseResult {
     return cmd('youtube.search', { query }, 'youtube-search');
   }
 
+  // Exact owner text-reading intent; no background scans or inferred OCR clicks.
+  const readScreen = t.match(/^(?:please\s+)?(?:monitor|screen)(?:\s+(\d{1,2}))?\s+(?:ka\s+)?(?:text|ocr)\s+(?:parho|padho|read|dikhao|karo)$/);
+  if(readScreen){
+    const monitor=Number(readScreen[1]??1);
+    if(monitor<1||monitor>16)return {kind:'clarify',topic:'unknown',normalized:t};
+    return cmd('screen.capture',{monitor,textOnly:true},'screen-local-ocr');
+  }
+
   // screen
-  if (/\b(screen|screenshot)\b/.test(t) && (SHOW.test(t) || /\b(capture|lo|le|take|grab|bhejo|send)\b/.test(t) || /^screenshot$/.test(t)))
+  if (/\b(screen|screenshot|monitor)\b/.test(t) && (SHOW.test(t) || /\b(capture|lo|le|take|grab|bhejo|send)\b/.test(t) || /^screenshot$/.test(t))) {
+    // Invalid or ambiguous multi-display requests must not capture another display.
+    const requested = t.match(/\b(?:monitor|screen)\s+(\d+)\b/);
+    if (/\b(?:all|sab|sare|saare|every|multiple|second|third|doosra|dusra)\b/.test(t))
+      return {kind:'clarify',topic:'unknown',normalized:t};
+    if (requested) return cmd('screen.capture', {monitor:Number(requested[1])}, 'screen-monitor');
     return cmd('screen.capture', {}, 'screen');
+  }
 
   // lock
   if (/\block\b/.test(t) && /\b(laptop|computer|pc|screen|system|windows)\b/.test(t)) return cmd('system.lock', {}, 'lock');

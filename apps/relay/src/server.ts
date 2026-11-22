@@ -11,12 +11,14 @@ import { chatWithGemini, cleanGeminiInput, geminiConfigured, GeminiError } from 
 import { diagnoseGemini } from './ai-diagnostics';
 import { HttpError, Relay } from './core';
 import { Projects } from './projects';
+import { MemoryRecords } from './memory-records';
+import { Skills } from './skills';
 import { Operator } from './operator';
 import { analyzeScreenshot } from './vision';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
-export const VERSION = '1.8.4';
+export const VERSION = '1.9.2';
 const COOKIE = 'hukm_session';
 const MAX_BODY = 64 * 1024;
 
@@ -104,6 +106,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   }
   const relay = new Relay(db, config);
   const projects = new Projects(db);
+  const memory = new MemoryRecords(db);
+  const skills = new Skills(db);
   const operator = new Operator(db, relay, projects);
   relay.start();
 
@@ -182,6 +186,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
         paused: devices.filter(d => d.paused).length,
       },
       tasks: { awaitingApproval: relay.listApprovals(c.user!.id).length, activeRuns },
+      backup: backup.status(),
     };
   });
   // Keys never leave the server. The model is chat-only; it cannot execute actions.
@@ -241,9 +246,9 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     const history=savedChat(userId,project?.id ?? null).slice(-12)
       .map(m=>({role:m.role,text:m.text.slice(0,750)}));
     const notes=project?projects.notes(userId,project.id).slice(0,12):[];
-    const projectContext=project?
+    const projectContext=[memory.context(userId,project?.id??null), ...(project?
       [project.name,project.description,project.instructions,
-        ...notes.map(n=>n.title+': '+n.content.slice(0,350))].join('\n').slice(0,6500):undefined;
+        ...notes.map(n=>n.title+': '+n.content.slice(0,350))]:[])].filter(Boolean).join('\n').slice(0,6500)||undefined;
     try {
       const ai=await chatWithGemini(message,history,
         {projectContext,responseLang:['roman','ur','en'].includes(c.body?.responseLang) ? c.body.responseLang : 'roman'});
@@ -267,6 +272,26 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     }
   });
 
+  // Read-only catalog and explicit owner teaching. Preview creates a plan, never runs it.
+  add('GET','/api/skills',true,c=>skills.list(c.user!.id,c.url.searchParams.get('projectId')));
+  add('POST','/api/skills/teach',true,c=>skills.teach(c.user!.id,c.url.searchParams.get('projectId'),c.body));
+  add('GET','/api/skills/demonstrations',true,c=>skills.demonstrations(c.user!.id,c.url.searchParams.get('projectId')));
+  add('POST','/api/skills/teach-workflow',true,c=>{
+    if(!cmdLimit.take('skill-teach:'+c.user!.id))throw new HttpError(429,'RATE_LIMIT','Teaching limit reached');
+    return skills.teachWorkflow(c.user!.id,c.url.searchParams.get('projectId'),c.body);
+  });
+  add('DELETE','/api/skills/taught/:id',true,c=>skills.remove(c.user!.id,c.url.searchParams.get('projectId'),c.params.id));
+  add('POST','/api/skills/preview',true,c=>{
+    if(!cmdLimit.take('skill-preview:'+c.user!.id))throw new HttpError(429,'RATE_LIMIT','Skill preview limit reached');
+    return operator.previewSkill(c.user!.id,c.body?.projectId,c.body?.name);
+  });
+
+  // Explicit categorized memory. Owner and exact workspace checked on every operation.
+  add('GET','/api/memory',true,c=>memory.list(c.user!.id,c.url.searchParams.get('projectId')));
+  add('POST','/api/memory',true,c=>memory.save(c.user!.id,c.url.searchParams.get('projectId'),null,c.body));
+  add('PATCH','/api/memory/:id',true,c=>memory.save(c.user!.id,c.url.searchParams.get('projectId'),c.params.id,c.body));
+  add('DELETE','/api/memory/:id',true,c=>memory.remove(c.user!.id,c.url.searchParams.get('projectId'),c.params.id));
+
   // Durable Projects + memory. Every query is scoped to authenticated owner.
   add('GET', '/api/projects', true, (c) => projects.list(c.user!.id));
   add('POST', '/api/projects', true, (c) => projects.save(c.user!.id, null, c.body ?? {}));
@@ -279,7 +304,11 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   add('DELETE', '/api/projects/:id/notes/:noteId', true, (c) => projects.removeNote(c.user!.id, c.params.id, c.params.noteId));
   add('GET', '/api/projects/:id/tasks', true, (c) => operator.listProjectRuns(c.user!.id,c.params.id));
   add('GET', '/api/projects/:id/messages', true, (c) => projects.messages(c.user!.id, c.params.id));
-  add('DELETE', '/api/projects/:id/messages', true, (c) => projects.clearMessages(c.user!.id, c.params.id));
+  add('DELETE', '/api/projects/:id/messages', true, (c) => {
+    const result=projects.clearMessages(c.user!.id,c.params.id);
+    operator.discardPending(c.user!.id,c.params.id);
+    return result;
+  });
   add('POST', '/api/projects/:id/chat', true, async (c) => {
     if (!aiLimit.take('project-chat:' + c.user!.id) || !aiDailyLimit.take('project-chat:' + c.user!.id))
       throw new HttpError(429, 'AI_RATE_LIMIT', 'AI rate limit reached');
@@ -288,7 +317,7 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
     if (typeof message !== 'string' || !message.trim() || message.length > 1800)
       throw new HttpError(400, 'BAD_MESSAGE', 'Message required (up to 1800 characters)');
     const notes = projects.notes(c.user!.id,project.id).slice(0,20);
-    const context = [project.name, project.description, project.instructions,
+    const context = [memory.context(c.user!.id,project.id),project.name, project.description, project.instructions,
       ...notes.map(n => n.title + ': ' + n.content.slice(0,500))].join('\n').slice(0,8000);
     const history = projects.messages(c.user!.id,project.id)
       .slice(-10).map(m => ({role:m.role,text:m.content.slice(0,750)}));
@@ -425,7 +454,10 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
   add('POST', '/api/devices/:id/pause', true, (c) => (relay.setPaused(c.user!.id, c.params.id, true, 'paused by user'), { ok: true }));
   add('POST', '/api/devices/:id/resume', true, (c) => (relay.setPaused(c.user!.id, c.params.id, false, 'resumed by user'), { ok: true }));
   add('GET', '/api/devices/:id/connections', true, (c) => relay.connectionHistory(c.user!.id, c.params.id));
-  add('POST', '/api/emergency-stop', true, (c) => ({ paused: relay.emergencyStopAll(c.user!.id) }));
+  add('POST', '/api/emergency-stop', true, (c) => {
+    const stoppedTasks=operator.cancelAll(c.user!.id);
+    return {paused:relay.emergencyStopAll(c.user!.id),stoppedTasks};
+  });
 
   // commands
   add('GET', '/api/commands', true, (c) => relay.listCommands(c.user!.id, {
@@ -641,8 +673,8 @@ export async function startRelay(overrides: Partial<RelayConfig> = {}): Promise<
       }
       await new Promise<void>((resolve) => server.close(() => resolve()));
       server.closeAllConnections?.();
-      await backup.close();
-      db.close();
+      try { await backup.close(); }
+      finally { db.close(); }
     },
   };
 }

@@ -5,7 +5,7 @@ import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
 import {createServer,type Server} from 'node:http';
 import {beforeAll,afterAll,describe,expect,it} from 'vitest';
-import {startRelay,type RelayHandle} from '../src/server';
+import {startRelay,VERSION,type RelayHandle} from '../src/server';
 
 const execute=promisify(execFile);
 const cli=resolve(process.cwd(),'scripts/check-relay.mjs');
@@ -37,9 +37,9 @@ describe('Phase 6: read-only production relay preflight',()=>{
 
   it('accepts real relay JSON, version and properly gated private runtime status',async()=>{
     const {stdout}=await execute(process.execPath,[cli,'--url',relay.url,
-      '--expected-version','1.8.4'],{timeout:30_000});
+      '--expected-version',VERSION],{timeout:30_000});
     expect(stdout).toContain('HUKM relay preflight PASS');
-    expect(stdout).toContain('"version": "1.8.4"');
+    expect(stdout).toContain(JSON.stringify({version:VERSION},null,2).split('\n')[1].trim());
     expect(stdout).toContain('"anonymousRuntimeProtected": true');
     expect(stdout).toContain('"liveApplicationActionsVerified": false');
   });

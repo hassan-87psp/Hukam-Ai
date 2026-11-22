@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import suppress
 import json
 import logging
 import random
@@ -43,7 +44,9 @@ class ControllerClient:
         self.cancelled_early: dict[str, float] = {}
         self.connection_epoch = 0
         self.active_commands: set[asyncio.Task] = set()
-        self.outbox: dict[str, dict] = {}  # results not yet acknowledged by the relay
+        self.outbox: dict[str, dict] = {}  # bounded RAM-only original results
+        self.outbox_sizes: dict[str, int] = {}
+        self.outbox_bytes = 0
         self.ws = None
         self.loop: asyncio.AbstractEventLoop | None = None
         self.stop_event = asyncio.Event()
@@ -64,6 +67,8 @@ class ControllerClient:
         """Invalidate every command from the old socket on the event-loop thread."""
         self.connection_epoch += 1
         self.cancel_active(reason)
+        from ..whatsapp.desktop_ops import invalidate_attachment
+        invalidate_attachment()
 
     # ---- protocol ---------------------------------------------------
     def hello(self) -> dict:
@@ -119,10 +124,12 @@ class ControllerClient:
                     self.cancelled_early.pop(oldest, None)
             log.info("cancel requested for %s", cid[:16])
         elif t == "result_ack":
-            self.outbox.pop(msg.get("commandId", ""), None)
+            self._drop_result(str(msg.get("commandId", "")))
         elif t == "pause":
             self.paused = True
             self.cancel_active("emergency pause")
+            from ..whatsapp.desktop_ops import invalidate_attachment
+            invalidate_attachment()
             self.on_status("paused")
             log.warning("EMERGENCY STOP — controller paused; no commands will run until resumed from the web app")
         elif t == "resume":
@@ -130,21 +137,38 @@ class ControllerClient:
             self.on_status("online")
             log.info("resumed")
         elif t == "capabilities":
+            previous = set(self.enabled_caps)
             self.enabled_caps = [c for c in msg.get("enabledCapabilities", []) if c in self.cfg.capabilities]
+            if previous.difference(self.enabled_caps):
+                self.cancel_active("permissions narrowed")
+                from ..whatsapp.desktop_ops import invalidate_attachment
+                invalidate_attachment()
             log.info("capabilities updated: %s", ", ".join(self.enabled_caps))
         elif t == "revoked":
             log.error("this device was unpaired from the web app")
             raise Fatal("revoked")
 
-    async def on_command(self, cmd: dict) -> None:
+    async def on_command(self, cmd: dict, epoch: int | None = None) -> None:
         cid = str(cmd.get("id", ""))
         action = str(cmd.get("action", ""))
-        epoch = self.connection_epoch
-        await self.send({"type": "ack", "commandId": cid})
+        epoch = self.connection_epoch if epoch is None else epoch
+        if not cid or len(cid)>120 or epoch != self.connection_epoch or self.stop_event.is_set():
+            return
+        if not await self.send({"type": "ack", "commandId": cid}):
+            # No acknowledged delivery means no local side effect is safe.
+            return
         # Atomically claim the ID before any input. A previously claimed ID
         # is NEVER executed twice, even after a WebSocket reconnect.
-        if not self.dedupe.mark_started(cid):
-            cached = self.dedupe.get(cid)
+        try:
+            claimed = self.dedupe.mark_started(cid)
+        except OSError:
+            await self.send(Outcome(False, error={
+                "code": "JOURNAL_UNAVAILABLE",
+                "message": "Cannot persist command claim. No Windows action started; check local storage.",
+            }).to_message(cid))
+            return
+        if not claimed:
+            cached = self.outbox.get(cid) or self.dedupe.get(cid)
             log.info("duplicate delivery of %s ignored", cid)
             if cached:
                 await self.send(cached)
@@ -223,10 +247,31 @@ class ControllerClient:
         finally:
             self.cancels.pop(cid, None)
 
+    def _drop_result(self, cid: str) -> None:
+        self.outbox.pop(cid, None)
+        self.outbox_bytes -= self.outbox_sizes.pop(cid, 0)
+
+    def _remember_result(self, cid: str, msg: dict) -> None:
+        # Wire-size budget, not a measured process RAM ceiling. Retain a bounded
+        # recent delivery cache; old claims remain in the tiny recovery journal.
+        size = len(json.dumps(msg).encode("utf-8"))
+        self._drop_result(cid)
+        if size > 6 * 1024 * 1024:
+            return
+        while self.outbox and (len(self.outbox) >= 16 or self.outbox_bytes + size > 6 * 1024 * 1024):
+            self._drop_result(next(iter(self.outbox)))
+        self.outbox[cid] = msg
+        self.outbox_sizes[cid] = size
+        self.outbox_bytes += size
+
     async def finish(self, cid: str, out: Outcome) -> None:
         msg = out.to_message(cid)
-        self.dedupe.store_result(cid, msg)
-        self.outbox[cid] = msg
+        try:
+            self.dedupe.store_result(cid, msg)
+        except OSError:
+            # The already durable start marker remains. Do not repeat the action.
+            log.warning("Could not persist result; retaining in-memory delivery only")
+        self._remember_result(cid, msg)
         await self.send(msg)
 
     # ---- loops ------------------------------------------------------
@@ -246,19 +291,39 @@ class ControllerClient:
         async with conn as ws:
             self.connection_epoch += 1
             self.ws = ws
-            await ws.send(json.dumps(self.hello()))
-            hb = asyncio.create_task(self.heartbeat(ws))
+            hb = None
             try:
+                if self.stop_event.is_set():
+                    return
+                await ws.send(json.dumps(self.hello()))
+                # Authenticate the application-level session before accepting
+                # any commands, including commands queued before reconnect.
+                welcome = json.loads(await asyncio.wait_for(ws.recv(), timeout=20))
+                if not isinstance(welcome, dict) or welcome.get("type") not in ("welcome", "revoked"):
+                    raise RuntimeError("Relay did not acknowledge the controller hello")
+                await self.handle(welcome)
+                hb = asyncio.create_task(self._heartbeat_guard(ws))
                 async for raw in ws:
                     try:
                         msg = json.loads(raw)
                     except ValueError:
                         continue
+                    if not isinstance(msg, dict):
+                        continue
                     if msg.get("type") == "command":
-                        task = asyncio.create_task(self._guard(self.handle(msg)))
+                        command = msg.get("command")
+                        if not isinstance(command, dict) or not command.get("id"):
+                            continue
+                        # Bound the queue. Disconnect rather than execute
+                        # unbounded pending work or silently lose a command.
+                        if len(self.active_commands) >= 16:
+                            log.warning("Controller queue full; closing connection")
+                            return
+                        task = asyncio.create_task(self._guard(
+                            self.on_command(command, self.connection_epoch)))
                         self.active_commands.add(task)
                         task.add_done_callback(self.active_commands.discard)
-                    else:
+                    elif msg.get("type") != "welcome":
                         await self.handle(msg)
             finally:
                 # Any command that has not registered a cancellation Event yet
@@ -267,8 +332,22 @@ class ControllerClient:
                 # commands. Do not permit old queued actions to execute while
                 # this device is offline or after it reconnects.
                 self.invalidate_connection("WebSocket disconnected")
-                hb.cancel()
+                if hb is not None:
+                    hb.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await hb
                 self.ws = None
+
+    async def _heartbeat_guard(self, ws) -> None:
+        try:
+            await self.heartbeat(ws)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # A dead heartbeat must not leave an apparently connected socket.
+            log.warning("Heartbeat failed; reconnecting")
+            with suppress(Exception):
+                await asyncio.wait_for(ws.close(), timeout=5)
 
     async def _guard(self, coro) -> None:
         try:
@@ -280,10 +359,10 @@ class ControllerClient:
         self.loop = asyncio.get_running_loop()
         delay = 1.0
         while not self.stop_event.is_set():
+            started = time.monotonic()
             try:
                 self.on_status("connecting")
                 await self.connect_once()
-                delay = 1.0
             except Fatal:
                 self.on_status("revoked")
                 return
@@ -293,13 +372,19 @@ class ControllerClient:
                     self.on_status("unauthorized")
                     log.error("relay rejected this device (%s). Pair again with: hukm-controller pair", status)
                     return
-                log.warning("connection lost (%s) — retrying in %.0fs", type(e).__name__, delay)
+                log.warning("connection lost (%s)", type(e).__name__)
+            # Only reset the retry delay after a stable connection. A server
+            # that accepts and immediately closes must not cause a hot loop.
+            if time.monotonic() - started >= 60:
+                delay = 1.0
             self.on_status("offline")
+            if self.stop_event.is_set():
+                break
             try:
-                await asyncio.wait_for(self.stop_event.wait(), timeout=delay + random.uniform(0, 0.5))
+                await asyncio.wait_for(self.stop_event.wait(), timeout=delay + random.uniform(0, min(delay * 0.25, 5.0)))
             except asyncio.TimeoutError:
                 pass
-            delay = min(delay * 2, 30.0)
+            delay = min(delay * 2, 60.0)
 
     def stop(self) -> None:
         if self.loop:

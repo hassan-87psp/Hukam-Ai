@@ -9,6 +9,7 @@ import { StoreProvider, useStore } from './services/store';
 
 const Chat = lazy(() => import('./pages/Chat'));
 const Projects = lazy(() => import('./pages/Projects'));
+const Skills = lazy(() => import('./pages/Skills'));
 const Voice = lazy(() => import('./pages/Voice'));
 const Devices = lazy(() => import('./pages/Devices'));
 const Automations = lazy(() => import('./pages/Automations'));
@@ -51,7 +52,7 @@ function Gate() {
       <Route element={<AppShell />}>
         <Route index element={<Dashboard />} />
         {[
-          ['chat', Chat], ['projects', Projects], ['voice', Voice], ['devices', Devices], ['automations', Automations], ['files', Files],
+          ['chat', Chat], ['projects', Projects], ['skills', Skills], ['voice', Voice], ['devices', Devices], ['automations', Automations], ['files', Files],
           ['whatsapp', WhatsApp], ['browser', Browser], ['history', History], ['settings', Settings],
         ].map(([path, C]: any) => (
           <Route key={path} path={path} element={<Suspense fallback={<Loading />}><C /></Suspense>} />

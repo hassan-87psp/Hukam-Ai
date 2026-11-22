@@ -155,6 +155,7 @@ export function resolveDialogue(
   if (state.topic === 'which-folder') {
     if (parsed.kind === 'command' && parsed.action === 'folder.open')
       return { handled: true, result: parsed };
+    if (fullNewAction) return { handled: false };
     const asFolder = parseCommand('folder kholo ' + text);
     if (asFolder.kind === 'command' && asFolder.action === 'folder.open')
       return { handled: true, result: asFolder };
@@ -195,8 +196,8 @@ export function resolveDialogue(
   }
 
   if (state.topic === 'which-file') {
-    if (fullNewAction && !(parsed.kind === 'command' && (parsed.action === 'file.open' || parsed.action === 'file.search')))
-      return { handled: false };
+    // A fresh explicit file search must never inherit an old open-file intent.
+    if (fullNewAction) return { handled: false };
     const verb = state.intent === 'file.open' ? 'file kholo ' : 'file dhoondo ';
     const candidate = parseCommand(verb + text);
     if (candidate.kind === 'command' && (candidate.action === 'file.open' || candidate.action === 'file.search')) {
