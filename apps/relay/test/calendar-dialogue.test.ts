@@ -95,8 +95,8 @@ describe('Calendar multi-turn slot memory',()=>{
     expect(next.question).toContain('Chrome profile');
     next=advanceCalendarSlots(next.slots,'Default',next.question!,NOW);
     expect(next.question).toBeNull();
-    expect(next.startUtc).toBe('2026-11-23T09:00:00.000Z');
-    expect(next.endUtc).toBe('2026-11-23T09:30:00.000Z');
+    expect(next.startUtc).toBe('2026-11-23T09:00:00Z');
+    expect(next.endUtc).toBe('2026-11-23T09:30:00Z');
   });
   it('reads a complete unambiguous request in one message with saved Project profile',()=>{
     const next=advanceCalendarSlots(blankCalendarSlots('outlook','Profile 1'),
