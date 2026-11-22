@@ -137,6 +137,7 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'ui.inspect': 'Inspect visible controls',
   'ui.activate': 'Activate visible control',
   'ui.activate_observed': 'Activate inspected button (approved)',
+  'ui.navigate_verified': 'Observe → click → verify safe UI control',
   'ui.scroll': 'Scroll active app (approved)',
   'desktop.control': 'Desktop mouse/keyboard (approved)',
   'email.inbox_open': 'Open email inbox (approval)',
