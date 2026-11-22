@@ -62,6 +62,30 @@ describe('operator Calendar context across actual user turns',()=>{
     }finally{db.close();rmSync(folder,{recursive:true,force:true});}
   });
 
+  it('asks Calendar provider only when no earlier application context is available',async()=>{
+    const folder=mkdtempSync(join(tmpdir(),'hukm-calendar-provider-'));
+    const db=openDb(folder,resolve(process.cwd(),'database/migrations'));
+    try{
+      const id='provider-owner',at=new Date().toISOString();
+      run(db,'INSERT INTO users(id,email,name,password_hash,created_at) VALUES(?,?,?,?,?)',
+        id,'provider@example.test','Owner','fake-hash',at);
+      const operator=new Operator(db,new Relay(db,{dataDir:folder} as RelayConfig),new Projects(db));
+      const ask=await operator.plan(id,'meeting schedule kro 5.bjy ka',null);
+      expect('kind' in ask&&ask.kind).toBe('clarify');
+      if(!('kind' in ask)||ask.kind!=='clarify')throw Error('Expected provider question');
+      expect(ask.question).toContain('Google Calendar');
+      expect(ask.question).toContain('Outlook Calendar');
+      const reply=await operator.plan(id,'Google',null);
+      expect('kind' in reply&&reply.kind).toBe('clarify');
+      if(!('kind' in reply)||reply.kind!=='clarify')throw Error('Expected date question');
+      expect(reply.question).toContain('date');
+      const next=await operator.plan(id,'kal',null);
+      expect('kind' in next&&next.kind).toBe('clarify');
+      if(!('kind' in next)||next.kind!=='clarify')throw Error('Expected AM/PM question');
+      expect(next.question).toMatch(/AM|PM/);
+    }finally{db.close();rmSync(folder,{recursive:true,force:true});}
+  });
+
   it('final Save requires a verified draft marker and explicit owner command, not casual yes',async()=>{
     const folder=mkdtempSync(join(tmpdir(),'hukm-calendar-save-'));
     const db=openDb(folder,resolve(process.cwd(),'database/migrations'));
