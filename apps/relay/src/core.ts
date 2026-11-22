@@ -214,9 +214,10 @@ export class Relay {
     ws.on('message',(data)=>{
       // Web client websocket is authenticated by /ws/client; never accept
       // device-origin frames or model-provided remote-control commands here.
-      if(data.length>1200)return;
+      const raw=data.toString();
+      if(raw.length>1200)return;
       let m:unknown;
-      try{m=JSON.parse(data.toString());}catch{return;}
+      try{m=JSON.parse(raw);}catch{return;}
       if(!m||typeof m!=='object'||Array.isArray(m))return;
       const v=m as Record<string,unknown>;
       if(v.type==='live_screen.subscribe'){
