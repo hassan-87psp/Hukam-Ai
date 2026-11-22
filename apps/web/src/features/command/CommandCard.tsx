@@ -309,13 +309,24 @@ export function CommandResult({ c }: { c: Command }) {
       return <p className="text-xs text-ink2">{r.note ?? 'Notepad input sent; result not verified.'}</p>;
     case 'browser.control':
       return <p className="text-xs text-ink2">{r.note ?? 'Browser input attempted. Verify the website result before continuing.'}</p>;
-    case 'whatsapp.unread_senders':
+    case 'whatsapp.unread_senders': {
+      const names = Array.isArray(r.senders) ? r.senders.slice(0,100) as string[] : [];
+      const total = typeof r.totalUnreadChats === 'number' && Number.isInteger(r.totalUnreadChats)
+        ? r.totalUnreadChats : null;
+      const complete = r.allBadgeChatsMatched===true && r.filterSelectedVerified===true &&
+        r.unreadCountVerified===true && total!==null && names.length===total;
       return <div className="space-y-2 text-sm">
-        <p className="text-xs text-ink2">{r.note || 'Visible unread sender names (not messages)'}</p>
-        {Array.isArray(r.senders) && r.senders.length > 0
-          ? <ul className="space-y-1">{r.senders.slice(0, 100).map((name: string, i: number) => <li key={i} className="rounded-lg bg-field/40 px-2 py-1">{name}</li>)}</ul>
+        <p className={complete ? 'text-xs text-ok' : 'text-xs font-semibold text-warn'}>
+          {complete ? `Full unread list verified: ${names.length}/${total}` :
+            `PARTIAL / UNVERIFIED: ${names.length} contact names found${total!==null ? ` of ${total}` : ' (badge unknown)'}`}
+        </p>
+        {r.scanStopped && <p className="text-xs text-ink2">Scan stopped: {String(r.scanStopped)} · pages: {String(r.scanPages ?? 'unknown')}</p>}
+        {names.length > 0
+          ? <ul className="space-y-1">{names.map((name, i) => <li key={i} className="rounded-lg bg-field/40 px-2 py-1">{name}</li>)}</ul>
           : <p className="text-warn">No sender names could be verified.</p>}
+        <p className="text-xs text-ink2">Only chat names were scanned, not message bodies.</p>
       </div>;
+    }
     case 'whatsapp.compose':
       return <p className="text-xs text-warn">Draft opened in WhatsApp — not sent. Press Send on the laptop.</p>;
     case 'app.open':
@@ -470,7 +481,10 @@ export default function CommandCard({ c, deviceName }: { c: Command; deviceName?
         <p className="mt-3 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
           {unverifiedReason(c.action)}
         </p>}
-      {c.status === 'completed' && <div className="mt-3"><CommandResult c={c} /></div>}
+      {(c.status === 'completed' ||
+        (c.status === 'failed' && c.action === 'whatsapp.unread_senders' &&
+          Array.isArray(c.result?.senders) && c.result.senders.length > 0)) &&
+        <div className="mt-3"><CommandResult c={c} /></div>}
     </div>
   );
 }
