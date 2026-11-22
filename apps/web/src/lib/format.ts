@@ -69,6 +69,12 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
         (r.source === 'WhatsApp Desktop Unread filter' || r.source === 'window title'));
     case 'whatsapp.unread_senders': {
       // Never show an incomplete 2/10 sender list as a verified green result.
+      // A genuine, independently verified zero badge is sufficient even for
+      // older Windows Controllers that predate the coverage flag.
+      if (Array.isArray(r.senders) && r.senders.length===0 &&
+          r.totalUnreadChats===0 && r.unreadCountVerified===true &&
+          r.filterSelectedVerified===true &&
+          r.source==='Explicit WhatsApp Unread zero badge') return false;
       if (!Array.isArray(r.senders) || r.filterSelectedVerified!==true ||
           r.unreadCountVerified!==true || r.allBadgeChatsMatched!==true ||
           !Number.isInteger(r.totalUnreadChats) || (r.totalUnreadChats as number)<0 ||
