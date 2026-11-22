@@ -721,9 +721,13 @@ def _collect_unread_pages(hwnd, image, left, top, words, chip, badge, cancel):
     first_words=words
     previous_digest=None
     unchanged=0
-    cap=20  # hard upper limit; many chats need paged UI reads, not a blind loop
+    cap=12  # bounded owner-approved scan; never an unbounded cursor loop
+    scan_started=time.monotonic()
     for index in range(cap):
         _ensure_not_cancelled(cancel)
+        if time.monotonic()-scan_started>65:
+            stop="time_budget"
+            break
         _safe_foreground(hwnd)
         if not _same_capture(hwnd,image,left,top):
             stop="window_changed"
@@ -973,10 +977,9 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
                     "messagesRead":False,"filterClickAttempted":True,
                     "filterSelectedVerified":True,
                     "source":"Explicit WhatsApp empty Unread-filter list"}
-        raise VisualUnreadUnavailable(
-            "Unread filter clicked, but sender rows/timestamps not verified. "
-            "No names or zero count guessed. See privacy-safe row geometry logs."
-        )
+        # Another page may contain the sender names; the bounded, verified
+        # sidebar scan below must run before reporting an OCR failure.
+        log.info("WhatsApp first page had no verifiable sender row; checking more Unread pages")
     if not selection_verified:
         raise VisualUnreadUnavailable(
             "Sender rows recognized, but Unread filter selection was not verified; "
@@ -985,6 +988,8 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     _ensure_not_cancelled(cancel)
     scan=_collect_unread_pages(active_hwnd,after_image,left,top,second_words,
                                selected_chip,count_after,cancel)
+    if not scan["senders"] and scan["scanStopped"]!="explicit_empty":
+        raise VisualUnreadUnavailable("Unread list scanned but no timestamp-verified chat names were found. Do not infer zero.")
     return {"supported":True,**scan,
             "totalUnreadChats":count_after if count_after is not None else None,
             "unreadCountVerified":count_after is not None,

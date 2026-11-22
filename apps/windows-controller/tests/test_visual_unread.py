@@ -610,3 +610,93 @@ def test_post_click_logs_geometry_but_not_private_sender_or_preview(caplog):
     assert "Private Person" not in caplog.text
     assert "Private preview content" not in caplog.text
     assert "timestamp_geometry" in caplog.text
+
+
+def test_unread_scan_scrolls_list_only_and_returns_all_timestamp_verified_titles(monkeypatch):
+    from PIL import Image
+    import win32api, win32gui, win32con
+    from controller.system import pointer_motion
+    chip=vu.Word("Unread",168,182,55,12)
+    anchors=[
+        vu.Word("Chats",97,69,62,19),vu.Word("Search",150,133,49,12),
+        vu.Word("All",110,185,19,12),chip,vu.Word("Favourites",277,185,75,12)]
+    page1=anchors+[vu.Word("First",155,370,42,15),vu.Word("Yesterday",401,370,78,13)]
+    page2=anchors+[vu.Word("Second",155,370,55,15),vu.Word("Yesterday",401,370,78,13)]
+    first=Image.new("RGB",(520,920),(15,15,15))
+    second=Image.new("RGB",(520,920),(20,20,20))
+    calls=[]
+    monkeypatch.setattr(vu,"_safe_foreground",lambda *_:None)
+    monkeypatch.setattr(vu,"_same_capture",lambda *_:True)
+    monkeypatch.setattr(vu,"_capture_left",lambda *_:(second,0,0))
+    monkeypatch.setattr(vu,"_ocr_words",lambda *a,**k:page2)
+    monkeypatch.setattr(win32gui,"WindowFromPoint",lambda *_:200)
+    monkeypatch.setattr(win32gui,"GetAncestor",lambda *_:200)
+    pos=[0,0]
+    def move(point,guard):
+        guard();pos[:]=point
+    monkeypatch.setattr(pointer_motion,"move_visible",move)
+    monkeypatch.setattr(win32api,"GetCursorPos",lambda:tuple(pos))
+    monkeypatch.setattr(win32api,"mouse_event",lambda *args:calls.append(args))
+    monkeypatch.setattr(vu.time,"sleep",lambda *_:None)
+    result=vu._collect_unread_pages(200,first,0,0,page1,chip,2,None)
+    assert result["senders"]==["First","Second"]
+    assert result["visibleChatCount"]==2
+    assert result["scanPages"]==2
+    assert result["allBadgeChatsMatched"] is True
+    assert result["scanStopped"]=="badge_matched"
+    assert len(calls)==1 and calls[0][0]==win32con.MOUSEEVENTF_WHEEL
+    assert not any(call[0]==win32con.MOUSEEVENTF_LEFTDOWN for call in calls)
+
+
+def test_unread_scan_never_claims_full_coverage_when_badge_exceeds_verified_names(monkeypatch):
+    from PIL import Image
+    import win32api, win32gui
+    from controller.system import pointer_motion
+    chip=vu.Word("Unread",168,182,55,12)
+    words=[
+        vu.Word("Chats",97,69,62,19),vu.Word("Search",150,133,49,12),
+        vu.Word("All",110,185,19,12),chip,vu.Word("Favourites",277,185,75,12),
+        vu.Word("One",155,370,33,15),vu.Word("Yesterday",401,370,78,13)]
+    image=Image.new("RGB",(520,920),(15,15,15))
+    pos=[0,0]
+    monkeypatch.setattr(vu,"_safe_foreground",lambda *_:None)
+    monkeypatch.setattr(vu,"_same_capture",lambda *_:True)
+    monkeypatch.setattr(vu,"_capture_left",lambda *_:(image,0,0))
+    monkeypatch.setattr(vu,"_ocr_words",lambda *_a,**_kw:words)
+    monkeypatch.setattr(win32gui,"WindowFromPoint",lambda *_:200)
+    monkeypatch.setattr(win32gui,"GetAncestor",lambda *_:200)
+    monkeypatch.setattr(pointer_motion,"move_visible",lambda point,guard:(guard(),pos.__setitem__(slice(None),point)))
+    monkeypatch.setattr(win32api,"GetCursorPos",lambda:tuple(pos))
+    monkeypatch.setattr(win32api,"mouse_event",lambda *args:None)
+    monkeypatch.setattr(vu.time,"sleep",lambda *_:None)
+    result=vu._collect_unread_pages(200,image,0,0,words,chip,10,None)
+    assert result["senders"]==["One"]
+    assert result["allBadgeChatsMatched"] is False
+    assert result["unverifiedChatCount"]==9
+    assert result["scanStopped"]=="end_of_list"
+
+
+def test_unread_scrolling_stops_if_filter_header_is_lost(monkeypatch):
+    from PIL import Image
+    import win32api,win32gui
+    from controller.system import pointer_motion
+    chip=vu.Word("Unread",168,182,55,12)
+    items=[
+       vu.Word("Chats",97,69,62,19),vu.Word("Search",150,133,49,12),
+       vu.Word("All",110,185,19,12),chip,vu.Word("Favourites",277,185,75,12),
+       vu.Word("One",155,370,33,15),vu.Word("Yesterday",401,370,78,13)]
+    image=Image.new("RGB",(520,920),(20,20,20));pos=[0,0]
+    monkeypatch.setattr(vu,"_safe_foreground",lambda *_:None)
+    monkeypatch.setattr(vu,"_same_capture",lambda *_:True)
+    monkeypatch.setattr(vu,"_capture_left",lambda *_:(image,0,0))
+    monkeypatch.setattr(vu,"_ocr_words",lambda *_a,**_kw:[])
+    monkeypatch.setattr(win32gui,"WindowFromPoint",lambda *_:200)
+    monkeypatch.setattr(win32gui,"GetAncestor",lambda *_:200)
+    monkeypatch.setattr(pointer_motion,"move_visible",lambda point,guard:(guard(),pos.__setitem__(slice(None),point)))
+    monkeypatch.setattr(win32api,"GetCursorPos",lambda:tuple(pos))
+    monkeypatch.setattr(win32api,"mouse_event",lambda *args:None)
+    monkeypatch.setattr(vu.time,"sleep",lambda *_:None)
+    out=vu._collect_unread_pages(200,image,0,0,items,chip,10,None)
+    assert out["senders"]==["One"]
+    assert out["allBadgeChatsMatched"] is False
+    assert out["scanStopped"]=="filter_not_verified"
