@@ -11,7 +11,7 @@ const FAMILIES = {
   whatsapp: ['whatsapp.open', 'whatsapp.check', 'whatsapp.unread_senders', 'whatsapp.select_chat', 'whatsapp.read_selected', 'whatsapp.draft_reply', 'whatsapp.send_reviewed', 'whatsapp.attach_preview', 'whatsapp.send_attachment_reviewed'],
   mail: ['email.inbox_open', 'email.compose_draft'],
   calendar: ['calendar.event_draft', 'calendar.save_reviewed'],
-  chatgpt: ['chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.download_visible'],
+  chatgpt: ['chatgpt.prompt_draft', 'chatgpt.submit_prompt', 'chatgpt.read_response', 'chatgpt.followup_draft', 'chatgpt.download_visible'],
 } as const satisfies Record<string, readonly ActionName[]>;
 
 const supported: readonly ActionName[] = Object.freeze(Object.values(FAMILIES).flat());
