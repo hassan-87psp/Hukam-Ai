@@ -50,5 +50,7 @@ export function isExplicitSend(answer:string):boolean {
 export function isPrivateFollowup(request:string):boolean {
   return request.startsWith('HUKM_APPROVED_WHATSAPP_DRAFT:') ||
     request.startsWith('HUKM_VERIFIED_WHATSAPP_CONTACT:') ||
-    request.startsWith('The owner opened Personal WhatsApp Desktop and reviewed visible unread chat names.');
+    request.startsWith('The owner opened Personal WhatsApp Desktop and reviewed visible unread chat names.') ||
+    request.startsWith('HUKM_CHATGPT_') ||
+    request.startsWith('HUKM_REVIEWED_CHATGPT_DRAFT:');
 }
