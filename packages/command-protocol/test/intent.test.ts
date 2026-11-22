@@ -60,7 +60,7 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
   it('approved visual WhatsApp sender scan has an OCR-aware deadline',()=>{
     const result=validateCommand('whatsapp.unread_senders',{});
     expect(result.ok).toBe(true);
-    expect(result.def?.timeoutMs).toBe(90000);
+    expect(result.def?.timeoutMs).toBe(180000);
     expect(requiresApproval('whatsapp.unread_senders')).toBe(true);
   });
   it('website update is approved, fixed-source and never accepts arbitrary command arguments',()=>{

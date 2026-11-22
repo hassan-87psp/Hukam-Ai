@@ -16,7 +16,9 @@ export default function WhatsApp() {
   const composeRef = useRef<HTMLDivElement>(null);
   const waCmds = commands.filter((c) => c.action.startsWith('whatsapp'));
   const lastCheck = waCmds.find((c) => c.action === 'whatsapp.check');
+  const lastUnreadScan = waCmds.find((c) => c.action === 'whatsapp.unread_senders');
   const checking = lastCheck && ['pending', 'running'].includes(lastCheck.status);
+  const scanning = lastUnreadScan && ['pending', 'running', 'awaiting_approval'].includes(lastUnreadScan.status);
   const capOn = activeDevice?.capabilitiesEnabled.includes('whatsapp');
   const draft = draftId ? commandMap.get(draftId) : null;
 
@@ -38,7 +40,7 @@ export default function WhatsApp() {
             <div className="flex items-center justify-between"><span className="text-ink2">WhatsApp capability</span>{capOn ? <Badge tone="ok" dot>Enabled</Badge> : <Badge tone="warn" dot>Disabled</Badge>}</div>
             <div className="flex items-center justify-between"><span className="text-ink2">Official WhatsApp API</span><Badge tone="muted">Not connected</Badge></div>
             <p className="rounded-xl bg-field/40 p-3 text-xs leading-relaxed text-ink2 ring-1 ring-line/10">
-              HUKM uses WhatsApp on your own laptop. It can open Desktop/Web, check an <b className="text-ink">unread-chat count</b> and prepare an unsent draft. An experimental approved reader can speak <b className="text-ink">only the currently visible Desktop chat</b> on the laptop; its text stays local. HUKM never sends messages automatically.
+              HUKM operates your installed Personal WhatsApp Desktop with approval. It can try a full <b className="text-ink">Unread contact scan</b> and report verified names versus missing names. Selected-chat reads and unsent reply drafts require separate approval. Final Send is a separate explicit, reviewed action; delivery cannot be guaranteed.
             </p>
             <div className="grid grid-cols-2 gap-2">
               <button className="btn-primary" disabled={!activeDevice?.online} onClick={() => runAction('whatsapp.open', { mode: 'desktop' }, { label: 'WhatsApp Desktop kholo' })}>Open Desktop App</button>
@@ -46,6 +48,9 @@ export default function WhatsApp() {
             </div>
             <button className="btn-ghost w-full" disabled={!activeDevice?.online || !!checking} onClick={() => runAction('whatsapp.check', { mode: 'desktop' }, { label: 'WhatsApp unread count check karo' })}>
               {checking ? <Spinner /> : <RefreshCw className="h-4 w-4" />} Check unread count
+            </button>
+            <button className="btn-primary w-full" disabled={!activeDevice?.online || !!scanning} onClick={() => runAction('whatsapp.unread_senders', {}, { label: 'WhatsApp ki puri unread list scan karo' })}>
+              {scanning ? <Spinner /> : <Inbox className="h-4 w-4" />} Scan all unread contacts (approval)
             </button>
             <button className="btn-ghost w-full" disabled={!activeDevice?.online} onClick={() => runAction('whatsapp.read_visible', {}, { label: 'Read visible WhatsApp chat aloud on laptop' })}>
               <MessageCircle className="h-4 w-4" /> Read visible chat aloud (Approval required)
@@ -56,7 +61,7 @@ export default function WhatsApp() {
         </Card>
 
         <Card className="p-0 lg:col-span-2">
-          <CardHeader icon={<Inbox className="h-5 w-5" />} title="Unread messages" action={lastCheck ? <span className="text-xs text-ink2">checked {timeAgo(lastCheck.createdAt)}</span> : null} />
+          <CardHeader icon={<Inbox className="h-5 w-5" />} title="Unread chat scan" action={lastUnreadScan ? <span className="text-xs text-ink2">scanned {timeAgo(lastUnreadScan.createdAt)}</span> : lastCheck ? <span className="text-xs text-ink2">checked {timeAgo(lastCheck.createdAt)}</span> : null} />
           <div className="space-y-4 px-5 pb-5 pt-3">
             {lastCheck?.status === 'completed' ? (
               typeof lastCheck.result?.unreadChats === 'number' ? (
@@ -66,7 +71,8 @@ export default function WhatsApp() {
                 </div>
               ) : <p className="text-sm text-ink2">{String(lastCheck.result?.note ?? '')}</p>
             ) : lastCheck && lastCheck.error ? <p className="text-sm text-bad">{lastCheck.error.message}</p> : <p className="text-sm text-ink2">Tap “Check” to read the unread count.</p>}
-            <NotConnected title="Full message history & summaries" body="Full WhatsApp inbox sync and remote message summaries are not connected. Reading the visible Desktop chat aloud is an experimental, approved action on your own laptop. No WhatsApp message text is stored in HUKM or displayed in this page." />
+            {lastUnreadScan && <CommandCard c={lastUnreadScan} />}
+            <NotConnected title="Full message history & summaries" body="Unread contact names are scanned only from the currently available Personal WhatsApp Desktop list. Message bodies are not read by this scan. A separately approved selected-chat read may transfer visible text to your private HUKM command history; full WhatsApp inbox sync is not available." />
           </div>
         </Card>
 

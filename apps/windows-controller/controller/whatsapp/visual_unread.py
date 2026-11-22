@@ -721,11 +721,11 @@ def _collect_unread_pages(hwnd, image, left, top, words, chip, badge, cancel):
     first_words=words
     previous_digest=None
     unchanged=0
-    cap=12  # bounded owner-approved scan; never an unbounded cursor loop
+    cap=24  # bounded owner-approved scan, with overlapping short wheel steps
     scan_started=time.monotonic()
     for index in range(cap):
         _ensure_not_cancelled(cancel)
-        if time.monotonic()-scan_started>65:
+        if time.monotonic()-scan_started>125:
             stop="time_budget"
             break
         _safe_foreground(hwnd)
@@ -743,6 +743,12 @@ def _collect_unread_pages(hwnd, image, left, top, words, chip, badge, cancel):
             new_chip=locate_unread(words,image.width,image.height)
             if new_chip is None or abs(new_chip.cy-chip.cy)>max(10,chip.height):
                 stop="filter_not_verified"
+                break
+            fresh_badge=_verified_badge_count(words,new_chip)
+            if badge is not None and fresh_badge is not None and fresh_badge!=badge:
+                # Incoming messages can change the Unread list during scan.
+                # Never certify complete coverage against a stale badge.
+                stop="badge_changed"
                 break
         pages+=1
         names=_visible_titles_for_layout(words,image.width,chip)
@@ -763,9 +769,9 @@ def _collect_unread_pages(hwnd, image, left, top, words, chip, badge, cancel):
                 alternative=_visible_titles_for_layout(stable_header+better_rows,
                                                        image.width,chip)
                 names=list(dict.fromkeys([*names,*alternative]))
-        if not names and index==0 and _explicit_empty_unread(words,chip,image.width):
+        if not names and index==0 and _explicit_empty_unread(words,chip,image.width) and badge in (None,0):
             return {"senders":[],"visibleChatCount":0,"scanPages":pages,
-                    "allBadgeChatsMatched":badge==0,"scanStopped":"explicit_empty",
+                    "allBadgeChatsMatched":True,"scanStopped":"explicit_empty",
                     "conversations":[]}
         for name in names:
             key=name.casefold().strip()
@@ -803,8 +809,17 @@ def _collect_unread_pages(hwnd, image, left, top, words, chip, badge, cancel):
         row_top=max(0,min(image.height-30,round(chip.cy+chip.height+45)))
         digest=hashlib.sha256(image.crop((0,row_top,image.width,image.height)).tobytes()).digest()
         guard()
-        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL,0,0,-360,0)
-        time.sleep(.36)
+        # One 120-unit wheel notch preserves overlap between successive
+        # viewports. The old 360-unit jump could skip whole chat rows.
+        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL,0,0,-120,0)
+        time.sleep(.25)
+        # Move away from a hovered chat row before OCR: the hover toolbar can
+        # cover a timestamp that is required to verify the sender title.
+        try:
+            move_visible((left+round(chip.cx),top+round(chip.cy)),guard)
+        except PointerInterrupted as exc:
+            raise VisualUnreadUnavailable(str(exc)) from exc
+        time.sleep(.16)
         _ensure_not_cancelled(cancel)
         new_image,new_left,new_top=_capture_left(hwnd)
         if (left,top)!=(new_left,new_top) or new_image.size!=image.size:
@@ -872,6 +887,11 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
         _safe_foreground(active_hwnd)
         if not scan["senders"] and scan["scanStopped"]!="explicit_empty":
             raise VisualUnreadUnavailable("Unread selected but no sender rows could be verified after bounded sidebar scan.")
+        if scan["scanStopped"]=="explicit_empty":
+            return {"supported":True,**scan,"totalUnreadChats":0,"unreadCountVerified":True,
+                    "totalUnreadMessages":0,"visibleOnly":False,"messagesRead":False,
+                    "filterClickAttempted":False,"filterSelectedVerified":True,
+                    "source":"Explicit WhatsApp empty Unread-filter list"}
         return {"supported":True,**scan,"totalUnreadChats":badge if badge is not None else None,
                 "unreadCountVerified":badge is not None,"totalUnreadMessages":None,
                 "visibleOnly":True,"messagesRead":False,
@@ -1007,6 +1027,11 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
                                selected_chip,count_after,cancel)
     if not scan["senders"] and scan["scanStopped"]!="explicit_empty":
         raise VisualUnreadUnavailable("Unread list scanned but no timestamp-verified chat names were found. Do not infer zero.")
+    if scan["scanStopped"]=="explicit_empty":
+        return {"supported":True,**scan,"totalUnreadChats":0,"unreadCountVerified":True,
+                "totalUnreadMessages":0,"visibleOnly":False,"messagesRead":False,
+                "filterClickAttempted":True,"filterSelectedVerified":True,
+                "source":"Explicit WhatsApp empty Unread-filter list"}
     return {"supported":True,**scan,
             "totalUnreadChats":count_after if count_after is not None else None,
             "unreadCountVerified":count_after is not None,

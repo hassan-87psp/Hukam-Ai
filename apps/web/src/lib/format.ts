@@ -67,12 +67,24 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
       return !(typeof r.unreadChats === 'number' && Number.isInteger(r.unreadChats) &&
         r.unreadChats >= 0 && r.unreadChats <= 999 &&
         (r.source === 'WhatsApp Desktop Unread filter' || r.source === 'window title'));
-    case 'whatsapp.unread_senders':
-      if(Array.isArray(r.senders) && r.senders.length===0 && r.totalUnreadChats===0 &&
-         r.unreadCountVerified===true && r.filterSelectedVerified===true && r.source==='Explicit WhatsApp Unread zero badge')return false;
-      return !(Array.isArray(r.senders) && r.senders.length > 0 &&
-        r.senders.every((x:unknown)=>typeof x === 'string' && !!x.trim())) ||
-        r.filterSelectedVerified === false;
+    case 'whatsapp.unread_senders': {
+      // Never show an incomplete 2/10 sender list as a verified green result.
+      // A genuine, independently verified zero badge is sufficient even for
+      // older Windows Controllers that predate the coverage flag.
+      if (Array.isArray(r.senders) && r.senders.length===0 &&
+          r.totalUnreadChats===0 && r.unreadCountVerified===true &&
+          r.filterSelectedVerified===true &&
+          (r.source==='Explicit WhatsApp Unread zero badge' || r.source==='Explicit WhatsApp empty Unread-filter list')) return false;
+      if (!Array.isArray(r.senders) || r.filterSelectedVerified!==true ||
+          r.unreadCountVerified!==true || r.allBadgeChatsMatched!==true ||
+          !Number.isInteger(r.totalUnreadChats) || (r.totalUnreadChats as number)<0 ||
+          r.senders.length!==r.totalUnreadChats) return true;
+      const names=r.senders as unknown[];
+      if(!names.every(x=>typeof x==='string' && !!x.trim()))return true;
+      if(new Set(names.map(x=>(x as string).trim().toLocaleLowerCase())).size!==names.length)return true;
+      return names.length===0 && r.source!=='Explicit WhatsApp Unread zero badge' &&
+        r.scanStopped!=='explicit_empty';
+    }
     default:
       return false;
   }

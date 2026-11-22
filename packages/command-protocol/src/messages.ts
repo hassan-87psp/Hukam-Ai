@@ -246,7 +246,8 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('WhatsApp open hai, lekin unread count parha nahi ja saka.', 'واٹس ایپ کھلا ہے، لیکن ان ریڈ تعداد نہیں پڑھی جا سکی۔', "WhatsApp is open, but the unread count couldn't be read.");
     case 'whatsapp.unread_senders': {
       const senders = Array.isArray(r.senders) ? r.senders.filter((x): x is string => typeof x === 'string').slice(0, 100) : [];
-      if (!senders.length && r.totalUnreadChats===0 && r.unreadCountVerified===true && r.source==='Explicit WhatsApp Unread zero badge')
+      if (!senders.length && r.totalUnreadChats===0 && r.unreadCountVerified===true &&
+          (r.source==='Explicit WhatsApp Unread zero badge' || r.source==='Explicit WhatsApp empty Unread-filter list'))
         return L('WhatsApp ke Unread badge par zero chats confirm hui hain.', 'واٹس ایپ میں صفر ان ریڈ چیٹس کی تصدیق ہوئی۔', 'The explicit WhatsApp Unread badge confirms zero unread conversations.');
       if (!senders.length) return L('WhatsApp ne unread sender names verify nahi kiye.', 'واٹس ایپ کے ناموں کی تصدیق نہیں ہوئی۔', 'No unread sender names could be verified.');
       if (r.filterSelectedVerified === false)

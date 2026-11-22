@@ -489,24 +489,47 @@ export class Relay {
           (typeof result.unreadChats === 'number' && Number.isInteger(result.unreadChats) &&
            result.unreadChats >= 0 && result.unreadChats <= 999 &&
            (result.source === 'WhatsApp Desktop Unread filter' || result.source === 'window title'));
-        const sendersVerified = c.action !== 'whatsapp.unread_senders' ||
-          (Array.isArray(result.senders) &&
-           ((result.senders.length > 0 && result.senders.every((s: unknown) => typeof s === 'string' && s.trim().length > 0)) ||
-            (result.senders.length===0 && result.totalUnreadChats===0 && result.unreadCountVerified===true &&
-             result.filterSelectedVerified===true && result.source==='Explicit WhatsApp Unread zero badge')));
+        // A successful OCR pass is NOT a complete unread scan. Older builds
+        // marked 2 named rows "Completed" against a 10-chat badge. Require
+        // explicit filter selection, numeric badge and exact full coverage.
+        // Keep partial verified names in the result for an honest UI.
+        const unreadNames = c.action === 'whatsapp.unread_senders' && Array.isArray(result.senders)
+          ? result.senders : [];
+        const cleanNames = unreadNames.every((s: unknown) =>
+          typeof s === 'string' && !!s.trim() && s.length <= 100);
+        const uniqueNames = cleanNames && new Set(unreadNames.map((s: string) => s.trim().toLocaleLowerCase())).size === unreadNames.length;
+        const badge = result.totalUnreadChats;
+        const badgeValid = typeof badge === 'number' && Number.isInteger(badge) && badge >= 0 && badge <= 999;
+        // An explicitly read ZERO badge is independently conclusive even if
+        // an older Controller doesn't report the newer coverage flag.
+        const explicitZero = result.filterSelectedVerified === true &&
+          result.unreadCountVerified === true && badge === 0 &&
+          unreadNames.length === 0 && (result.source === 'Explicit WhatsApp Unread zero badge' || result.source === 'Explicit WhatsApp empty Unread-filter list');
+        const fullUnread = cleanNames && uniqueNames && (explicitZero ||
+          (result.filterSelectedVerified === true && result.unreadCountVerified === true &&
+           result.allBadgeChatsMatched === true && badgeValid && unreadNames.length === badge &&
+           (badge > 0 || result.scanStopped === 'explicit_empty')));
+        const sendersVerified = c.action !== 'whatsapp.unread_senders' || fullUnread;
+        const partialUnread = c.action === 'whatsapp.unread_senders' &&
+          cleanNames && unreadNames.length > 0 && !fullUnread;
         const resultVerified = countVerified && sendersVerified;
         const success = msg.ok === true && resultVerified;
+        const remaining = badgeValid ? Math.max(0, badge - unreadNames.length) : null;
         this.finish(c.id, success ? 'completed' : 'failed', safeResult, success ? null : {
-          code: !resultVerified ? 'UNVERIFIABLE' : String(msg.error?.code ?? 'FAILED').slice(0, 40),
+          code: partialUnread ? 'PARTIAL_UNREAD_SCAN' : !resultVerified ? 'UNVERIFIABLE' : String(msg.error?.code ?? 'FAILED').slice(0, 40),
           message: !countVerified
             ? (typeof msg.error?.message==='string' && msg.error.message.trim()
               ? msg.error.message.slice(0,500)
               : 'Personal WhatsApp Desktop did not expose a verified unread count: unknown, NOT zero. Try an approved visible unread sender scan.')
-            : !sendersVerified
-              ? (typeof msg.error?.message==='string' && msg.error.message.trim()
-                ? msg.error.message.slice(0,500)
-                : 'Personal WhatsApp Desktop did not expose verified unread sender names. Run HUKM diagnostics.')
-              : String(msg.error?.message ?? 'failed').slice(0, 500),
+            : partialUnread
+              ? 'Only '+unreadNames.length+' unread chat name(s) verified'+(badgeValid?' out of '+badge:'; badge count unknown')+
+                (remaining===null?'':'; '+remaining+' not verified')+'. Scan incomplete; see partial names below. Reason: '+
+                String(result.scanStopped ?? 'unknown').slice(0,50)
+              : !sendersVerified
+                ? (typeof msg.error?.message==='string' && msg.error.message.trim()
+                  ? msg.error.message.slice(0,500)
+                  : 'Personal WhatsApp Desktop could not prove complete unread-chat coverage. Retry after checking version and OCR diagnostics.')
+                : String(msg.error?.message ?? 'failed').slice(0, 500),
         }, typeof msg.durationMs === 'number' ? Math.round(msg.durationMs) : null);
         this.audit(userId, 'device', success ? 'command.completed' : 'command.failed', { commandId: c.id, action: c.action }, deviceId);
         break;

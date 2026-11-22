@@ -524,6 +524,51 @@ def attach_preview(expected_contact: str, path: str, cancel=None) -> dict:
         raise DesktopWhatsAppError("WhatsApp attachment controls differ on this app version") from exc
 
 
+def _verify_reviewed_send_header(active, root, rect, expected, cancel=None):
+    """Prefer exact UIA header, with independent on-device OCR verification."""
+    try:
+        _check_selected_contact(root,rect,expected)
+    except DesktopWhatsAppError as exc:
+        try:
+            if visual_reply.exact_header(active.hwnd,expected,cancel):
+                return
+        except visual_reply.VisualReplyUnavailable:
+            pass
+        raise DesktopWhatsAppError(
+            "Exact WhatsApp recipient header not verified by UIA or local OCR; no Send") from exc
+
+
+def _verify_reviewed_send_draft(active, root, rect, expected, message, cancel=None):
+    """Compare the existing approved draft, never insert text or auto-retry."""
+    try:
+        current=_editor_text(_composer(root,rect))
+    except DesktopWhatsAppError as exc:
+        try:
+            if visual_reply.verified_visual_draft(active.hwnd,expected,message,cancel):
+                return
+        except visual_reply.VisualReplyUnavailable:
+            pass
+        raise DesktopWhatsAppError(
+            "Exact WhatsApp draft not verifiable through UIA or local OCR; no Send") from exc
+    if current != message:
+        raise DesktopWhatsAppError(
+            "WhatsApp draft does not exactly match approved message. Nothing was sent.")
+
+
+def _unique_send_control(root, rect):
+    """Demand one fresh, enabled, explicitly labelled bottom-right UIA button."""
+    left,top,width,height=rect
+    choices=[c for c,name,kind,x,y,_right,_bottom in _controls(root)
+             if kind=="ButtonControl" and _send_button_label(c,name)
+             and left+width*.65<=x<=left+width
+             and top+height*.70<=y<=top+height
+             and getattr(c,"IsEnabled",False)]
+    if len(choices)!=1:
+        raise DesktopWhatsAppError(
+            "Exactly one enabled labelled WhatsApp Send button was not found; no Send attempted")
+    return choices[0]
+
+
 def send_reviewed(expected_contact: str, expected_message: str, cancel=None) -> dict:
     """One approved WhatsApp Send attempt, guarded by exact draft and chat.
 
@@ -540,44 +585,25 @@ def send_reviewed(expected_contact: str, expected_message: str, cancel=None) -> 
                 "note": "SIMULATED Send only; no WhatsApp delivery occurred."}
     try:
         active, root, rect = _active_root()
-        _check_selected_contact(root, rect, expected_contact)
-        editor = _composer(root, rect)
-        try:
-            current = str(editor.GetValuePattern().Value or "")
-        except Exception as exc:
-            raise DesktopWhatsAppError(
-                "Cannot read existing WhatsApp draft to compare with exact reviewed message; no Send attempted"
-            ) from exc
-        if current != expected_message:
-            raise DesktopWhatsAppError(
-                "WhatsApp draft does not exactly match approved message. Nothing was sent."
-            )
-        left, top, width, height = rect
-        choices = [
-            c for c, name, kind, x, y, right, _bottom in _controls(root)
-            if kind == "ButtonControl" and _send_button_label(c,name)
-            and (left + width * 0.65 <= x <= left + width)
-            and (top + height * 0.70 <= y <= top + height)
-        ]
-        if len(choices) != 1:
-            raise DesktopWhatsAppError(
-                "Exactly one visible WhatsApp Send button was not found; no Send attempted"
-            )
+        _verify_reviewed_send_header(active,root,rect,expected_contact,cancel)
+        _verify_reviewed_send_draft(active,root,rect,expected_contact,expected_message,cancel)
+        _unique_send_control(root,rect)  # require a labelled button before any further work
         # Double-check app focus and contact after locating the button, never
         # execute a stale UIA handle if user switches to a different chat/app.
         _same_window(active, cancel)
         fresh, fresh_root, fresh_rect = _active_root()
         if fresh.hwnd != active.hwnd or fresh.pid != active.pid:
             raise DesktopWhatsAppError("WhatsApp window changed; no Send attempted")
-        _check_selected_contact(fresh_root, fresh_rect, expected_contact)
-        if _editor_text(_composer(fresh_root, fresh_rect)) != expected_message:
-            raise DesktopWhatsAppError("WhatsApp draft changed; no Send attempted")
+        _verify_reviewed_send_header(fresh,fresh_root,fresh_rect,expected_contact,cancel)
+        _verify_reviewed_send_draft(fresh,fresh_root,fresh_rect,expected_contact,expected_message,cancel)
+        fresh_send_button=_unique_send_control(fresh_root,fresh_rect)
         if cancel is not None and cancel.is_set():
             raise DesktopWhatsAppError("WhatsApp Send cancelled before clicking")
         _same_window(active, cancel)
+        # Never reuse a UIA Send handle from before a potential WebView rerender.
         # Never auto-retry after this click: the message may have actually sent.
         try:
-            choices[0].Click(simulateMove=False)
+            fresh_send_button.Click(simulateMove=False)
         except Exception:
             return {"sendAttempted": "unknown", "sentUiConfirmed": False,
                     "deliveryVerified": False, "verified": False, "contact": expected_contact,

@@ -661,6 +661,8 @@ def test_unread_scan_scrolls_list_only_and_returns_all_timestamp_verified_titles
     assert result["allBadgeChatsMatched"] is True
     assert result["scanStopped"]=="badge_matched"
     assert len(calls)==1 and calls[0][0]==win32con.MOUSEEVENTF_WHEEL
+    assert calls[0][3]==-120  # one notch with overlap, never skip whole pages
+    assert pos==[round(chip.cx),round(chip.cy)]  # hover moved off chat rows
     assert not any(call[0]==win32con.MOUSEEVENTF_LEFTDOWN for call in calls)
 
 
@@ -739,3 +741,31 @@ def test_scanned_page_recovers_small_timestamp_and_title_via_enhanced_local_ocr(
     assert data["senders"]==["First","Second"]
     assert data["allBadgeChatsMatched"] is True
     assert data["scanPages"]==1
+
+
+def test_verified_empty_unread_filter_is_zero_without_numeric_badge(monkeypatch):
+    from PIL import Image
+    chip=vu.Word("Unread",168,182,55,12)
+    words=[
+        vu.Word("Chats",97,69,62,19),vu.Word("Search",150,133,49,12),
+        vu.Word("All",110,185,19,12),chip,
+        vu.Word("Favourites",277,185,75,12),
+        vu.Word("No",160,380,23,13),vu.Word("unread",188,380,50,13),
+        vu.Word("chats",243,380,35,13),
+    ]
+    image=Image.new("RGB",(520,920))
+    monkeypatch.setattr(vu,"_capture_for_scan",lambda *_:(image,0,0))
+    monkeypatch.setattr(vu,"_ocr_words",lambda *a,**kw:words)
+    monkeypatch.setattr(vu,"_safe_foreground",lambda *_:None)
+    monkeypatch.setattr(vu,"_search_header",lambda *_:"search unread chats")
+    monkeypatch.setattr(vu,"_collect_unread_pages",lambda *_args,**_kw:{
+        "senders":[],"visibleChatCount":0,"scanPages":1,
+        "allBadgeChatsMatched":True,"scanStopped":"explicit_empty",
+        "conversations":[],
+    })
+    data=vu.visual_scan_unread(200)
+    assert data["senders"]==[]
+    assert data["totalUnreadChats"]==0
+    assert data["unreadCountVerified"] is True
+    assert data["source"]=="Explicit WhatsApp empty Unread-filter list"
+    assert data["filterClickAttempted"] is False

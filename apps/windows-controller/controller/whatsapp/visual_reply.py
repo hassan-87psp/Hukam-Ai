@@ -124,6 +124,80 @@ def _click_at(hwnd,point,cancel=None):
     win32api.mouse_event(win32con.MOUSEEVENTF_LEFTUP,0,0,0,0)
 
 
+def _search_exact_contact_visual(hwnd, expected, image, words, left, top, chip, cancel=None):
+    """Search a non-visible contact only through a confirmed empty WhatsApp Search box.
+
+    This is an on-device OCR fallback, not WhatsApp Web or contact database
+    access. If focus, the query, the unique result or final header cannot be
+    verified, fail closed. No message is typed into the chat composer.
+    """
+    # Only a unique Search placeholder ABOVE the verified All/Unread chips
+    # proves that clicking here would target the application's Search field.
+    searches=[w for w in words if _norm(w.text)=="search" and
+              25<=w.cy<chip.cy-max(13,chip.height) and
+              image.width*.09<=w.cx<=image.width*.72 and
+              7<=w.height<=40]
+    if len(searches)!=1:
+        raise VisualReplyUnavailable(
+            "Contact is off-screen and an empty WhatsApp Search field cannot be verified. Select it manually.")
+    field=searches[0]
+    _same(hwnd,cancel)
+    _click_at(hwnd,(left+round(field.cx),top+round(field.cy)),cancel)
+    _same(hwnd,cancel)
+    from ..browser.operator import _send_unicode
+    typed=False
+    try:
+        for character in expected:
+            _same(hwnd,cancel)
+            typed=True
+            _send_unicode(character)
+    except Exception as exc:
+        raise VisualReplyUnavailable(
+            "WhatsApp Search typing was interrupted; inspect search text before retrying") from exc
+    if not typed:
+        raise VisualReplyUnavailable("Empty contact name rejected")
+    time.sleep(.5)
+    _same(hwnd,cancel)
+    new_image,new_left,new_top=vu._capture_left(hwnd)
+    if (new_left,new_top)!=(left,top) or new_image.size!=image.size:
+        raise VisualReplyUnavailable("WhatsApp moved during Search. No result clicked")
+    result_words=vu._ocr_words(new_image,cancel=cancel)
+    # Confirm the exact query in the input row before trusting a result;
+    # otherwise keystrokes may have landed in an unrelated control.
+    query=[hit for hit in _phrase_hits(result_words,expected)
+           if hit[0].cy<chip.cy-max(10,chip.height*.5) and
+           hit[0].x<=image.width*.73]
+    if len(query)!=1:
+        raise VisualReplyUnavailable(
+            "Typed WhatsApp Search query cannot be verified; no recipient clicked. Inspect Search manually.")
+    # Search results may not show a timestamp. Require a unique ENTIRE
+    # contact-title line in the left result region and verify the exact
+    # right-hand chat header after the click before allowing a draft.
+    matches=[]
+    for hit in _phrase_hits(result_words,expected):
+        start,end=hit
+        if not (chip.cy+max(25,2*chip.height)<start.cy<image.height-30 and
+                image.width*.15<=start.x<=image.width*.75 and
+                end.x+end.width<image.width*.90):
+            continue
+        matches.append((left+round(start.cx),top+round(start.cy)))
+    matches=list(dict.fromkeys(matches))
+    if len(matches)!=1:
+        raise VisualReplyUnavailable(
+            "WhatsApp Search did not expose exactly one verified contact title. Select the result manually.")
+    _same(hwnd,cancel)
+    _click_at(hwnd,matches[0],cancel)
+    time.sleep(.45)
+    _same(hwnd,cancel)
+    if not exact_header(hwnd,expected,cancel):
+        raise VisualReplyUnavailable(
+            "Search result clicked, but exact WhatsApp chat header was NOT verified. No draft or Send.")
+    return {"chatSelected":True,"recipientVerified":True,
+            "selectedContact":expected,"verified":True,"messagesRead":False,
+            "sent":False,"source":"local WhatsApp OCR exact Search and right header",
+            "note":"Verified one searched WhatsApp Desktop chat, no message sent."}
+
+
 def select_chat_visual(expected,cancel=None):
     active=locator.focus_whatsapp()
     if active is None:
@@ -141,8 +215,9 @@ def select_chat_visual(expected,cancel=None):
         raise VisualReplyUnavailable("WhatsApp sidebar layout not verified; cannot choose recipient")
     titles=vu._visible_titles_for_layout(words,image.width,chip)
     if sum(_norm(v)==_norm(expected) for v in titles)!=1:
-        raise VisualReplyUnavailable(
-            "Exact contact is not a unique timestamp-verified visible chat. Search/select manually, then retry.")
+        # A verified empty Search placeholder can find off-screen contacts,
+        # but a nonempty/unverifiable Search input is never overwritten.
+        return _search_exact_contact_visual(hwnd,expected,image,words,left,top,chip,cancel)
     # Reconstruct the exact title in the SAME right-timestamp-supported row,
     # never by a substring in a preview or an arbitrary screen coordinate.
     moments=[w for w in words if vu._DATE.fullmatch(w.text.strip())
@@ -198,8 +273,29 @@ def _composer_placeholder(words,image):
     return None
 
 
-def _exact_draft(words,message):
-    return len(_phrase_hits(words,message))==1
+def _exact_draft(words,message,image=None):
+    matches=_phrase_hits(words,message)
+    if image is not None:
+        # Reject an old bubble ABOVE the composer; verify only the lower
+        # composer portion of the read-only WhatsApp OCR capture.
+        matches=[(a,b) for a,b in matches if
+                 image.height*.48<=a.cy<=image.height*.97 and
+                 a.x>=0 and b.x+b.width<image.width*.95]
+    return len(matches)==1
+
+
+def verified_visual_draft(hwnd, expected, message, cancel=None):
+    """Read-only second opinion before a separately approved UIA Send click.
+
+    There is deliberately NO visual Send click: WhatsApp's unlabeled paper-plane
+    icon must never be guessed from a coordinate or keyboard Enter.
+    """
+    if not exact_header(hwnd,expected,cancel):
+        return False
+    image,words,_x,_y=_composer_words(hwnd,cancel)
+    if not _exact_draft(words,message,image):
+        return False
+    return exact_header(hwnd,expected,cancel)
 
 
 def draft_reply_visual(expected,message,cancel=None):
@@ -228,8 +324,8 @@ def draft_reply_visual(expected,message,cancel=None):
     _same(active.hwnd,cancel)
     if not exact_header(active.hwnd,expected,cancel):
         raise VisualReplyUnavailable("Recipient changed during draft; inspect WhatsApp manually. No Send attempted.")
-    _,after,_,_=_composer_words(active.hwnd,cancel)
-    if not _exact_draft(after,message):
+    after_image,after,_,_=_composer_words(active.hwnd,cancel)
+    if not _exact_draft(after,message,after_image):
         raise VisualReplyUnavailable(
             "Draft text could not be reverified from local WhatsApp OCR. It MAY be present; inspect manually before retry.")
     return {"recipientVerified":True,"draftEntered":True,"sent":False,

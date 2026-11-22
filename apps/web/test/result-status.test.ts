@@ -24,6 +24,26 @@ describe('HUKM never marks unproven external side effects green',()=>{
     expect(actionResultUnverified('whatsapp.check',{unreadChats:0,source:'WhatsApp Desktop Unread filter'})).toBe(false);
     expect(actionResultUnverified('whatsapp.check',{unreadChats:null,source:'unavailable'})).toBe(true);
   });
+  it('shows partial 2/10 WhatsApp names as unverified',()=>{
+    expect(actionResultUnverified('whatsapp.unread_senders',{
+      senders:['First','Second'],totalUnreadChats:10,unreadCountVerified:true,
+      filterSelectedVerified:true,allBadgeChatsMatched:false,
+    })).toBe(true);
+    expect(actionResultUnverified('whatsapp.unread_senders',{
+      senders:['First','Second'],totalUnreadChats:2,unreadCountVerified:true,
+      filterSelectedVerified:true,allBadgeChatsMatched:true,
+    })).toBe(false);
+    expect(actionResultUnverified('whatsapp.unread_senders',{
+      senders:['First'],totalUnreadChats:null,unreadCountVerified:false,
+      filterSelectedVerified:true,allBadgeChatsMatched:true,
+    })).toBe(true);
+  });
+  it('rejects duplicate or unverifiable WhatsApp unread titles',()=>{
+    expect(actionResultUnverified('whatsapp.unread_senders',{
+      senders:['Ali','ali'],totalUnreadChats:2,unreadCountVerified:true,
+      filterSelectedVerified:true,allBadgeChatsMatched:true,
+    })).toBe(true);
+  });
   it('Routine app open is not reclassified as external delivery',()=>{
     expect(actionResultUnverified('app.open',{opened:true})).toBe(false);
   });
