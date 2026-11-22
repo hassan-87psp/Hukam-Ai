@@ -277,6 +277,20 @@ def _exact_draft(words,message):
     return len(_phrase_hits(words,message))==1
 
 
+def verified_visual_draft(hwnd, expected, message, cancel=None):
+    """Read-only second opinion before a separately approved UIA Send click.
+
+    There is deliberately NO visual Send click: WhatsApp's unlabeled paper-plane
+    icon must never be guessed from a coordinate or keyboard Enter.
+    """
+    if not exact_header(hwnd,expected,cancel):
+        return False
+    _image,words,_x,_y=_composer_words(hwnd,cancel)
+    if not _exact_draft(words,message):
+        return False
+    return exact_header(hwnd,expected,cancel)
+
+
 def draft_reply_visual(expected,message,cancel=None):
     if not message or len(message)>240 or any(ch in message for ch in ("\r","\n","\t")):
         raise VisualReplyUnavailable(
