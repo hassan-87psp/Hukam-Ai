@@ -15,6 +15,16 @@ describe('approved Personal WhatsApp + screen + Calendar + ChatGPT workflow cont
       {inputDelivered:true,navigationVerified:true,verified:true,simulated:true},
       {},
     ])expect(navigationAllowsNextStep('ui.navigate_verified',result)).toBe(false);
+    expect(navigationAllowsNextStep('ui.activate_observed',{verified:true,inputDelivered:true})).toBe(true);
+    for(const result of [
+      {verified:false,inputDelivered:true},
+      {verified:true,simulated:true},
+      {verified:true,inputDelivered:false},
+      {verified:true,status:'partial'},
+      {},
+    ])expect(navigationAllowsNextStep('ui.activate_observed',result)).toBe(false);
+    expect(navigationAllowsNextStep('ui.navigate_verified',{
+      navigationVerified:true,verified:true,inputDelivered:false})).toBe(false);
     expect(navigationAllowsNextStep('device.status',{})).toBe(true);
   });
   it('all high-impact actions require a second explicit approval',()=>{

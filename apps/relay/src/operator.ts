@@ -63,8 +63,15 @@ function runRow(r:Row):TaskRun{
 /** Stop multi-step computer control when a visual navigation state is not
  * independently verified. Never let a later step operate on a guessed page. */
 export function navigationAllowsNextStep(action:ActionName,result:Record<string,unknown>):boolean {
-  return action!=='ui.navigate_verified'||(
-    result.navigationVerified===true&&result.verified===true&&result.simulated!==true);
+  // Both visual navigation and an observed-element click can change the UI.
+  // Never continue a plan on a stale or explicitly failed visual state.
+  if(action!=='ui.navigate_verified'&&action!=='ui.activate_observed')return true;
+  if(result.simulated===true||result.inputDelivered===false||
+     result.unverified===true||result.success===false||
+     result.status==='failed'||result.status==='partial')return false;
+  if(action==='ui.navigate_verified')
+    return result.navigationVerified===true&&result.verified===true;
+  return result.verified===true;
 }
 
 function validateStep(v:unknown):Step {
