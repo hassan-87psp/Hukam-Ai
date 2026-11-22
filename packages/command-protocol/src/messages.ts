@@ -245,7 +245,7 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
           : L(`WhatsApp par ${r.unreadChats} unread chats hain.`, `واٹس ایپ پر ${r.unreadChats} ان ریڈ چیٹس ہیں۔`, `WhatsApp shows ${r.unreadChats} unread chats.`);
       return L('WhatsApp open hai, lekin unread count parha nahi ja saka.', 'واٹس ایپ کھلا ہے، لیکن ان ریڈ تعداد نہیں پڑھی جا سکی۔', "WhatsApp is open, but the unread count couldn't be read.");
     case 'whatsapp.unread_senders': {
-      const senders = Array.isArray(r.senders) ? r.senders.filter((x): x is string => typeof x === 'string').slice(0, 12) : [];
+      const senders = Array.isArray(r.senders) ? r.senders.filter((x): x is string => typeof x === 'string').slice(0, 100) : [];
       if (!senders.length && r.totalUnreadChats===0 && r.unreadCountVerified===true && r.source==='Explicit WhatsApp Unread zero badge')
         return L('WhatsApp ke Unread badge par zero chats confirm hui hain.', 'واٹس ایپ میں صفر ان ریڈ چیٹس کی تصدیق ہوئی۔', 'The explicit WhatsApp Unread badge confirms zero unread conversations.');
       if (!senders.length) return L('WhatsApp ne unread sender names verify nahi kiye.', 'واٹس ایپ کے ناموں کی تصدیق نہیں ہوئی۔', 'No unread sender names could be verified.');
@@ -262,9 +262,12 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       const names=senders.map(n=>counts.has(n)?n+' — '+counts.get(n)+' unread messages':n).join(', ');
       const total=r.unreadCountVerified===true && typeof r.totalUnreadChats==='number' && r.totalUnreadChats>=senders.length
         ? r.totalUnreadChats : null;
-      return L(`WhatsApp par ${total===null?'total unread chats verify nahi hui':total+' unread chats ka badge hai'}. Visible senders: ${names}. Tamam unread messages ka total confirm nahi hua; message bodies nahi parhe.`,
-        `نظر آنے والی ان ریڈ چیٹس: ${names}۔ مکمل پیغامات کی تعداد کی تصدیق نہیں ہوئی۔`,
-        `Unread conversation badge: ${total===null?'unknown':total}. Visible senders: ${names}. Total unread messages not verified; message bodies were not read.`);
+      const complete = r.allBadgeChatsMatched===true && total!==null && senders.length===total;
+      const scope=complete?'Badge count aur sab verified names match hue':
+        `Sirf ${senders.length} names verify hue${total!==null?' ('+(total-senders.length)+' aur verify hone baqi hain)':''}; complete list confirm nahi hui`;
+      return L(`WhatsApp: ${scope}. ${total===null?'Badge total unknown':total+' unread chats ka badge'}. Names: ${names}. Chat messages read nahi kiye.`,
+        `واٹس ایپ: ${names}۔ ${complete?'تمام نام گنے گئے':'فہرست نامکمل ہے'}۔`,
+        `WhatsApp: ${complete?'all badge chats matched':'PARTIAL verified names'}. ${senders.length} names from badge ${total??'unknown'}: ${names}. Chat messages were not read.`);
     }
     case 'whatsapp.read_visible':
       if (r.messagesRead === true && r.spokenOnDevice === true)

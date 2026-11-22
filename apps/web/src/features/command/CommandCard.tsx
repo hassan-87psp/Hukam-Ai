@@ -313,7 +313,7 @@ export function CommandResult({ c }: { c: Command }) {
       return <div className="space-y-2 text-sm">
         <p className="text-xs text-ink2">{r.note || 'Visible unread sender names (not messages)'}</p>
         {Array.isArray(r.senders) && r.senders.length > 0
-          ? <ul className="space-y-1">{r.senders.slice(0, 12).map((name: string, i: number) => <li key={i} className="rounded-lg bg-field/40 px-2 py-1">{name}</li>)}</ul>
+          ? <ul className="space-y-1">{r.senders.slice(0, 100).map((name: string, i: number) => <li key={i} className="rounded-lg bg-field/40 px-2 py-1">{name}</li>)}</ul>
           : <p className="text-warn">No sender names could be verified.</p>}
       </div>;
     case 'whatsapp.compose':

@@ -699,6 +699,132 @@ def _result_counts(image,words,senders,chip,count,verified):
             "totalUnreadChats":count if verified else None,
             "unreadCountVerified":count is not None and verified}
 
+
+def _collect_unread_pages(hwnd, image, left, top, words, chip, badge, cancel):
+    """Read the selected native Unread sidebar, scrolling ONLY that pane.
+
+    No conversations are opened. Every accepted title comes from a timestamp-
+    corroborated row of the local screenshot. A matching badge count establishes
+    visible coverage, not message-body access or provider API verification.
+    """
+    import hashlib
+    import win32api
+    import win32con
+    import win32gui
+    from ..system.pointer_motion import move_visible, PointerInterrupted
+
+    _ensure_not_cancelled(cancel)
+    found=[]
+    seen=set()
+    pages=0
+    stop="limit"
+    first_words=words
+    previous_digest=None
+    unchanged=0
+    cap=12  # bounded owner-approved scan; never an unbounded cursor loop
+    scan_started=time.monotonic()
+    for index in range(cap):
+        _ensure_not_cancelled(cancel)
+        if time.monotonic()-scan_started>65:
+            stop="time_budget"
+            break
+        _safe_foreground(hwnd)
+        if not _same_capture(hwnd,image,left,top):
+            stop="window_changed"
+            break
+        if index:
+            # Each fresh screenshot is of the SAME WhatsApp window/sidebar.
+            try:
+                words=_ocr_words(image,cancel=cancel)
+            except VisualUnreadUnavailable:
+                _ensure_not_cancelled(cancel)
+                stop="ocr_unavailable"
+                break
+            new_chip=locate_unread(words,image.width,image.height)
+            if new_chip is None or abs(new_chip.cy-chip.cy)>max(10,chip.height):
+                stop="filter_not_verified"
+                break
+        pages+=1
+        names=_visible_titles_for_layout(words,image.width,chip)
+        if badge is None or len(found)+len(names)<badge:
+            # Independent full-sidebar preprocessing can recover tiny clock
+            # text lost by native OCR. Merge the independently verified header
+            # from the original screenshot, never a guessed OCR filter.
+            _ensure_not_cancelled(cancel)
+            try:
+                improved=_ocr_enlarged(image,cancel)
+            except VisualUnreadUnavailable:
+                _ensure_not_cancelled(cancel)
+                improved=[]
+            if improved:
+                threshold=chip.cy+chip.height+35
+                stable_header=[w for w in words if w.cy<threshold]
+                better_rows=[w for w in improved if w.cy>=threshold]
+                alternative=_visible_titles_for_layout(stable_header+better_rows,
+                                                       image.width,chip)
+                names=list(dict.fromkeys([*names,*alternative]))
+        if not names and index==0 and _explicit_empty_unread(words,chip,image.width):
+            return {"senders":[],"visibleChatCount":0,"scanPages":pages,
+                    "allBadgeChatsMatched":badge==0,"scanStopped":"explicit_empty",
+                    "conversations":[]}
+        for name in names:
+            key=name.casefold().strip()
+            if key and key not in seen:
+                seen.add(key)
+                found.append(name)
+        log.info("WhatsApp unread page=%d verified_titles=%d unique_total=%d badge_known=%s",
+                 pages,len(names),len(found),badge is not None)
+        if badge is not None and len(found)>=badge:
+            stop="badge_matched"
+            break
+        if len(found)>=100:
+            stop="names_limit"
+            break
+        # Only a verified point well INSIDE the chat list receives a wheel
+        # event; it is never a click or a drag, and never the right message pane.
+        target_x=left+round(min(image.width-70,max(chip.cx+12,image.width*.40)))
+        target_y=top+round(min(image.height-85,max(chip.cy+145,image.height*.70)))
+        def guard():
+            _ensure_not_cancelled(cancel)
+            _safe_foreground(hwnd)
+            if not _same_capture(hwnd,image,left,top):
+                raise VisualUnreadUnavailable("WhatsApp moved while scrolling the Unread list")
+            hit=win32gui.WindowFromPoint((target_x,target_y))
+            if not hit or win32gui.GetAncestor(hit,2)!=hwnd:
+                raise VisualUnreadUnavailable("WhatsApp Unread list was obscured while scrolling")
+        try:
+            move_visible((target_x,target_y),guard)
+        except PointerInterrupted as exc:
+            raise VisualUnreadUnavailable(str(exc)) from exc
+        guard()
+        if tuple(win32api.GetCursorPos())!=(target_x,target_y):
+            raise VisualUnreadUnavailable("Cursor moved before unread scrolling")
+        # Sample only left chat rows, excluding right-side message bodies.
+        row_top=max(0,min(image.height-30,round(chip.cy+chip.height+45)))
+        digest=hashlib.sha256(image.crop((0,row_top,image.width,image.height)).tobytes()).digest()
+        guard()
+        win32api.mouse_event(win32con.MOUSEEVENTF_WHEEL,0,0,-360,0)
+        time.sleep(.36)
+        _ensure_not_cancelled(cancel)
+        new_image,new_left,new_top=_capture_left(hwnd)
+        if (left,top)!=(new_left,new_top) or new_image.size!=image.size:
+            stop="window_changed"
+            break
+        after_digest=hashlib.sha256(new_image.crop((0,row_top,image.width,image.height)).tobytes()).digest()
+        unchanged = unchanged+1 if after_digest==digest else 0
+        image=new_image
+        # Two verified no-change pages signal bottom/no scroll.
+        if unchanged>=2:
+            stop="end_of_list"
+            break
+    complete=(badge is not None and len(found)==badge)
+    return {"senders":found,"visibleChatCount":len(found),
+            "scanPages":pages,"allBadgeChatsMatched":complete,
+            "scanStopped":stop,"conversations":[
+                {"name":name,"unreadMessages":None} for name in found],
+            "unverifiedChatCount":max(0,badge-len(found)) if badge is not None else None}
+
+
 def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
     """Approved, foreground-only local OCR + real mouse click + verified list."""
     import win32api
@@ -739,16 +865,19 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
                 "filterSelectedVerified":True,"source":"Explicit WhatsApp Unread zero badge"}
 
     if native.get("selected") is True or _search_header(words,chip)=="search unread chats":
-        senders=_visible_titles_for_layout(words,image.width,chip)
+        # Already selected. Never click a second time; scan the visible list
+        # page by page, using only a verified left-sidebar wheel target.
+        scan=_collect_unread_pages(active_hwnd,image,left,top,words,chip,badge,cancel)
         _ensure_not_cancelled(cancel)
         _safe_foreground(active_hwnd)
-        if not senders:
-            raise VisualUnreadUnavailable("Unread filter is visible but sender rows could not be verified. No names guessed.")
-        return {"supported":True,"senders":senders,"visibleChatCount":len(senders),
-                **_result_counts(image,words,senders,chip,badge,True),"visibleOnly":True,"messagesRead":False,
+        if not scan["senders"] and scan["scanStopped"]!="explicit_empty":
+            raise VisualUnreadUnavailable("Unread selected but no sender rows could be verified after bounded sidebar scan.")
+        return {"supported":True,**scan,"totalUnreadChats":badge if badge is not None else None,
+                "unreadCountVerified":badge is not None,"totalUnreadMessages":None,
+                "visibleOnly":True,"messagesRead":False,
                 "filterClickAttempted":False,"filterSelectedVerified":True,
-                "source":"Local Windows visual OCR of existing Personal WhatsApp Unread filter",
-                "note":"Existing Unread search placeholder confirms the visible filter; no additional click."}
+                "source":"Local Windows OCR of verified Personal WhatsApp Unread sidebar",
+                "note":"Scrolled only the WhatsApp left Unread list. No chats opened or messages sent."}
 
     x, y = left + round(chip.cx), top + round(chip.cy)
     # Client-area/foreground check, not a guessed screen coordinate.
@@ -865,29 +994,25 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
                     "messagesRead":False,"filterClickAttempted":True,
                     "filterSelectedVerified":True,
                     "source":"Explicit WhatsApp empty Unread-filter list"}
-        raise VisualUnreadUnavailable(
-            "Unread filter clicked, but sender rows/timestamps not verified. "
-            "No names or zero count guessed. See privacy-safe row geometry logs."
-        )
+        # Another page may contain the sender names; the bounded, verified
+        # sidebar scan below must run before reporting an OCR failure.
+        log.info("WhatsApp first page had no verifiable sender row; checking more Unread pages")
     if not selection_verified:
         raise VisualUnreadUnavailable(
             "Sender rows recognized, but Unread filter selection was not verified; "
             "no unverified unread names reported."
         )
     _ensure_not_cancelled(cancel)
-    return {
-        "supported": True,
-        "senders": senders,
-        "visibleChatCount": len(senders),
-        **_result_counts(after_image,second_words,senders,selected_chip,count_after,selection_verified),
-        "visibleOnly": True, "messagesRead": False,
-        "filterClickAttempted": True,
-        "filterSelectedVerified": selection_verified,
-        "source": "Local Windows visual OCR of Personal WhatsApp chat list",
-        "note": ("Unread chip changed to selected appearance. Only locally "
-                 "recognized visible sender titles were returned."
-                 if selection_verified else
-                 "OCR located and clicked the visible Unread chip, but its "
-                 "selected state could not be independently verified. These "
-                 "are visible chat titles, not certified unread contacts."),
+    scan=_collect_unread_pages(active_hwnd,after_image,left,top,second_words,
+                               selected_chip,count_after,cancel)
+    if not scan["senders"] and scan["scanStopped"]!="explicit_empty":
+        raise VisualUnreadUnavailable("Unread list scanned but no timestamp-verified chat names were found. Do not infer zero.")
+    return {"supported":True,**scan,
+            "totalUnreadChats":count_after if count_after is not None else None,
+            "unreadCountVerified":count_after is not None,
+            "totalUnreadMessages":None,"visibleOnly":True,
+            "messagesRead":False,"filterClickAttempted":True,
+            "filterSelectedVerified":True,
+            "source":"Local Windows OCR of Personal WhatsApp Unread chat list",
+            "note":"Unread selected, left sidebar scanned page by page; no conversations opened or messages sent."
     }
