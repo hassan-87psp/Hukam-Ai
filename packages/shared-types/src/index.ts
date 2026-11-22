@@ -143,6 +143,7 @@ export interface ControllerConfigSummary {
   allowedDirs: { key: string; path: string }[];
   apps: string[];
   screenCapture: boolean;
+  liveScreenPreview?: boolean;
   browser: string;
 }
 
