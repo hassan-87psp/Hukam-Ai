@@ -62,9 +62,9 @@ def choose_visible_reply(
     if not after or after[0][0] != "assistant":
         raise chatgpt.ChatGPTError(
             "A matching assistant reply was not uniquely visible after the exact question")
-    if len(after) > 1 and after[1][0] == "assistant":
+    if len(after) != 1:
         raise chatgpt.ChatGPTError(
-            "Several ChatGPT replies were visible for one question; selection is ambiguous")
+            "Question is not the last visible user turn or several replies are present")
     reply = after[0][1].strip()
     if not reply or len(_clean(reply)) < 4:
         raise chatgpt.ChatGPTError("Visible ChatGPT reply is empty or too short to verify")
