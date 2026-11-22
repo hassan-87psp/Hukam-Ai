@@ -18,7 +18,7 @@ import { analyzeScreenshot } from './vision';
 import { all, one, openDb, run, runVolatile, setWriteHook, type Row } from './db';
 import { addMs, hashPassword, log, newId, normalizePairCode, nowIso, pairingCode, randomToken, RateLimiter, sha256, verifyPassword } from './util';
 
-export const VERSION = '1.9.6';
+export const VERSION = '1.9.7';
 const COOKIE = 'hukm_session';
 const MAX_BODY = 64 * 1024;
 
