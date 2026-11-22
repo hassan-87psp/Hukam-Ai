@@ -22,6 +22,10 @@ function unverifiedReason(action: ActionName): string {
       return 'Calendar Save may have happened, but event creation and invitations were NOT verified. Check the calendar first. Never retry automatically.';
     case 'chatgpt.submit_prompt':
       return 'ChatGPT prompt was submitted or attempted, but a generated response has not been verified. Check the selected Project tab.';
+    case 'chatgpt.read_response':
+      return 'Only visibly accessible response text can be read; the full answer, context and completion may be unknown.';
+    case 'chatgpt.followup_draft':
+      return 'Follow-up text was drafted only; no ChatGPT Send has happened.';
     case 'chatgpt.download_visible':
       return 'A complete new ChatGPT file was NOT verified in Downloads. Check Chrome downloads and the saved Project tab.';
     default:
@@ -34,7 +38,7 @@ export const ACTION_ICON: Record<ActionName, typeof Globe> = {
   'file.reveal': FolderOpen, 'web.open': Globe, 'web.search': Search, 'youtube.search': Youtube, 'youtube.play': Youtube,
   'device.status': Laptop, 'apps.list': AppWindow, 'window.active': Monitor, 'window.focus': Monitor, 'screen.capture': Monitor,
   'diagnostics.probe': Monitor, 'ui.inspect': Monitor, 'ui.activate': Monitor, 'ui.activate_observed': Monitor, 'ui.scroll': Monitor, 'desktop.control': Monitor, 'email.inbox_open': Globe, 'email.compose_draft': Pencil, 'calendar.event_draft': Globe, 'calendar.save_reviewed': Globe,
-  'chatgpt.prompt_draft': Pencil, 'chatgpt.submit_prompt': Pencil, 'chatgpt.download_visible': FileText,
+  'chatgpt.prompt_draft': Pencil, 'chatgpt.submit_prompt': Pencil, 'chatgpt.read_response': FileText, 'chatgpt.followup_draft': Pencil, 'chatgpt.download_visible': FileText,
   'whatsapp.select_chat': MessageCircle, 'whatsapp.read_selected': MessageCircle, 'whatsapp.draft_reply': MessageCircle, 'whatsapp.send_reviewed': MessageCircle, 'whatsapp.attach_preview': FileText, 'whatsapp.send_attachment_reviewed': FileText,
   'browser.control': Monitor, 'browser.profile_open': Globe, 'notepad.type': Pencil, 'system.lock': Lock, 'whatsapp.open': MessageCircle, 'whatsapp.check': MessageCircle, 'whatsapp.unread_senders': MessageCircle, 'whatsapp.compose': MessageCircle, 'whatsapp.read_visible': MessageCircle, 'command.cancel': Ban,
 };
@@ -149,6 +153,15 @@ export function CommandResult({ c }: { c: Command }) {
   }
   if (c.status !== 'completed') return null;
   switch (c.action) {
+    case 'chatgpt.read_response':
+      return <div className="space-y-2">
+        <p className="text-xs font-medium text-warn">ChatGPT ka visible jawab — full response verified nahi. Private HUKM history only.</p>
+        <p className="max-h-80 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-field/50 p-3 text-sm" dir="auto">
+          {typeof r.responseText==='string' && r.responseText ? r.responseText : 'No uniquely verified visible ChatGPT answer'}
+        </p>
+        {r.truncated && <p className="text-xs text-warn">Visible text 4,000 characters tak limited hai.</p>}
+        <p className="text-xs text-ink2">Google Gemini ko yeh ChatGPT answer automatically share nahi hota.</p>
+      </div>;
     case 'file.search':
       return (
         <div className="space-y-2">

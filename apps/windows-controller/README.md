@@ -1,4 +1,4 @@
-HUKM AI Windows Controller v1.9.5 — Local Install & Safety
+HUKM AI Windows Controller v1.9.6 — Local Install & Safety
 ======================================================
 
 This is a Windows controller that lets your own authorised HUKM AI account
@@ -7,9 +7,9 @@ run a fixed set of safe laptop commands. Pairing credentials live under
 
 INSTALL / UPDATE (user action required; live laptop tests deferred):
 1. In the GitHub Actions artifact, compare SHA256SUMS file
-   HUKM-Windows-Controller-v1.9.5.zip.sha256 against PowerShell:
-   Get-FileHash .\HUKM-Windows-Controller-v1.9.5.zip -Algorithm SHA256
-2. Extract the INNER HUKM-Windows-Controller-v1.9.5.zip completely.
+   HUKM-Windows-Controller-v1.9.6.zip.sha256 against PowerShell:
+   Get-FileHash .\HUKM-Windows-Controller-v1.9.6.zip -Algorithm SHA256
+2. Extract the INNER HUKM-Windows-Controller-v1.9.6.zip completely.
 3. Close all old HUKM Controller processes manually, then run
    INSTALL_OR_UPDATE.cmd. This copies the EXE to a stable folder, preserves
    device pairing and backs up the previous EXE for rollback.
@@ -34,7 +34,7 @@ BROWSER OPERATOR (EXPERIMENTAL - APPROVAL REQUIRED EVERY TIME):
 - Browser actions target visible Chrome, Edge or Firefox. Separately approved desktop.control supports bounded mouse/keyboard in allowed foreground Explorer, Notepad, Office and Paint windows; never hidden/system/terminal/WhatsApp Send dialogs.
 - HUKM shows exactly what will be typed/clicked and waits for explicit approval. Screenshot approval remains separate.
 - Successful delivery is not proof a website task finished. The user verifies results, and third-party services may restrict automation.
-- On a laptop, close the old Controller process before opening v1.9.5; existing encrypted device pairing is preserved.
+- On a laptop, close the old Controller process before opening v1.9.6; existing encrypted device pairing is preserved.
 - Don't type passwords or recovery codes in remote HUKM chat.
 - This is groundwork, not yet an autonomous visual agent or calendar/WhatsApp end-to-end workflow.
 

@@ -25,7 +25,7 @@ BLOCKED_OPEN_EXTS = {
 ACTIONS = {
     "controller.update", "app.open", "app.close", "folder.open", "folder.list", "file.search", "file.open", "file.reveal", "web.open", "web.search",
     "youtube.search", "youtube.play", "device.status", "apps.list", "window.active", "window.focus", "screen.capture",
-    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.activate_observed", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible",
+    "diagnostics.probe", "ui.inspect", "ui.activate", "ui.activate_observed", "ui.scroll", "desktop.control", "email.inbox_open", "email.compose_draft", "calendar.event_draft", "calendar.save_reviewed", "chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.read_response", "chatgpt.followup_draft", "chatgpt.download_visible",
     "whatsapp.select_chat", "whatsapp.read_selected", "whatsapp.draft_reply", "whatsapp.send_reviewed", "whatsapp.attach_preview", "whatsapp.send_attachment_reviewed",
     "browser.control", "browser.profile_open", "notepad.type", "system.lock", "whatsapp.open", "whatsapp.check", "whatsapp.compose", "whatsapp.read_visible", "whatsapp.unread_senders",
 }
@@ -36,6 +36,7 @@ CAPABILITY_OF = {
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
     "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.activate_observed": "input", "ui.scroll": "input", "desktop.control": "input",
     "email.inbox_open": "browser", "email.compose_draft": "browser", "calendar.event_draft": "browser", "calendar.save_reviewed": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
+    "chatgpt.read_response": "browser", "chatgpt.followup_draft": "browser",
     "chatgpt.download_visible": "browser", "whatsapp.select_chat": "whatsapp", "whatsapp.read_selected": "whatsapp",
     "whatsapp.draft_reply": "whatsapp", "whatsapp.send_reviewed": "whatsapp", "whatsapp.attach_preview": "whatsapp", "whatsapp.send_attachment_reviewed": "whatsapp", "browser.control": "input", "browser.profile_open": "browser", "notepad.type": "input", "system.lock": "system", "whatsapp.open": "whatsapp", "whatsapp.check": "whatsapp",
     "whatsapp.compose": "whatsapp", "whatsapp.read_visible": "whatsapp", "whatsapp.unread_senders": "whatsapp",
@@ -274,7 +275,7 @@ def validate(action: str, args: dict) -> dict:
                 "startUtc": start, "endUtc": end, "timeZone": tz,
                 "details": _str(a.get("details"), "details", 500, required=False),
                 "location": _str(a.get("location"), "location", 120, required=False)}
-    if action in ("chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.download_visible"):
+    if action in ("chatgpt.prompt_draft", "chatgpt.submit_prompt", "chatgpt.read_response", "chatgpt.followup_draft", "chatgpt.download_visible"):
         url = _str(a.get("projectUrl"), "projectUrl", 500)
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.hostname != "chatgpt.com" or parsed.username or parsed.password or parsed.fragment:
@@ -293,6 +294,11 @@ def validate(action: str, args: dict) -> dict:
             if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1800 or re.search(r"[\x00-\x08\x0b-\x1f]", prompt):
                 raise ValidationError("invalid ChatGPT prompt")
             out["prompt"] = prompt
+        if action == "chatgpt.followup_draft":
+            previous = a.get("previousPrompt")
+            if not isinstance(previous, str) or not previous.strip() or len(previous)>1800 or re.search(r"[\x00-\x08\x0b-\x1f]", previous):
+                raise ValidationError("invalid previous ChatGPT prompt")
+            out["previousPrompt"] = previous
         return out
     if action in ("whatsapp.select_chat", "whatsapp.read_selected"):
         if action == "whatsapp.read_selected" and a.get("contact") is None:
