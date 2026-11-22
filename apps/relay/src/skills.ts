@@ -25,6 +25,10 @@ const RECIPES:Recipe[]=[
   recipe('whatsapp-desktop','Open Personal WhatsApp Desktop','WhatsApp',step('whatsapp.open',{mode:'desktop'})),
   recipe('whatsapp-count','Open Personal WhatsApp and check unread count','WhatsApp',step('whatsapp.open',{mode:'desktop'}),step('whatsapp.check',{mode:'desktop'})),
   recipe('whatsapp-senders','Open Personal WhatsApp and review visible unread senders','WhatsApp',step('whatsapp.open',{mode:'desktop'}),step('whatsapp.unread_senders')),
+  recipe('google-calendar-home','Open Google Calendar in browser','Calendar',step('web.open',{url:'https://calendar.google.com/calendar/u/0/r'})),
+  recipe('chatgpt-home','Open ChatGPT in browser','AI Assistant',step('web.open',{url:'https://chatgpt.com/'})),
+  recipe('gmail-home','Open Gmail in browser','Communications',step('web.open',{url:'https://mail.google.com/mail/u/0/'})),
+  recipe('google-drive-home','Open Google Drive in browser','Files',step('web.open',{url:'https://drive.google.com/drive/u/0/my-drive'})),
   recipe('youtube-home','Open YouTube homepage','Browser',step('web.open',{url:'https://www.youtube.com/'})),
   recipe('notepad-numbers','Open Notepad and write numbers 1–9','Applications',step('app.open',{app:'notepad'}),step('notepad.type',{text:'1\n2\n3\n4\n5\n6\n7\n8\n9'})),
 ];
