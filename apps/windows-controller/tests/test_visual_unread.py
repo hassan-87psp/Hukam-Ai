@@ -769,3 +769,27 @@ def test_verified_empty_unread_filter_is_zero_without_numeric_badge(monkeypatch)
     assert data["unreadCountVerified"] is True
     assert data["source"]=="Explicit WhatsApp empty Unread-filter list"
     assert data["filterClickAttempted"] is False
+
+
+def test_2k_whatsapp_sidebar_includes_below_920px_rows_and_more_than_twelve_chats():
+    """A tall sidebar may show all 16 unread conversations without scrolling."""
+    chip=vu.Word("Unread",168,182,55,12)
+    header=[vu.Word("Chats",97,69,62,19),vu.Word("All",110,185,19,12),chip,
+            vu.Word("Favourites",277,185,75,12)]
+    names=[f"Contact {i:02d}" for i in range(16)]
+    rows=[]
+    for i,name in enumerate(names):
+        y=286+i*68
+        rows.extend((vu.Word(name,155,y,95,15),vu.Word(f"10:{i:02d}",418,y,45,13),
+                     vu.Word("Message preview should not be reported",155,y+25,260,13)))
+    observed=vu._visible_titles_for_layout(header+rows,520,chip)
+    assert observed==names
+    assert observed[-1]=="Contact 15"
+    assert len(observed)==16
+
+
+def test_2k_sidebar_does_not_guess_names_without_row_timestamps():
+    chip=vu.Word("Unread",168,182,55,12)
+    words=[vu.Word("Private preview is not a contact",155,1270,260,14),
+           vu.Word("Contact Without Clock",155,1160,190,14)]
+    assert vu.visible_sender_titles(words,520,chip.y+chip.height)==[]
