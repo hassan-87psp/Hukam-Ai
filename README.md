@@ -8,8 +8,10 @@ Windows Live Screen preview (select physical Monitor 1–N), and supervised
 observe → click → verify navigation with a mandatory stop on uncertain results.
 These are **not proof of successful real user laptop execution**.
 
-As checked on 23 Nov 2026, the connected Render relay's last confirmed live
-deployment was still **v1.9.5**, while GitHub `main` had newer passing code.
+The connected Render production service reported a **live v1.9.7 deployment**
+(commit `5fce85693323a21db7760e9a54a79d9e7d6d2ad5`) on 22 Nov 2026.
+This confirms deployment metadata only; check `/api/health` before installing a
+matching Controller. Real paired Windows, WhatsApp and browser acceptance remains pending.
 See [v1.9.7 acceptance instructions](docs/hukm-v197-live-vision-acceptance.md)
 and [Render deployment blocker](https://github.com/hassan-87psp/Hukam-Ai/issues/58).
 Do **not** assume GitHub Actions success means the website, paired Windows
