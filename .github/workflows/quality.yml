@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: hukm-ci-v195-${{ github.ref }}
+  group: hukm-ci-v196-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -94,7 +94,7 @@ jobs:
           Copy-Item apps/windows-controller/README.md release/README.txt
           Copy-Item apps/windows-controller/packaging/*.cmd release/
           Copy-Item apps/windows-controller/packaging/ONE_ZIP_SETUP.txt release/
-          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.9.5.zip -Force
+          Compress-Archive -Path release/* -DestinationPath HUKM-Windows-Controller-v1.9.6.zip -Force
       - name: Smoke test consolidated installer in isolated sandbox
         shell: pwsh
         run: |
@@ -120,13 +120,13 @@ jobs:
           if (!(Test-Path $compiler)) { throw 'Inno Setup compiler missing' }
           & $compiler 'apps/windows-controller/packaging/HUKM-Setup.iss'
           if ($LASTEXITCODE -ne 0) { throw 'HUKM one-file setup compilation failed' }
-          if (!(Test-Path 'HUKM-Setup-v1.9.5.exe')) { throw 'One-file setup executable missing' }
+          if (!(Test-Path 'HUKM-Setup-v1.9.6.exe')) { throw 'One-file setup executable missing' }
       - name: Smoke test one-file setup in isolated Windows profile
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $target = Join-Path $env:RUNNER_TEMP 'hukm-one-time-install'
-          $setup = Join-Path $PWD 'HUKM-Setup-v1.9.5.exe'
+          $setup = Join-Path $PWD 'HUKM-Setup-v1.9.6.exe'
           $args = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="' + $target + '"'))
           $p = Start-Process -FilePath $setup -ArgumentList $args -Wait -PassThru
           if ($p.ExitCode -ne 0) { throw "One-time setup returned $($p.ExitCode)" }
@@ -157,32 +157,32 @@ jobs:
       - name: Generate installer SHA-256 integrity checksum
         shell: pwsh
         run: |
-          $zip = 'HUKM-Windows-Controller-v1.9.5.zip'
+          $zip = 'HUKM-Windows-Controller-v1.9.6.zip'
           if (!(Test-Path $zip)) { throw 'HUKM installer ZIP missing' }
           $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $zip" | Set-Content -Path "$zip.sha256" -Encoding ascii
           if (!(Test-Path "$zip.sha256")) { throw 'HUKM installer checksum missing' }
       - uses: actions/upload-artifact@v4
         with:
-          name: HUKM-Windows-Controller-v1.9.5
+          name: HUKM-Windows-Controller-v1.9.6
           path: |
-            HUKM-Windows-Controller-v1.9.5.zip
-            HUKM-Windows-Controller-v1.9.5.zip.sha256
+            HUKM-Windows-Controller-v1.9.6.zip
+            HUKM-Windows-Controller-v1.9.6.zip.sha256
           retention-days: 14
           if-no-files-found: error
       - name: SHA-256 one-file setup checksum
         shell: pwsh
         run: |
-          $file = 'HUKM-Setup-v1.9.5.exe'
+          $file = 'HUKM-Setup-v1.9.6.exe'
           $hash = (Get-FileHash -Path $file -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  $file" | Set-Content -Path "$file.sha256" -Encoding ascii
           if (!(Test-Path "$file.sha256")) { throw 'Standalone EXE checksum missing' }
       - uses: actions/upload-artifact@v4
         with:
-          name: HUKM-One-Time-Setup-v1.9.5
+          name: HUKM-One-Time-Setup-v1.9.6
           path: |
-            HUKM-Setup-v1.9.5.exe
-            HUKM-Setup-v1.9.5.exe.sha256
+            HUKM-Setup-v1.9.6.exe
+            HUKM-Setup-v1.9.6.exe.sha256
           retention-days: 14
           if-no-files-found: error
 
@@ -197,11 +197,11 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: HUKM-One-Time-Setup-v1.9.5
+          name: HUKM-One-Time-Setup-v1.9.6
           path: setup-release
       - uses: actions/download-artifact@v4
         with:
-          name: HUKM-Windows-Controller-v1.9.5
+          name: HUKM-Windows-Controller-v1.9.6
           path: zip-release
       - name: Publish only one immutable tag for this verified version
         env:
@@ -210,23 +210,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          tag='v1.9.5'
+          tag='v1.9.6'
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists. Never replace update assets or checksums."
             exit 0
           fi
-          test -s "setup-release/HUKM-Setup-v1.9.5.exe"
-          test -s "setup-release/HUKM-Setup-v1.9.5.exe.sha256"
-          test -s "zip-release/HUKM-Windows-Controller-v1.9.5.zip"
+          test -s "setup-release/HUKM-Setup-v1.9.6.exe"
+          test -s "setup-release/HUKM-Setup-v1.9.6.exe.sha256"
+          test -s "zip-release/HUKM-Windows-Controller-v1.9.6.zip"
           cd setup-release
-          sha256sum --check HUKM-Setup-v1.9.5.exe.sha256
+          sha256sum --check HUKM-Setup-v1.9.6.exe.sha256
           cd ../zip-release
-          sha256sum --check HUKM-Windows-Controller-v1.9.5.zip.sha256
+          sha256sum --check HUKM-Windows-Controller-v1.9.6.zip.sha256
           cd ..
           gh release create "$tag" \
-            setup-release/HUKM-Setup-v1.9.5.exe \
-            setup-release/HUKM-Setup-v1.9.5.exe.sha256 \
-            zip-release/HUKM-Windows-Controller-v1.9.5.zip \
-            zip-release/HUKM-Windows-Controller-v1.9.5.zip.sha256 \
-            --target "$GITHUB_SHA" --title "HUKM AI v1.9.5" \
-            --notes "HUKM AI Windows Controller v1.9.5 release for owner-supervised acceptance. Automated Windows/Web tests and checksums passed; signed-in Personal WhatsApp Desktop functionality requires a separate owner-run real laptop test. No unattended auto-install, no automatic WhatsApp sends. Unsigned installer requires local consent. Existing pairing should remain intact; verify installed version and rollback capability after reconnect."
+            setup-release/HUKM-Setup-v1.9.6.exe \
+            setup-release/HUKM-Setup-v1.9.6.exe.sha256 \
+            zip-release/HUKM-Windows-Controller-v1.9.6.zip \
+            zip-release/HUKM-Windows-Controller-v1.9.6.zip.sha256 \
+            --target "$GITHUB_SHA" --title "HUKM AI v1.9.6" \
+            --notes "HUKM AI Windows Controller v1.9.6 release for owner-supervised acceptance. Automated Windows/Web tests and checksums passed; signed-in Personal WhatsApp Desktop functionality requires a separate owner-run real laptop test. No unattended auto-install, no automatic WhatsApp sends. Unsigned installer requires local consent. Existing pairing should remain intact; verify installed version and rollback capability after reconnect."
