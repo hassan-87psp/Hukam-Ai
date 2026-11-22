@@ -1,4 +1,5 @@
-import { Copy, Download, History, KeyRound, Laptop, Pause, Pencil, Play, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import { Copy, Download, History, KeyRound, Laptop, MonitorPlay, Pause, Pencil, Play, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import {LiveScreenPanel} from '../components/LiveScreenPanel';
 import { useEffect, useRef, useState } from 'react';
 import { ALL_CAPABILITIES, type Capability, type Device } from '../../../../packages/shared-types/src/index';
 import { LaptopArt } from '../components/Illustrations';
@@ -15,7 +16,7 @@ const CAP_LABEL: Record<Capability, { label: string; desc: string }> = {
   files: { label: 'Files', desc: 'Search, list and open files in allowed folders' },
   browser: { label: 'Browser', desc: 'Open websites and web searches' },
   youtube: { label: 'YouTube', desc: 'Search and open videos' },
-  screen: { label: 'Screen capture', desc: 'On-demand screenshots (approval by default)' },
+  screen: { label: 'Screen / Live Preview', desc: 'On-demand screenshots or 90-second live monitor preview with separate Windows approval' },
   input: { label: 'Window focus', desc: 'Bring a window to the front' },
   whatsapp: { label: 'WhatsApp Desktop', desc: 'Installed Personal WhatsApp Desktop; approved chat selection, visible reading, drafts and separately reviewed Send. Real-device verification pending.' },
 };
@@ -123,6 +124,10 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
   const [confirm, setConfirm] = useState(false);
   const [history, setHistory] = useState<any[] | null>(null);
   const [updateBusy,setUpdateBusy] = useState(false);
+  const [liveOpen,setLiveOpen] = useState(false);
+  const liveAllowed=d.online&&!d.paused&&d.controllerConfig?.screenCapture===true&&
+    d.capabilitiesReported.includes('screen')&&d.capabilitiesEnabled.includes('screen');
+  useEffect(()=>{if(!liveAllowed)setLiveOpen(false);},[liveAllowed]);
   // Keep the approval and download status on the Devices page. Previously
   // clicking Update from website created a hidden Chat command, leaving the
   // owner with no visible indication of what required approval next.
@@ -184,6 +189,9 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
           ) : (
             <button className="btn-ghost" onClick={() => act(() => post(`/api/devices/${d.id}/pause`), 'Device paused')}><Pause className="h-4 w-4" /> Pause control</button>
           )}
+          {liveAllowed && <button className="btn-ghost" onClick={()=>setLiveOpen(v=>!v)}>
+            <MonitorPlay className="h-4 w-4"/>{liveOpen?'Close Live Screen':'Live Screen'}
+          </button>}
           {versionMismatch && supportsWebUpdate && d.online && !d.paused &&
             <button className="btn-primary" disabled={updateBusy || updateActive}
               onClick={()=>void requestUpdate()}>
@@ -193,6 +201,9 @@ function DeviceCard({ d, latestVersion }: { d: Device;latestVersion:string|null 
           <button className="btn-ghost text-bad" onClick={() => setConfirm(true)}><Trash2 className="h-4 w-4" /> Remove</button>
         </div>
       </div>
+      {liveOpen&&liveAllowed&&<div className="p-5 pb-0">
+        <LiveScreenPanel deviceId={d.id} onClose={()=>setLiveOpen(false)}/>
+      </div>}
       {lastUpdate && d.controllerVersion !== latestVersion &&
         <div className="mx-5 mt-4 space-y-2 rounded-xl bg-field/60 p-4 text-sm ring-1 ring-line/25">
           <p className="font-semibold">Windows update · {STATUS_LABEL[lastUpdate.status]}</p>
