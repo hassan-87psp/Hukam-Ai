@@ -27,6 +27,34 @@ def words():
     ]
 
 
+def test_whatsapp_capture_does_not_extend_into_user_message_pane():
+    # Owner's actual 1648px WhatsApp window has a ~430px left sidebar.
+    assert vu._sidebar_capture_width(1648, 96) == 464
+    assert vu._sidebar_capture_width(1648, 96) < 470
+    assert vu._sidebar_capture_width(2500, 144) == 696
+    assert vu._sidebar_capture_width(690, 96) < 410
+
+
+def test_ocr_upscales_tiny_whatsapp_text_without_changing_screen_coordinates():
+    from PIL import Image
+    screenshot = Image.new("RGB", (520, 916), (20, 20, 20))
+    prepared, factor = vu._prepare_ocr_image(screenshot)
+    assert factor == 2.0
+    assert prepared.size == (1040, 1832)
+    # Word rectangles are divided by this exact factor after OCR;
+    # a recognized button at 2x must click the original pixel position.
+    assert (round(165.0 * factor) / factor) == 165.0
+    assert screenshot.size == (520, 916)  # no mutation, no upload
+
+
+def test_ocr_bitmap_max_dimension_is_bounded_for_large_windows():
+    from PIL import Image
+    screenshot = Image.new("RGB", (2000, 1200), (20, 20, 20))
+    prepared, factor = vu._prepare_ocr_image(screenshot)
+    assert max(prepared.size) <= 1900
+    assert factor <= 1.0
+
+
 def test_native_ocr_backend_reads_a_clean_synthetic_unread_label():
     # Real Windows OCR API capability smoke, not a signed-in WhatsApp test.
     import sys
@@ -50,17 +78,50 @@ def test_unread_button_between_verified_all_and_favourites():
     assert label is not None and "unread" in label.text.lower()
 
 
-def test_no_click_without_all_or_favourites_anchor():
-    all_words=words()
+def test_no_click_without_all_anchor_or_separate_heading():
+    base = words()
     assert vu.locate_unread(
-        [w for w in all_words if w.text!="All"],520,920) is None
-    assert vu.locate_unread(
-        [w for w in all_words if w.text!="Favourites"],520,920) is None
+        [w for w in base if w.text != "All"], 520, 920) is None
+    # If OCR missed Favourites, another independent Chats heading is required.
+    no_favs_and_no_heading = [w for w in base
+                              if w.text not in ("Favourites", "Chats")]
+    assert vu.locate_unread(no_favs_and_no_heading, 520, 920) is None
     assert vu.locate_unread([
-        vu.Word("Unread",170,490,70,21),
-        vu.Word("All",108,491,25,21),
-        vu.Word("Favourites",250,490,80,21),
-    ],520,920) is None
+        vu.Word("Unread", 170, 490, 70, 21),
+        vu.Word("All", 108, 491, 25, 21),
+        vu.Word("Favourites", 250, 490, 80, 21),
+    ], 520, 920) is None
+
+
+def test_missing_favourites_ocr_still_uses_two_independent_anchors():
+    # Actual 2026 desktop: Windows OCR may miss the right-hand chip.
+    partial = [w for w in words() if w.text != "Favourites"]
+    label = vu.locate_unread(partial, 520, 920)
+    assert label is not None and label.text == "Unread 8"
+
+
+def test_misaligned_all_unread_rejected_even_with_chats_heading():
+    partial = [w for w in words() if w.text != "Favourites"]
+    shifted = [
+        vu.Word(w.text, w.x, w.y + 65, w.width, w.height)
+        if w.text == "Unread 8" else w for w in partial
+    ]
+    assert vu.locate_unread(shifted, 520, 920) is None
+
+
+def test_scaled_chip_row_can_be_recognized_on_high_dpi():
+    # OCR coordinates may be larger on 125%/150% Windows scaling.
+    enlarged = [vu.Word(w.text, w.x*1.55, w.y*1.55,
+                        w.width*1.55, w.height*1.55)
+                for w in words() if w.text != "Favourites"]
+    assert vu.locate_unread(enlarged, 520, 920) is not None
+
+
+def test_privacy_safe_header_evidence_includes_only_boolean_ui_labels():
+    evidence = vu._header_labels(words(), 520, 920)
+    assert evidence == {"all": True, "unread": True,
+                        "favourites": True, "chats": True}
+    assert all(type(value) is bool for value in evidence.values())
 
 
 def test_no_click_if_two_unread_candidates_or_wrong_order():
@@ -198,3 +259,79 @@ def test_cancelled_before_first_capture_never_interacts(monkeypatch):
     with pytest.raises(vu.VisualUnreadUnavailable,match="cancelled"):
         vu.visual_scan_unread(120,cancel=cancelled)
     assert mouse==[]
+
+
+# Geometry transcribed from the owner's successful 96-DPI diagnostic.
+def diagnostic_words():
+    return [
+        vu.Word("Chats", 77, 56, 50, 15),
+        vu.Word("Search", 120, 107, 39, 10),
+        vu.Word("All", 88, 149, 16, 10),
+        vu.Word("Unread", 135, 149, 40, 10),
+        vu.Word("Favourites", 217, 149, 59, 10),
+        vu.Word("Groups", 308, 150, 41, 12),
+    ]
+
+
+def test_actual_diagnostic_ten_pixel_unread():
+    data = diagnostic_words()
+    chip = vu.locate_unread(data, 410, 920)
+    assert chip == data[3]
+    assert (1920 + round(chip.cx), round(chip.cy)) == (2075, 154)
+    assert vu.locate_unread(data[1:], 410, 920) is None
+    assert vu.locate_unread(data + [vu.Word("Unread", 180, 149, 40, 10)], 410, 920) is None
+
+
+def test_second_monitor_clips_maximized_border_without_changing_click_coordinates():
+    monitors = [
+        {"left": 0, "top": 0, "width": 1920, "height": 1080},
+        {"left": 1920, "top": 0, "width": 1920, "height": 1080},
+    ]
+    region = vu._capture_region((1912, -8, 3848, 1048), monitors, 410)
+    assert region == (1920, 0, 410, 920)
+    negative = [{"left": -1920, "top": -1080, "width": 1920, "height": 1080}]
+    assert vu._capture_region((-1928, -1088, 8, -32), negative, 410) == (-1920, -1080, 410, 920)
+    with pytest.raises(vu.VisualUnreadUnavailable, match="clipped"):
+        vu._capture_region((1700, 0, 3700, 1000), monitors, 410)
+
+
+def test_location_count_requires_explicit_observed_number():
+    data = diagnostic_words()
+    chip = data[3]
+    assert vu._unread_count(data, chip) is None
+    assert vu._unread_count(data + [vu.Word("9", 180, 149, 7, 10)], chip) == 9
+    assert vu._unread_count(data + [vu.Word("9", 180, 190, 7, 10)], chip) is None
+    assert vu._unread_count(data + [vu.Word("9", 180, 149, 7, 10),
+                                    vu.Word("8", 190, 149, 7, 10)], chip) is None
+    assert vu._unread_count([], vu.Word("Unread 9", 135, 149, 55, 10)) == 9
+
+
+def test_header_crop_matches_diagnostic_and_preserves_origin():
+    from PIL import Image
+    assert vu._header_image(Image.new("RGB", (410, 920))).size == (410, 240)
+    assert vu._header_image(Image.new("RGB", (615, 920))).size == (615, 360)
+
+
+def test_owner_second_monitor_geometry_and_complete_sender_time_column():
+    # 96-DPI diagnostic: maximized WhatsApp on monitor 2 (x>=1920).
+    data=[
+      vu.Word("Chats",77,56,50,15),
+      vu.Word("Search",120,107,39,10),
+      vu.Word("All",88,149,16,10),
+      vu.Word("Unread",135,149,40,10),
+      vu.Word("Favourites",217,149,59,10),
+      vu.Word("Groups",308,150,41,12),
+    ]
+    chip=vu.locate_unread(data,464,920)
+    assert chip is not None and chip.text=="Unread"
+    assert (1920+round(chip.cx),round(chip.cy))==(2075,154)
+    mon=[{"left":0,"top":0,"width":1920,"height":1080},
+         {"left":1920,"top":0,"width":1920,"height":1080}]
+    assert vu._capture_region((1912,-8,3848,1048),mon,464)==(1920,0,464,920)
+    assert vu._sidebar_capture_width(1936,96)==464
+    # Timestamp word at x394..469 should remain inside chat list in the
+    # actual layout; a 410px capture would truncate that word.
+    assert 394<vu._sidebar_capture_width(1936,96)
+    assert 410<vu._sidebar_capture_width(1936,96)
+    assert vu.locate_unread(data[1:],464,920) is None
+    assert vu.locate_unread(data+[vu.Word("Unread",210,149,40,10)],464,920) is None

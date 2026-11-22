@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseCommand, parseWhatsAppChoice, validateCommand, requiresApproval, normalize, ackMessage, successMessage, clarifyMessage } from '../src/index';
+import { parseCommand, parseWhatsAppChoice, validateCommand, requiresApproval, normalize, ackMessage, successMessage, clarifyMessage, failureMessage } from '../src/index';
 
 function c(text: string) {
   const r = parseCommand(text);
@@ -260,5 +260,14 @@ describe('messages', () => {
   });
   it('youtube fallback is honest', () => {
     expect(successMessage('youtube.play', { query: 'x' }, { mode: 'search' }).en).toContain("Couldn't");
+  });
+});
+
+
+describe('WhatsApp unverified sender versus count failures', () => {
+  it('does not request repeating the identical failed unread scan', () => {
+    const err = {code:'UNVERIFIABLE' as const,message:'Windows UIA and local visual OCR could not uniquely identify Unread chip'};
+    expect(failureMessage(err,'whatsapp.unread_senders').roman).toContain('sender names verify nahi hue');
+    expect(failureMessage(err,'whatsapp.check').roman).toContain('count verify nahi hua');
   });
 });
