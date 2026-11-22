@@ -34,7 +34,7 @@ CAPABILITY_OF = {
     "controller.update": "system", "app.open": "apps", "app.close": "apps", "folder.open": "folders", "folder.list": "files", "file.search": "files", "file.open": "files",
     "file.reveal": "files", "web.open": "browser", "web.search": "browser", "youtube.search": "youtube", "youtube.play": "youtube",
     "device.status": "system", "apps.list": "system", "window.active": "system", "window.focus": "input",
-    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.activate_observed": "input", "ui.scroll": "input", "desktop.control": "input",
+    "screen.capture": "screen", "diagnostics.probe": "system", "ui.inspect": "screen", "ui.activate": "input", "ui.activate_observed": "input", "ui.navigate_verified": "input", "ui.scroll": "input", "desktop.control": "input",
     "email.inbox_open": "browser", "email.compose_draft": "browser", "calendar.event_draft": "browser", "calendar.save_reviewed": "browser", "chatgpt.prompt_draft": "browser", "chatgpt.submit_prompt": "browser",
     "chatgpt.read_response": "browser", "chatgpt.followup_draft": "browser",
     "chatgpt.download_visible": "browser", "whatsapp.select_chat": "whatsapp", "whatsapp.read_selected": "whatsapp",
