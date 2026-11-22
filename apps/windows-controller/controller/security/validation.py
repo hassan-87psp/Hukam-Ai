@@ -221,6 +221,25 @@ def validate(action: str, args: dict) -> dict:
         return {"steps": steps}
     if action == "ui.activate":
         raise ValidationError("Inspect visible controls first; legacy unbound clicks are disabled")
+    if action == "ui.navigate_verified":
+        from ..screen.accessibility import ROLES, safe_control_label, CLICK_PROCESSES
+        process = a.get("process")
+        if type(process) is not str or process not in CLICK_PROCESSES:
+            raise ValidationError("Exact approved foreground app process is required")
+        role = a.get("role")
+        label = _str(a.get("label"), "label", 100)
+        if role not in ROLES or not safe_control_label(label):
+            raise ValidationError("Target must be an exact safe visible control")
+        extra = {}
+        if "expectLabel" in a:
+            expected = _str(a.get("expectLabel"), "expectLabel", 100)
+            expected_role = a.get("expectRole")
+            if expected_role not in ROLES or not safe_control_label(expected):
+                raise ValidationError("Expected outcome must be an exact safe visible control")
+            extra = {"expectLabel": expected, "expectRole": expected_role}
+        elif "expectRole" in a:
+            raise ValidationError("Expected role requires an expected control label")
+        return {"process": process, "label": label, "role": role, **extra}
     if action == "ui.activate_observed":
         from ..screen.accessibility import ROLES, safe_control_label
         label = _str(a.get("label"), "label", 100)
