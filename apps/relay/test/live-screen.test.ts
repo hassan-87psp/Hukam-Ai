@@ -43,7 +43,7 @@ describe('ephemeral owner-approved live screen preview',()=>{
     device.on('message',d=>deviceEvents.push(JSON.parse(d.toString())));
     device.send(JSON.stringify({type:'hello',controllerVersion:'1.9.6',os:'Windows',osVersion:'11',
       hostname:'TEST',capabilities:['screen','system'],
-      config:{allowedDirs:[],apps:[],screenCapture:true,browser:'default'}}));
+      config:{allowedDirs:[],apps:[],screenCapture:true,liveScreenPreview:true,browser:'default'}}));
     await waitFor(()=>deviceEvents.find(x=>x.type==='welcome'));
   });
   afterAll(async()=>{
