@@ -52,6 +52,10 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
       return r.eventCreatedVerified !== true;
     case 'chatgpt.submit_prompt':
       return r.responseVerified !== true;
+    case 'chatgpt.read_response':
+      return true; // visible-only, not guaranteed full ChatGPT answer
+    case 'chatgpt.followup_draft':
+      return true; // drafted only, not sent
     case 'chatgpt.download_visible':
       return !(r.downloadVerified === true && r.verified === true &&
         typeof r.fileName === 'string' && !!r.fileName &&
@@ -140,6 +144,8 @@ export const ACTION_LABEL: Record<ActionName, string> = {
   'calendar.save_reviewed': 'Save reviewed Calendar event',
   'chatgpt.prompt_draft': 'ChatGPT prompt draft',
   'chatgpt.submit_prompt': 'Submit ChatGPT prompt',
+  'chatgpt.read_response': 'Read visible ChatGPT response',
+  'chatgpt.followup_draft': 'Draft contextual ChatGPT follow-up',
   'chatgpt.download_visible': 'Download visible ChatGPT file',
   'whatsapp.select_chat': 'Select exact WhatsApp chat',
   'whatsapp.read_selected': 'Read selected WhatsApp chat',
@@ -186,6 +192,8 @@ export function describeArgs(action: ActionName, args: Record<string, unknown>):
     case 'calendar.event_draft': return String(a.provider ?? '') + ' · ' + String(a.title ?? '');
     case 'chatgpt.prompt_draft': return 'prompt (' + String(a.prompt ?? '').length + ' characters)';
     case 'chatgpt.submit_prompt': return 'reviewed prompt (' + String(a.prompt ?? '').length + ' characters)';
+    case 'chatgpt.read_response': return 'visible reply to previous exact question';
+    case 'chatgpt.followup_draft': return 'same-thread follow-up (' + String(a.prompt ?? '').length + ' characters)';
     case 'chatgpt.download_visible': return 'current ChatGPT Project';
     case 'whatsapp.select_chat': return 'exact contact: ' + String(a.contact ?? '');
     case 'whatsapp.read_selected': return a.contact ? 'verify contact: ' + String(a.contact) : 'currently selected chat';
