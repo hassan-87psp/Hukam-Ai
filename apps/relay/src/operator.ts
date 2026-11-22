@@ -18,6 +18,8 @@ import { agentToolInstruction, isAgentTool } from './agent-tools';
 import { MemoryRecords } from './memory-records';
 import { Skills } from './skills';
 import { freshTask, boundedFollowup, numberWritingPlan, specialistHint, isExplicitSend, isPrivateFollowup } from './brain-context';
+import {calendarSchedulingIntent,explicitCalendarProvider,recentCalendarContext} from './recent-calendar-context';
+import {CALENDAR_SLOT_PREFIX,blankCalendarSlots,decodeCalendarSlots,advanceCalendarSlots} from './calendar-dialogue';
 
 type Step = {action:ActionName;args:Record<string,unknown>};
 type Proposal = {summary:string;steps:Step[]} | {question:string};
@@ -293,6 +295,57 @@ export class Operator {
       return {kind:'cancelled',message:'Theek hai, task cancel kar diya. Koi laptop action nahi hua.'};
     }
     const last=one(this.db,'SELECT * FROM operator_dialogues WHERE user_id=? AND project_key=?',userId,key);
+    // Conversational, not an independent command: a completed or pending
+    // owner request to open Google Calendar supplies provider context to the
+    // NEXT "meeting schedule karo 5.bjy" turn. No model guessing, no
+    // WhatsApp or private page data, no automatic Calendar Save.
+    const project=projectId==null?null:this.projects.get(userId,String(projectId));
+    const savedCalendar=last && Date.parse(last.expires_at)>=Date.now()
+      ? decodeCalendarSlots(last.request):null;
+    const newCalendarRequest=calendarSchedulingIntent(answer);
+    const recentCalendar=newCalendarRequest
+      ? recentCalendarContext(this.db,userId,project?.id??null):null;
+    const provider=newCalendarRequest
+      ? explicitCalendarProvider(answer)??recentCalendar?.provider??null:null;
+    if((newCalendarRequest && provider) ||
+       (savedCalendar && !newCalendarRequest && !freshTask(answer))){
+      const initial=newCalendarRequest && provider
+        ? blankCalendarSlots(provider,project?.chromeProfile||recentCalendar?.profile||null)
+        : savedCalendar!;
+      // Follow-up slots live in owner+workspace SQLite, not the model prompt.
+      // Project profile is authoritative whenever a Project is selected.
+      if(project)initial.profile=project.chromeProfile;
+      const advanced=advanceCalendarSlots(initial,answer,
+        newCalendarRequest?'':String(last?.question??''));
+      if(advanced.question){
+        this.savePending(userId,key,CALENDAR_SLOT_PREFIX+JSON.stringify(advanced.slots),
+          advanced.question,12*60*60_000);
+        return {kind:'clarify',topic:'operator-followup',question:advanced.question};
+      }
+      const event={
+        provider:advanced.slots.provider,
+        title:advanced.slots.title!,
+        profile:advanced.slots.profile!,
+        startUtc:advanced.startUtc!,
+        endUtc:advanced.endUtc!,
+        timeZone:'Asia/Kuala_Lumpur',
+        details:'',
+        location:'',
+      };
+      // Even the verb "schedule" authorizes only a proposed DRAFT here.
+      // Calendar Save/invites require a later explicit, separate owner review.
+      const result=validatePlanShape({
+        summary:'Prepare '+(advanced.slots.provider==='google'?'Google':'Outlook')+
+          ' Calendar meeting draft: '+advanced.slots.title+
+          ' on '+advanced.slots.date+' at '+advanced.slots.hour+':'+
+          String(advanced.slots.minute).padStart(2,'0')+
+          ' Malaysia time (not saved; separate approval required)',
+        steps:[{action:'calendar.event_draft',args:event}],
+      });
+      const plan=this.persistPlan(userId,project?.id??null,answer,result);
+      this.clearPending(userId,key);
+      return plan;
+    }
     let request=answer;
     let isFollowup=false;
     if(last){
@@ -311,7 +364,6 @@ export class Operator {
     }
     // Draft and preview workflows are allowed; sending, invitations, and
     // end-to-end creative generation still require real verified integrations.
-    const project=projectId==null?null:this.projects.get(userId,String(projectId));
     const lower=request.toLowerCase();
     const useProjectBrowser=(
       /(?:calendar|calender|meeting)/.test(lower) &&
