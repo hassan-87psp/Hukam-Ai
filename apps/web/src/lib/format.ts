@@ -61,6 +61,7 @@ export function actionResultUnverified(action: ActionName, result: unknown): boo
         typeof r.fileName === 'string' && !!r.fileName &&
         typeof r.sizeBytes === 'number' && r.sizeBytes > 0);
     case 'ui.activate_observed':
+    case 'ui.navigate_verified':
       return r.verified !== true;
     case 'desktop.control':
       return r.verified !== true;
