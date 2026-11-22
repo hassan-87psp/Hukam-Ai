@@ -538,6 +538,17 @@ describe('commands', () => {
     const finished=await waitStatus(r.data.command.id,['completed']);
     expect(finished.result.senders).toHaveLength(2);
   });
+  it('accepts zero unread when exact WhatsApp empty-list text was independently verified',async()=>{
+    device.auto=()=>({ok:true,result:{
+      senders:[],totalUnreadChats:0,unreadCountVerified:true,
+      filterSelectedVerified:true,allBadgeChatsMatched:true,
+      source:'Explicit WhatsApp empty Unread-filter list',scanStopped:'explicit_empty',
+    }});
+    const r=await api('POST','/api/commands',{action:'whatsapp.unread_senders',args:{}});
+    await api('POST',`/api/commands/${r.data.command.id}/approve`);
+    const finished=await waitStatus(r.data.command.id,['completed']);
+    expect(finished.result.totalUnreadChats).toBe(0);
+  });
   it('rejects alleged full coverage when actual badge total is unknown',async()=>{
     device.auto=()=>({ok:true,result:{
       senders:['Only Person'],totalUnreadChats:null,
