@@ -188,7 +188,7 @@ jobs:
 
   official-windows-release:
     name: Publish official versioned setup (main, after all tests)
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_verified_release == true
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.publish_verified_release == true)
     needs: [web-relay-tests, windows-controller-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 8
@@ -229,4 +229,4 @@ jobs:
             zip-release/HUKM-Windows-Controller-v1.9.2.zip \
             zip-release/HUKM-Windows-Controller-v1.9.2.zip.sha256 \
             --target "$GITHUB_SHA" --title "HUKM AI v1.9.2" \
-            --notes "Official owner-approved HUKM Windows Controller setup. Unattended auto-install is disabled. The unsigned installer requires local Windows confirmation. Existing pairing remains intact; verify controller version after reconnect."
+            --notes "HUKM AI Windows Controller v1.9.2 release for owner-supervised acceptance. Automated Windows/Web tests and checksums passed; signed-in Personal WhatsApp Desktop functionality requires a separate owner-run real laptop test. No unattended auto-install, no automatic WhatsApp sends. Unsigned installer requires local consent. Existing pairing should remain intact; verify installed version and rollback capability after reconnect."

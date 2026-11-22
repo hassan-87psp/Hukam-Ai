@@ -20,3 +20,10 @@ Status: NOT approved for production release. Candidate branch only; existing v1.
 6. Confirm cloud plan limits, Gemini live reachability without paid fallback, production health and backup, and version compatibility. Vercel preview quota is external; do not upgrade automatically. Artifacts are unsigned; explicit local review required.
 
 Owner PC metrics and live provider outcomes are not supplied by simulated CI. No promise of bug-free or unlimited free cloud usage. No additional paid service introduced.
+
+## 22 November 2026 — owner-directed release candidate packaging
+- User explicitly requested completing all assistant-accessible tasks and delivering a website-initiated Windows update rather than more manual ZIP/pairing. Keep the owner laptop acceptance as a separate mandatory gate for claiming WhatsApp success.
+- On main push only, official release job may publish immutable v1.9.2 ZIP and EXE after both Web/Relay and Windows simulated/frozen/installer/rollback CI jobs succeed, with verified SHA-256. Pull requests do not publish.
+- Live Render main is auto-deploy, so inspect deployment outcome and relay version before telling owner to run the update. Any publish error is not a successful release.
+- Backup safety: source snapshot restore validates SQLite and refuses conflicting local WAL/DB, latest private existing snapshot independently observed in provider storage metadata. Provider archive-on-overwrite gateway added to preserve a private daily pre-overwrite snapshot for future writes; this is not proof that historical snapshots have already been written or independently restored. Do not claim full backup/rollback acceptance until provider archive and isolated restore evidence exist.
+- Owner must personally approve interactive controller update; actual WhatsApp native UI, selection and sender names remain unverified by hosted CI. Do not claim 100% done until tested.
