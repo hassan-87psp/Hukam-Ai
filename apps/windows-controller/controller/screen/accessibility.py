@@ -271,6 +271,102 @@ def activate_observed(label: str, role: str, snapshot: str, cancel=None) -> dict
         raise AccessibilityError("UI Automation could not activate the inspected control") from exc
 
 
+
+def verified_control_count(controls, role: str, label: str) -> int:
+    """Count exact foreground UIA controls, not deduplicated display labels."""
+    return sum(1 for _control, found_role, found_label in controls
+               if found_role == role and found_label.casefold() == label.casefold())
+
+
+def navigate_verified(args: dict, cancel=None) -> dict:
+    """One approved local observe -> click -> verify navigation attempt.
+
+    The owner approves the exact app/process and visible target. HUKM locates
+    that control locally, rechecks its foreground snapshot, clicks it once,
+    and only reports success if a NEW uniquely identified expected control
+    appears in the SAME native window. No screenshots, coordinates or private
+    UI text are sent to the model. Irreversible controls remain blocked.
+    """
+    if cancel is not None and cancel.is_set():
+        raise AccessibilityError("Navigation cancelled before any input")
+    label, role, process = args["label"], args["role"], args["process"]
+    expect_label, expect_role = args.get("expectLabel"), args.get("expectRole")
+    if process not in CLICK_PROCESSES or role not in ROLES or not safe_control_label(label):
+        raise AccessibilityError("Only an exact safe navigation control is allowed")
+    if expect_label is not None and (
+            expect_role not in ROLES or not safe_control_label(expect_label)):
+        raise AccessibilityError("Expected control is not safe or supported")
+
+    before = inspect()  # fresh local foreground inspection creates a single-use token
+    if before.get("process", "").casefold() != process:
+        raise AccessibilityError("Foreground application differs from the approved process")
+    candidates = [x for x in before.get("controls", [])
+                  if x.get("label", "").casefold() == label.casefold()
+                  and x.get("role") == role and x.get("canActivate") is True]
+    if len(candidates) != 1:
+        raise AccessibilityError("Approved control not uniquely visible; no click performed")
+    if expect_label and any(x.get("role") == expect_role and
+                            x.get("label", "").casefold() == expect_label.casefold()
+                            for x in before.get("controls", [])):
+        raise AccessibilityError(
+            "Expected control was already present before navigation; cannot prove a new outcome")
+
+    native_before = None if launcher.SIMULATE else _active()
+    clicked = activate_observed(label, role, before["snapshot"], cancel=cancel)
+    if not clicked.get("inputDelivered"):
+        raise AccessibilityError("Navigation click was not verified as delivered")
+    base = {
+        "inputDelivered": True, "navigationVerified": False, "verified": False,
+        "process": process, "targetRole": role, "targetLabel": label,
+        "expectedRole": expect_role, "expectedLabel": expect_label,
+    }
+    if launcher.SIMULATE:
+        return {**base, "simulated": True,
+                "note": "Simulated navigation only; no real screen state checked"}
+    if not expect_label:
+        return {**base, "note":
+                "Safe control clicked once. No expected UI evidence was specified; outcome unverified."}
+
+    # Never click a second time after a possible state change. UIA polling is
+    # read-only, short and bounded. Changed app/window or ambiguous controls
+    # are unverified, NOT failures to automatically retry.
+    import uiautomation as auto
+    import win32gui
+    reason = "Expected control not visible after the one approved click"
+    for _ in range(6):
+        if cancel is not None and cancel.is_set():
+            reason = "Verification cancelled after click; do not retry automatically"
+            break
+        time.sleep(0.35)
+        try:
+            active = _active()
+            if (active.hwnd != native_before.hwnd or
+                    active.pid != native_before.pid or
+                    active.process.casefold() != process or
+                    win32gui.GetForegroundWindow() != native_before.hwnd):
+                reason = "Foreground window changed after click; outcome not established"
+                break
+            root = auto.ControlFromHandle(active.hwnd)
+            visible = _visible_controls(root, max_nodes=850)
+            if win32gui.GetForegroundWindow() != native_before.hwnd:
+                reason = "Foreground changed during verification"
+                break
+            matches = verified_control_count(visible, expect_role, expect_label)
+            if matches == 1:
+                return {**base, "navigationVerified": True, "verified": True,
+                        "evidence": "new_unique_visible_control",
+                        "note": "The expected control became visible in the same verified window. This verifies navigation only, not external delivery."}
+            if matches > 1:
+                reason = "Expected UI control is ambiguous after click"
+                break
+        except (AccessibilityError, OSError, RuntimeError):
+            # UIA can temporarily detach during browser/WebView navigation.
+            # Keep observing without any further click.
+            reason = "Expected UI control could not be independently read"
+        except Exception:
+            reason = "UIA verification unavailable; action may have occurred"
+    return {**base, "note": reason + ". Check the laptop before retrying."}
+
 def scroll_active(steps: int, cancel=None) -> dict:
     """Bounded mouse-wheel input to the active allowlisted Windows app.
 
