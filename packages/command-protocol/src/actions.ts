@@ -307,6 +307,49 @@ export const ACTIONS: Record<ActionName, ActionDef> = {
       return ok({label,role,snapshot});
     },
   },
+  'ui.navigate_verified': {
+    name:'ui.navigate_verified',capability:'input',
+    label:'Navigate a verified visible control and verify expected UI',
+    timeoutMs:30000,alwaysApprove:true,
+    validate(a) {
+      const processes=['chrome.exe','msedge.exe','firefox.exe','notepad.exe','explorer.exe'];
+      if(typeof a.process!=='string'||!processes.includes(a.process))
+        return fail('Choose an exact supported foreground process');
+      const label=str(a.label,'label',100);
+      if(isErr(label))return label;
+      const roles=['ButtonControl','TabItemControl','HyperlinkControl','MenuItemControl',
+        'CheckBoxControl','RadioButtonControl','ComboBoxControl'];
+      if(typeof a.role!=='string'||!roles.includes(a.role))
+        return fail('Select an exact visible control role');
+      const safe=(value:string)=>{
+        const words=value.normalize('NFKC').toLowerCase().match(/[\\p{L}\\p{N}_]+/gu)??[];
+        const banned=new Set(['send','sending','delete','remove','pay','payment','purchase','buy',
+          'checkout','submit','confirm','approve','authorize','publish','share','transfer',
+          'withdraw','deposit','invite','report','block','unblock','call','join','upload',
+          'install','execute','run','post','book','order','save','accept','apply',
+          'logout','signin','signout','login','erase','clear','reset']);
+        const phrase=' '+words.join(' ')+' ';
+        return words.length>0&&!words.some(w=>banned.has(w))&&
+          !['log out','sign out','sign in','place order','check out',
+            'video call','voice call','add payment','make payment']
+            .some(x=>phrase.includes(' '+x+' '));
+      };
+      if(!safe(label))return fail('Sensitive controls require a dedicated reviewed workflow');
+      if(a.expectLabel===undefined&&a.expectRole!==undefined)
+        return fail('Expected role requires an expected label');
+      let expectLabel: string|undefined;
+      if(a.expectLabel!==undefined){
+        const value=str(a.expectLabel,'expectLabel',100);
+        if(isErr(value))return value;
+        if(!safe(value))return fail('Expected control contains a sensitive label');
+        if(typeof a.expectRole!=='string'||!roles.includes(a.expectRole))
+          return fail('Expected role must match an accessible control');
+        expectLabel=value;
+      }
+      return ok({process:a.process,label,role:a.role,
+        ...(expectLabel?{expectLabel,expectRole:a.expectRole}:{})});
+    },
+  },
   'desktop.control': {
     name: 'desktop.control', capability: 'input', label: 'Approved foreground laptop mouse/keyboard',
     timeoutMs: 25000, alwaysApprove: true,
