@@ -24,12 +24,23 @@ describe('owner-reviewed categorized memory',()=>{
       expect(mem.context('a',a.id)).not.toContain('reference-personal');
       expect(mem.context('a',a.id)).not.toContain('general-only');
       expect(mem.context('a',null)).toBe('');
+      // A newer large memory must not split JSON or crowd out older
+      // approved facts that still fit in the requested context budget.
+      mem.save('a',a.id,null,{category:'project',title:'Large reference',
+          content:'L'.repeat(1600),useInAI:true});
+      const packed=mem.context('a',a.id,230);
+      expect(packed.length).toBeLessThanOrEqual(230);
+      expect(packed).toContain('reference-project');
+      for(const line of packed.split('\n').slice(1))expect(()=>JSON.parse(line)).not.toThrow();
+      expect(mem.context('a',a.id,15)).toBe('');
+      expect(mem.context('a',a.id,-20)).toBe('');
+      expect(mem.context('a',a.id,Infinity)).toBe('');
       expect(()=>mem.list('a',b.id)).toThrow();
       expect(()=>mem.remove('a',a.id,other.id)).toThrow();
       expect(()=>mem.save('a',a.id,general.id,{title:'wrong scope'})).toThrow();
       expect(()=>mem.save('a',null,null,{category:'personal',title:'bad',content:'password: abc123'})).toThrow();
       db.close();db=openDb(dir,migrations);mem=new MemoryRecords(db);
-      expect(mem.list('a',a.id)).toHaveLength(8);
+      expect(mem.list('a',a.id)).toHaveLength(9);
       mem.save('a',null,general.id,{useInAI:true});
       expect(mem.context('a',null)).toContain('general-only');
       mem.remove('a',null,general.id);
