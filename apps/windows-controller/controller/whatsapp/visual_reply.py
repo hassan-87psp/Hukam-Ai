@@ -275,15 +275,13 @@ def _composer_placeholder(words,image):
 
 def _exact_draft(words,message,image=None):
     matches=_phrase_hits(words,message)
-    if len(matches)!=1:
-        return False
-    if image is None:
-        return True
-    # The OCR band contains the composer PLUS part of the chat above it.
-    # Never treat an old visible message bubble as a verified new draft.
-    start,end=matches[0]
-    return (image.height*.48<=start.cy<=image.height*.97 and
-            start.x>=0 and end.x+end.width<image.width*.95)
+    if image is not None:
+        # Reject an old bubble ABOVE the composer; verify only the lower
+        # composer portion of the read-only WhatsApp OCR capture.
+        matches=[(a,b) for a,b in matches if
+                 image.height*.48<=a.cy<=image.height*.97 and
+                 a.x>=0 and b.x+b.width<image.width*.95]
+    return len(matches)==1
 
 
 def verified_visual_draft(hwnd, expected, message, cancel=None):
