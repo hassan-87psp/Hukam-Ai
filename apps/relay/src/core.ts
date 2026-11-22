@@ -500,11 +500,15 @@ export class Relay {
         const uniqueNames = cleanNames && new Set(unreadNames.map((s: string) => s.trim().toLocaleLowerCase())).size === unreadNames.length;
         const badge = result.totalUnreadChats;
         const badgeValid = typeof badge === 'number' && Number.isInteger(badge) && badge >= 0 && badge <= 999;
-        const fullUnread = result.filterSelectedVerified === true &&
-          result.unreadCountVerified === true && result.allBadgeChatsMatched === true &&
-          badgeValid && cleanNames && uniqueNames && unreadNames.length === badge &&
-          (badge > 0 || result.source === 'Explicit WhatsApp Unread zero badge' ||
-            result.scanStopped === 'explicit_empty');
+        // An explicitly read ZERO badge is independently conclusive even if
+        // an older Controller doesn't report the newer coverage flag.
+        const explicitZero = result.filterSelectedVerified === true &&
+          result.unreadCountVerified === true && badge === 0 &&
+          unreadNames.length === 0 && result.source === 'Explicit WhatsApp Unread zero badge';
+        const fullUnread = cleanNames && uniqueNames && (explicitZero ||
+          (result.filterSelectedVerified === true && result.unreadCountVerified === true &&
+           result.allBadgeChatsMatched === true && badgeValid && unreadNames.length === badge &&
+           (badge > 0 || result.scanStopped === 'explicit_empty')));
         const sendersVerified = c.action !== 'whatsapp.unread_senders' || fullUnread;
         const partialUnread = c.action === 'whatsapp.unread_senders' &&
           cleanNames && unreadNames.length > 0 && !fullUnread;
