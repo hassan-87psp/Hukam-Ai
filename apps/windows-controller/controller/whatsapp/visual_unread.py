@@ -769,9 +769,9 @@ def _collect_unread_pages(hwnd, image, left, top, words, chip, badge, cancel):
                 alternative=_visible_titles_for_layout(stable_header+better_rows,
                                                        image.width,chip)
                 names=list(dict.fromkeys([*names,*alternative]))
-        if not names and index==0 and _explicit_empty_unread(words,chip,image.width):
+        if not names and index==0 and _explicit_empty_unread(words,chip,image.width) and badge in (None,0):
             return {"senders":[],"visibleChatCount":0,"scanPages":pages,
-                    "allBadgeChatsMatched":badge==0,"scanStopped":"explicit_empty",
+                    "allBadgeChatsMatched":True,"scanStopped":"explicit_empty",
                     "conversations":[]}
         for name in names:
             key=name.casefold().strip()
@@ -887,6 +887,11 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
         _safe_foreground(active_hwnd)
         if not scan["senders"] and scan["scanStopped"]!="explicit_empty":
             raise VisualUnreadUnavailable("Unread selected but no sender rows could be verified after bounded sidebar scan.")
+        if scan["scanStopped"]=="explicit_empty":
+            return {"supported":True,**scan,"totalUnreadChats":0,"unreadCountVerified":True,
+                    "totalUnreadMessages":0,"visibleOnly":False,"messagesRead":False,
+                    "filterClickAttempted":False,"filterSelectedVerified":True,
+                    "source":"Explicit WhatsApp empty Unread-filter list"}
         return {"supported":True,**scan,"totalUnreadChats":badge if badge is not None else None,
                 "unreadCountVerified":badge is not None,"totalUnreadMessages":None,
                 "visibleOnly":True,"messagesRead":False,
@@ -1022,6 +1027,11 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
                                selected_chip,count_after,cancel)
     if not scan["senders"] and scan["scanStopped"]!="explicit_empty":
         raise VisualUnreadUnavailable("Unread list scanned but no timestamp-verified chat names were found. Do not infer zero.")
+    if scan["scanStopped"]=="explicit_empty":
+        return {"supported":True,**scan,"totalUnreadChats":0,"unreadCountVerified":True,
+                "totalUnreadMessages":0,"visibleOnly":False,"messagesRead":False,
+                "filterClickAttempted":True,"filterSelectedVerified":True,
+                "source":"Explicit WhatsApp empty Unread-filter list"}
     return {"supported":True,**scan,
             "totalUnreadChats":count_after if count_after is not None else None,
             "unreadCountVerified":count_after is not None,
