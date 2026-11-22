@@ -212,6 +212,16 @@ export function successMessage(action: ActionName, args: Record<string, unknown>
       return L('ChatGPT mein prompt draft hua. Abhi send nahi hua.', 'پرامپٹ لکھا گیا، بھیجا نہیں گیا۔', 'ChatGPT prompt drafted but not submitted.');
     case 'chatgpt.submit_prompt':
       return L('ChatGPT ko prompt submit hua; result verify nahi hua.', 'پرامپٹ بھیجا، نتیجہ تصدیق شدہ نہیں۔', 'Prompt submitted; response not verified.');
+    case 'chatgpt.read_response':
+      return r.responseRead===true
+        ? L('ChatGPT ka visible jawab read hua; poora jawab ya completion verify nahi hui. Neeche result dekhein.',
+            'چیٹ جی پی ٹی کا صرف نظر آنے والا جواب پڑھا گیا، مکمل ہونے کی تصدیق نہیں۔',
+            'Visible ChatGPT assistant text was read. Completeness and offscreen content are unverified.')
+        : L('ChatGPT ka readable jawab verify nahi hua.', 'جواب پڑھنے کی تصدیق نہیں ہوئی۔', 'A readable ChatGPT answer was not verified.');
+    case 'chatgpt.followup_draft':
+      return L('Isi ChatGPT thread mein follow-up draft hua. Send alag approval se hoga.',
+        'اسی چیٹ میں فالو اپ ڈرافٹ ہوا، ابھی بھیجا نہیں گیا۔',
+        'Follow-up drafted in the matching ChatGPT conversation; not submitted.');
     case 'chatgpt.download_visible':
       return L('Downloads check hua; exact ChatGPT file verify nahi hui. File review karein.', 'ڈاؤن لوڈز چیک ہوئے، اصل فائل کی تصدیق نہیں ہوئی۔', 'Downloads checked; the exact ChatGPT artifact is not independently verified. Review the file.');
     case 'whatsapp.select_chat':
