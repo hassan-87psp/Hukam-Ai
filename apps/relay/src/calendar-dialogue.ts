@@ -145,6 +145,7 @@ export function advanceCalendarSlots(previous:CalendarSlots,input:string,asked='
     return {slots:next,question:'Yeh waqt guzar chuka hai. Meeting ke liye future date batayein.'};
   }
   const endMs=startMs+(next.durationMinutes as number)*60_000;
-  return {slots:next,question:null,startUtc:new Date(startMs).toISOString(),
-    endUtc:new Date(endMs).toISOString()};
+  const utcSeconds=(time:number)=>new Date(time).toISOString().replace(/\.\d{3}Z$/,'Z');
+  return {slots:next,question:null,startUtc:utcSeconds(startMs),
+    endUtc:utcSeconds(endMs)};
 }
