@@ -31,7 +31,7 @@ def test_live_rejects_invalid_monitor_without_prompt(client,monkeypatch):
 
 def test_live_denied_locally_never_captures(client,monkeypatch):
     from controller.screen import capture
-    monkeypatch.setattr(client,"_local_live_permission",lambda: False)
+    monkeypatch.setattr(client,"_local_live_permission",lambda monitor: False)
     monkeypatch.setattr(capture,"capture",lambda *_a,**_kw:pytest.fail("capture without consent"))
     sent=[]
     async def send(m):
@@ -48,7 +48,7 @@ def test_live_denied_locally_never_captures(client,monkeypatch):
 
 def test_approved_live_frames_stay_in_memory_and_stop_is_immediate(client,monkeypatch):
     from controller.screen import capture
-    monkeypatch.setattr(client,"_local_live_permission",lambda: True)
+    monkeypatch.setattr(client,"_local_live_permission",lambda monitor: True)
     frame=base64.b64encode(b"J"*250).decode()
     monkeypatch.setattr(capture,"capture",lambda *_a,**_kw:{
         "mime":"image/jpeg","dataBase64":frame,"width":640,"height":360,
@@ -75,7 +75,7 @@ def test_approved_live_frames_stay_in_memory_and_stop_is_immediate(client,monkey
 
 
 def test_emergency_pause_revokes_live_preview(client,monkeypatch):
-    monkeypatch.setattr(client,"_local_live_permission",lambda: True)
+    monkeypatch.setattr(client,"_local_live_permission",lambda monitor: True)
     from controller.screen import capture
     monkeypatch.setattr(capture,"capture",lambda *_a,**_kw:{
         "mime":"image/jpeg","dataBase64":base64.b64encode(b"J"*200).decode(),
@@ -93,3 +93,47 @@ def test_emergency_pause_revokes_live_preview(client,monkeypatch):
         assert client.paused is True
         assert client.live_session is None
     asyncio.run(scenario())
+
+
+def test_owner_approves_exact_monitor_two_and_frame_stays_on_display_two(client,monkeypatch):
+    from controller.screen import capture
+    called=[]
+    monkeypatch.setattr(client,"_monitor_count",lambda:4)
+    monkeypatch.setattr(client,"_local_live_permission",lambda monitor: called.append(("approve",monitor)) or True)
+    def grab(*_a,**kw):
+        called.append(("capture",kw.get("monitor")))
+        return {"mime":"image/jpeg","dataBase64":base64.b64encode(b"F"*240).decode(),
+                "width":720,"height":405,"simulated":False}
+    monkeypatch.setattr(capture,"capture",grab)
+    sent=[]
+    async def send(m):
+        sent.append(m)
+        return True
+    client.send=send
+    async def scenario():
+        await client.handle({"type":"live_screen.start","sessionId":"live_second","monitor":2,
+                             "durationSeconds":90})
+        for _ in range(100):
+            if any(m["type"]=="live_screen.frame" for m in sent):break
+            await asyncio.sleep(.01)
+        await client.handle({"type":"live_screen.stop","sessionId":"live_second"})
+        await asyncio.sleep(.03)
+    asyncio.run(scenario())
+    assert ("approve",2) in called
+    assert ("capture",2) in called
+    assert any(m["type"]=="live_screen.frame" and m["monitor"]==2 for m in sent)
+
+
+def test_missing_monitor_never_prompts_for_live_consent(client,monkeypatch):
+    shown=[]
+    monkeypatch.setattr(client,"_monitor_count",lambda:1)
+    monkeypatch.setattr(client,"_local_live_permission",lambda monitor: shown.append(monitor))
+    sent=[]
+    async def send(m):
+        sent.append(m)
+        return True
+    client.send=send
+    asyncio.run(client.handle({"type":"live_screen.start","sessionId":"live_missing","monitor":4,
+                                "durationSeconds":90}))
+    assert shown==[]
+    assert sent[0]["type"]=="live_screen.denied"
