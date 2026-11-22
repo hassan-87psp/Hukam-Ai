@@ -842,12 +842,17 @@ def visual_scan_unread(active_hwnd: int, cancel=None) -> dict:
             _ensure_not_cancelled(cancel)
             enhanced=[]
         if enhanced:
-            enhanced_chip=locate_unread(enhanced,after_image.width,after_image.height)
-            if enhanced_chip is not None:
-                _row_geometry_diagnostics(enhanced,after_image,enhanced_chip,"post-click-enhanced")
-                senders=_visible_titles_for_layout(enhanced,after_image.width,enhanced_chip)
-                if senders:
-                    second_words,selected_chip=enhanced,enhanced_chip
+            # A second OCR transform may lose tiny filter labels yet read the
+            # larger chat rows correctly. The original filter was independently
+            # verified on this SAME captured image; reuse its trusted header.
+            cutoff=selected_chip.y+selected_chip.height+35
+            header_words=[w for w in second_words if w.cy<cutoff]
+            row_words=[w for w in enhanced if w.cy>=cutoff]
+            merged=header_words+row_words
+            _row_geometry_diagnostics(merged,after_image,selected_chip,"post-click-enhanced")
+            senders=_visible_titles_for_layout(merged,after_image.width,selected_chip)
+            if senders or _explicit_empty_unread(merged,selected_chip,after_image.width):
+                second_words=merged
     if not senders:
         # Only an explicitly observed empty state can establish zero. The
         # absence of OCR-recognized rows does NOT establish an empty inbox.
