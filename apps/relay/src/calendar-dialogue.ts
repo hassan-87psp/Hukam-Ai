@@ -82,7 +82,7 @@ function timeMention(input:string):{hour:number|null;rawHour:number|null;minute:
     if(/^(?:\s*(?:baje|bjy|bj|bajay|am|pm|shaam|sham|subah|evening|morning)\b)/.test(after) ||
        /(?:subah|shaam|sham|evening|morning)\s*$/.test(before) ||
        /[:.]\d{2}/.test(match[0]) ||
-       /\b(?:am|pm)\b/.test(match[0])){picked=match;break;}
+       /\b(?:baje|bjy|bj|bajay|am|pm)\b/.test(match[0])){picked=match;break;}
   }
   if(!picked)return null;
   const h=Number(picked[1]),minute=picked[2]?Number(picked[2]):0;
