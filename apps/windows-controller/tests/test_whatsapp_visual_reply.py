@@ -153,6 +153,53 @@ def test_send_button_requires_exact_control_identity():
     assert not desktop_ops._send_button_label(item("random","Some message"),"")
 
 
+def test_send_uses_verified_textpattern_and_fresh_exact_button(monkeypatch):
+    native=windows.WindowInfo(200,"WhatsApp","WhatsApp.Root.exe",500)
+    monkeypatch.setattr(launcher,"SIMULATE",False)
+    monkeypatch.setattr(desktop_ops,"_active_root",
+                        lambda:(native,object(),(0.,0.,1200.,950.)))
+    monkeypatch.setattr(desktop_ops,"_same_window",lambda *a:None)
+    monkeypatch.setattr(desktop_ops,"_check_selected_contact",lambda *a:None)
+    def unavailable():
+        raise RuntimeError("ValuePattern missing")
+    editor=SimpleNamespace(GetValuePattern=unavailable,
+        GetTextPattern=lambda:SimpleNamespace(
+            DocumentRange=SimpleNamespace(GetText=lambda n:"Okay")))
+    monkeypatch.setattr(desktop_ops,"_composer",lambda *a:editor)
+    sent=[]; buttons=[]
+    def controls(_root,max_nodes=1050):
+        button=SimpleNamespace(IsEnabled=True,AutomationId="sendButton",
+            HelpText="",Click=lambda **kw:sent.append("click"))
+        buttons.append(button)
+        return iter([(button,"Send","ButtonControl",1000.,830.,1050.,870.)])
+    monkeypatch.setattr(desktop_ops,"_controls",controls)
+    monkeypatch.setattr(desktop_ops.windows,"active_window",lambda:native)
+    result=desktop_ops.send_reviewed("Known Contact","Okay")
+    assert len(buttons)==2  # fresh UIA handle before Send
+    assert sent==["click"]
+    assert result["sendAttempted"] is True
+    assert result["deliveryVerified"] is False
+
+
+def test_send_ocr_fallback_does_not_skip_header_or_draft_confirmation(monkeypatch):
+    native=windows.WindowInfo(200,"WhatsApp","WhatsApp.Root.exe",500)
+    monkeypatch.setattr(launcher,"SIMULATE",False)
+    monkeypatch.setattr(desktop_ops,"_active_root",
+                        lambda:(native,object(),(0.,0.,1200.,950.)))
+    monkeypatch.setattr(desktop_ops,"_same_window",lambda *a:None)
+    def missing(*_a):
+        raise desktop_ops.DesktopWhatsAppError("UIA inaccessible")
+    monkeypatch.setattr(desktop_ops,"_check_selected_contact",missing)
+    monkeypatch.setattr(desktop_ops,"_composer",missing)
+    monkeypatch.setattr(visual_reply,"exact_header",lambda *_a,**kw:True)
+    monkeypatch.setattr(visual_reply,"verified_visual_draft",
+                        lambda *_a,**kw:False)
+    monkeypatch.setattr(desktop_ops,"_controls",
+                        lambda *_a,**kw:pytest.fail("No Send without verified draft"))
+    with pytest.raises(desktop_ops.DesktopWhatsAppError,match="draft not verifiable"):
+        desktop_ops.send_reviewed("Known Contact","Okay")
+
+
 def test_document_control_composer_accessible_by_exact_automation_id(monkeypatch):
     from types import SimpleNamespace
     rect=(100.,100.,1200.,800.)
