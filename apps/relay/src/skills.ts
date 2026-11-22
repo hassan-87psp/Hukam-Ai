@@ -105,7 +105,9 @@ export class Skills{
       if(!cmd||cmd.status!=='completed'||!cmd.dispatched_at||(cmd.requires_approval&&!cmd.approved_at)||cmd.action!==steps[i].action)
         throw new HttpError(422,'TEACH_RUN','A demonstrated step did not complete');
       const evidence=parseJson<Record<string,unknown>>(cmd.result,{});
-      if(!cmd.result||!evidence||evidence.simulated===true||evidence.truncated===true)
+      if(!cmd.result||!evidence||evidence.simulated===true||evidence.truncated===true||
+         evidence.unverified===true||evidence.verified===false||evidence.success===false||
+         evidence.status==='unverified'||evidence.status==='failed'||evidence.status==='partial')
         throw new HttpError(422,'TEACH_RUN','Simulated or incomplete results cannot be taught');
       const actual=reusableSteps([{action:cmd.action,args:parseJson(cmd.args,null)}])[0];
       if(JSON.stringify(actual.args)!==JSON.stringify(steps[i].args))
