@@ -60,6 +60,13 @@ function runRow(r:Row):TaskRun{
     commandIds:JSON.parse(r.command_ids),error:r.error??null,
     createdAt:r.created_at,updatedAt:r.updated_at};
 }
+/** Stop multi-step computer control when a visual navigation state is not
+ * independently verified. Never let a later step operate on a guessed page. */
+export function navigationAllowsNextStep(action:ActionName,result:Record<string,unknown>):boolean {
+  return action!=='ui.navigate_verified'||(
+    result.navigationVerified===true&&result.verified===true&&result.simulated!==true);
+}
+
 function validateStep(v:unknown):Step {
   if (!v || typeof v!=='object' || Array.isArray(v))throw new HttpError(400,'BAD_PLAN','Invalid planned action');
   const p=v as Record<string,unknown>;
@@ -912,6 +919,14 @@ export class Operator {
               projectUrl:String(step.args.projectUrl),profile:seen.profile,
               baseProjectUrl:seen.baseProjectUrl??seen.projectUrl};
           }
+        }
+        if(!navigationAllowsNextStep(step.action,data)){
+          // Click may already have changed the screen. Never send the next
+          // model-planned command to a UI whose state has not been observed.
+          this.update(taskId,'unverified',
+            'Safe navigation click may have occurred, but the expected new control was not verified. Remaining steps stopped; inspect the laptop before retrying.',
+            i+1,ids);
+          return;
         }
         if(data.verified!==true)unverified=true;
       }
