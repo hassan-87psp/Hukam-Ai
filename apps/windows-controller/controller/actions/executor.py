@@ -400,6 +400,23 @@ class Executor:
         except chatgpt.ChatGPTError as exc:
             raise ActionError("CHATGPT_UI_UNAVAILABLE", str(exc)) from exc
 
+    def do_chatgpt_read_response(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "ChatGPT visible read cancelled")
+        try:
+            return chatgpt.read_visible_response(a["projectUrl"], a["prompt"], cancel)
+        except chatgpt.ChatGPTError as exc:
+            raise ActionError("CHATGPT_RESPONSE_NOT_VERIFIED", str(exc)) from exc
+
+    def do_chatgpt_followup_draft(self, a, cancel):
+        if cancel.is_set():
+            raise ActionError("CANCELLED", "ChatGPT follow-up draft cancelled")
+        try:
+            return chatgpt.draft_followup(
+                a["projectUrl"], a["previousPrompt"], a["prompt"], cancel)
+        except chatgpt.ChatGPTError as exc:
+            raise ActionError("CHATGPT_THREAD_NOT_VERIFIED", str(exc)) from exc
+
     def do_chatgpt_download_visible(self, a, cancel):
         if cancel.is_set():
             raise ActionError("CANCELLED", "ChatGPT download cancelled")
