@@ -187,7 +187,8 @@ export function parseCommand(input: string): ParseResult {
     return cmd('diagnostics.probe', {}, 'computer-diagnostics');
 
   // Calendar shortcuts must win over the generic "Google search" rule.
-  if (/\b(?:google\s+calendar|gcal)\b/.test(t) && OPEN.test(t))
+  if (/\b(?:google\s+calendar|gcal)\b/.test(t) &&
+      (OPEN.test(t) || /^(?:(?:please|hukm)\s+)?(?:google\s+calendar|gcal)\s+(?:karo|kar do|dikhao)$/.test(t)))
     return cmd('web.open', { url: 'https://calendar.google.com/calendar/u/0/r' }, 'google-calendar-open');
   if (/\b(?:outlook\s+calendar|microsoft\s+calendar)\b/.test(t) && OPEN.test(t))
     return cmd('web.open', { url: 'https://outlook.office.com/calendar/' }, 'outlook-calendar-open');

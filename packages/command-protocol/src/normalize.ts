@@ -123,6 +123,9 @@ const URDU_MAP: [string, string][] = [
 ];
 
 const ROMAN_VARIANTS: [RegExp, string][] = [
+  // Canonicalise only the Calendar application name, never arbitrary Google searches.
+  // Common Roman Urdu keyboard/voice spellings seen in owner commands.
+  [/\b(?:calender|calander|calandar|calande|calnder|calamder)\b/g, 'calendar'],
   [/\bwhats\s*app\b/g, 'whatsapp'],
   [/\bwatsapp\b|\bwhatsap\b|\bwatsap\b|\bwhtsapp\b/g, 'whatsapp'],
   [/\byou\s*tube\b|\byoutub\b|\butube\b/g, 'youtube'],

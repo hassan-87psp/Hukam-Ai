@@ -5,6 +5,7 @@
  */
 import type { ParseResult } from './parser';
 import {parseChatGPTAsk} from './chatgpt-intent';
+import {normalize} from './normalize';
 
 export type IntentRoute = 'command' | 'plan' | 'chat';
 
@@ -96,7 +97,14 @@ export function routeIntent(text: string, parsed: ParseResult, awaitingOperatorR
   if(/\b(?:gmail|email|e-mail|inbox|outlook mail|mailbox)\b/i.test(t) &&
      /\b(?:draft|compose|likho|send|bhejo|reply|check|read|parho|khol|kholo|open)\b/i.test(t))
     return 'plan';
-  if(WORKFLOWS.test(t))return 'plan';
+  // Use the same canonical Calendar aliases as the parser. Compound owner
+  // requests for a meeting link must reach the approved Calendar draft
+  // dialogue; direct web.open would drop the meeting details and falsely
+  // label an ordinary browser navigation as task completion.
+  const canonical=normalize(t);
+  if(/\bmeeting\b.*\blink\b.*\bready\b/.test(canonical) &&
+     /\b(?:karo|kar do|banao|banado|create|prepare)\b/.test(canonical))return 'plan';
+  if(WORKFLOWS.test(canonical))return 'plan';
   // A named WhatsApp chat requires verified selection BEFORE reading.
   // Generic "message" parsing must not downgrade this to unread-count check.
   if(/\b(?:whatsapp|wa|msgs?|messages?|chats?)\b/i.test(t) &&
