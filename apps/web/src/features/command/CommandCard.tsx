@@ -6,6 +6,7 @@ import { useState } from 'react';
 import type { ActionName, Command } from '../../../../../packages/shared-types/src/index';
 import { Badge, cx, Modal, Spinner } from '../../components/ui';
 import { ACTION_LABEL, bytes, clock, describeArgs, duration, STATUS_LABEL, STATUS_TONE, actionResultUnverified } from '../../lib/format';
+import { showCommandResult } from '../../lib/command-result-visibility';
 import { useStore } from '../../services/store';
 import { post } from '../../services/api';
 
@@ -155,7 +156,7 @@ export function CommandResult({ c }: { c: Command }) {
     }catch(e){setVisionError(e instanceof Error?e.message:String(e));}
     finally{setVisionBusy(false);}
   }
-  if (c.status !== 'completed') return null;
+  if (!showCommandResult(c)) return null;
   switch (c.action) {
     case 'chatgpt.read_response':
       return <div className="space-y-2">
@@ -498,10 +499,7 @@ export default function CommandCard({ c, deviceName }: { c: Command; deviceName?
         <p className="mt-3 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
           {unverifiedReason(c.action)}
         </p>}
-      {(c.status === 'completed' ||
-        (c.status === 'failed' && c.action === 'whatsapp.unread_senders' &&
-          Array.isArray(c.result?.senders) && c.result.senders.length > 0)) &&
-        <div className="mt-3"><CommandResult c={c} /></div>}
+      {showCommandResult(c) && <div className="mt-3"><CommandResult c={c} /></div>
     </div>
   );
 }
