@@ -62,6 +62,30 @@ describe('operator Calendar context across actual user turns',()=>{
     }finally{db.close();rmSync(folder,{recursive:true,force:true});}
   });
 
+  it('owner screenshot examples route misspelled Calendar and meeting-link request without web search or false save',async()=>{
+    const folder=mkdtempSync(join(tmpdir(),'hukm-calendar-typo-'));
+    const db=openDb(folder,resolve(process.cwd(),'database/migrations'));
+    try{
+      const id='calendar-typo-owner',at=new Date().toISOString();
+      run(db,'INSERT INTO users(id,email,name,password_hash,created_at) VALUES(?,?,?,?,?)',
+        id,'calendar-typo@example.test','Owner','fake-hash',at);
+      const operator=new Operator(db,new Relay(db,{dataDir:folder} as RelayConfig),new Projects(db));
+      const open=await operator.plan(id,'Google calande kro',null);
+      expect('kind' in open).toBe(false);
+      if('kind' in open)throw Error('Calendar app open command was not planned');
+      expect(open.steps).toEqual([{action:'web.open',args:{url:'https://calendar.google.com/calendar/u/0/r'}}]);
+      const meeting=await operator.plan(id,'Google calnder open kro sham 5 bjy ke meeting link ready krdo',null);
+      expect('kind' in meeting&&meeting.kind).toBe('clarify');
+      if(!('kind' in meeting)||meeting.kind!=='clarify')throw Error('Expected reviewed meeting details, not web search');
+      expect(meeting.question).toContain('Google Calendar');
+      expect(meeting.question).toContain('date');
+      const next=await operator.plan(id,'kal',null);
+      expect('kind' in next&&next.kind).toBe('clarify');
+      if(!('kind' in next)||next.kind!=='clarify')throw Error('Expected missing meeting title');
+      expect(next.question).toContain('title');
+    }finally{db.close();rmSync(folder,{recursive:true,force:true});}
+  });
+
   it('asks Calendar provider only when no earlier application context is available',async()=>{
     const folder=mkdtempSync(join(tmpdir(),'hukm-calendar-provider-'));
     const db=openDb(folder,resolve(process.cwd(),'database/migrations'));
