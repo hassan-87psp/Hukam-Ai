@@ -499,7 +499,7 @@ export default function CommandCard({ c, deviceName }: { c: Command; deviceName?
         <p className="mt-3 rounded-lg bg-warn/10 px-3 py-2 text-xs text-warn">
           {unverifiedReason(c.action)}
         </p>}
-      {showCommandResult(c) && <div className="mt-3"><CommandResult c={c} /></div>
+      {showCommandResult(c) && <div className="mt-3"><CommandResult c={c} /></div>}
     </div>
   );
 }
