@@ -32,6 +32,13 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
   for(const [input,intent] of cases){
     it(input,()=>expect(routeIntent(input,parseCommand(input))).toBe(intent));
   }
+  it('Roman Urdu Google Calendar spelling variants navigate to Calendar, never Google Search',()=>{
+    for(const request of ['Google calande kro','Google calnder open kro','Google calender kholo','Google calander kholo','Google Calendar kholo']){
+      expect(parseCommand(request)).toMatchObject({kind:'command',action:'web.open',args:{url:'https://calendar.google.com/calendar/u/0/r'}});
+      expect(routeIntent(request,parseCommand(request))).toBe('command');
+    }
+    expect(parseCommand('Google forex news search kro')).toMatchObject({kind:'command',action:'web.search'});
+  });
   it('ambiguous task answer stays with the pending planner, not Google search',()=>{
     expect(routeIntent('Ali',parseCommand('Ali'),true)).toBe('plan');
     expect(routeIntent('Kal 3 PM',parseCommand('Kal 3 PM'),true)).toBe('plan');
