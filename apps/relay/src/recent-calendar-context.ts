@@ -20,15 +20,22 @@ const WINDOW_MS=30*60_000;
 const ALLOWED_PROFILE=/^(?:Default|Profile [1-9][0-9]?)$/;
 
 export function explicitCalendarProvider(request:string):CalendarProvider|null{
-  if(/\b(?:google\s+calend[ae]r|gcal)\b/i.test(request))return 'google';
-  if(/\b(?:outlook\s+calend[ae]r|microsoft\s+calend[ae]r)\b/i.test(request))return 'outlook';
+  const text=normalize(request);
+  if(/\b(?:google\s+calendar|gcal)\b/.test(text))return 'google';
+  if(/\b(?:outlook\s+calendar|microsoft\s+calendar)\b/.test(text))return 'outlook';
   return null;
 }
 
 export function calendarSchedulingIntent(request:string):boolean{
-  const text=request.toLowerCase().replace(/\s+/g,' ');
-  return /\b(?:meeting|calendar|calender|appointment|event)\b/.test(text) &&
-    /\b(?:schedule|create|book|add|set|draft|banao|banado|bana|banaye|rakho|fix|plan|invite|reschedule)\b/.test(text);
+  const text=normalize(request);
+  const calendarTopic=/\b(?:meeting|calendar|appointment|event)\b/.test(text);
+  const scheduleVerb=/\b(?:schedule|create|book|add|set|draft|banao|banado|bana|banaye|rakho|fix|plan|invite|reschedule)\b/.test(text);
+  // "meeting link ready krdo" asks to prepare an event, not search the web.
+  // This leads to a reviewed Calendar DRAFT only; no meeting link is claimed
+  // until the owner verifies the Calendar-generated conference link.
+  const prepareMeetingLink=/\bmeeting\b.*\blink\b.*\bready\b/.test(text) &&
+    /\b(?:karo|kar do|banao|banado|create|prepare)\b/.test(text);
+  return calendarTopic && (scheduleVerb || prepareMeetingLink);
 }
 
 export function recentCalendarContext(db:DB,userId:string,projectId:string|null,now=Date.now()):RecentCalendarContext|null{
