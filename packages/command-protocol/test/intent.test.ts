@@ -37,6 +37,8 @@ describe('one HUKM command brain with explicit owner-selected desktop preference
       expect(parseCommand(request)).toMatchObject({kind:'command',action:'web.open',args:{url:'https://calendar.google.com/calendar/u/0/r'}});
       expect(routeIntent(request,parseCommand(request))).toBe('command');
     }
+    const meeting='Google calnder open kro sham 5 bjy ke meeting link ready krdo';
+    expect(routeIntent(meeting,parseCommand(meeting))).toBe('plan');
     expect(parseCommand('Google forex news search kro')).toMatchObject({kind:'command',action:'web.search'});
   });
   it('ambiguous task answer stays with the pending planner, not Google search',()=>{
