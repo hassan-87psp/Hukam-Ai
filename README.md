@@ -1,7 +1,10 @@
 # HUKM AI — Your Personal AI Operator
 **Just Speak. It's Done.**
 
-## Current source candidate — v1.9.7 (owner acceptance required)
+## Current source candidate — v1.9.8 (owner acceptance required)
+
+**v1.9.8:** Fix real owner-reported Roman Urdu spelling variants `Google calande kro` / `Google calnder open kro`, which previously opened a misleading Google Search result. Standalone commands now target Google Calendar; `meeting link ready krdo` starts a reviewed Calendar meeting-draft dialogue and asks for missing date/title/duration/profile. It does not claim a saved meeting or actual Google Meet link until independently confirmed. Real WhatsApp unread OCR still needs device acceptance for 2/4 partial results.
+
 
 The tested source includes the newer Personal WhatsApp unread fixes, consented
 Windows Live Screen preview (select physical Monitor 1–N), and supervised
