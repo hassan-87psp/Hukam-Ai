@@ -8,6 +8,7 @@
  * are copied into conversational context.
  */
 import {all,type DB} from './db';
+import {normalize} from '../../../packages/command-protocol/src/normalize';
 
 export type CalendarProvider='google'|'outlook';
 export type RecentCalendarContext={
